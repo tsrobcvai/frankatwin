@@ -90,22 +90,53 @@ panda_control/
 
 ---
 
-## 5. Roadmap (7-step plan)
+## 5. Roadmap (12-step plan, two phases)
 
-| Step | Goal | Status | Key file |
-|------|------|--------|----------|
-| **1** | Joint PD hold: `tau = Kp(q_des - q) - Kd*dq`, validate 1 kHz / RT / dq noise | **DONE (builds), NOT YET RUN ON ROBOT** | `src/step1_joint_pd.cpp` |
-| 2 | Task-space PD (no inertial decoupling). Hold a fixed EE pose | TODO | `src/step2_task_pd.cpp` |
-| 3 | Add null-space term for 7-DOF redundancy | TODO | `src/step3_task_pd_null.cpp` |
-| 4 | Full OSC with inertial decoupling (Λ matrix) | TODO | `src/step4_osc.cpp` |
-| 5 | POSIX shared memory: C++ binary becomes long-running, Python writes `target_pose / Kp / Kd` to shm | TODO | `src/osc_shm.cpp` + `python/panda_control/shm_layout.py` |
-| 6 | Python `PandaController(mp.Process)` mirroring `RTDEInterpolationController` | TODO | `python/panda_control/controller.py` |
-| 7 | sim2real eval harness; plug in IsaacLab/ACT/diffusion policies | TODO | `python/scripts/eval_real.py` |
+The plan is split into two phases:
 
-**Important architectural note**: steps 1-4 are intentionally single-process
-with all parameters via CLI. This is *not* a final shape; it's a
-"learn libfranka first" stage. Step 5 is the inflection point: that's when
-shared memory IPC enters and Python becomes a first-class citizen.
+- **Phase A — controller increments (steps 1–9)**: each step is a standalone
+  `src/stepN_*.cpp` running at 1 kHz, single-process, all params via CLI.
+  Each step adds exactly one term or one feature to the control law, so
+  any regression is bisectable to a single increment.
+- **Phase B — productization (steps 10–12)**: wrap the final controller
+  (step 9) with POSIX shared memory, build the Python
+  `PandaController(mp.Process)` that mirrors `RTDEInterpolationController`,
+  and wire up the sim2real eval harness.
+
+| Step | Control law / change | Status | Key file |
+|------|----------------------|--------|----------|
+| **1** | Joint PD: `τ = Kp(q_des - q) - Kd·q̇`. Hold a fixed `q_des`. Validates 1 kHz loop, SCHED_FIFO RT priority, velocity noise floor. | **DONE & validated on real robot** (3002 ticks / 3.001 s, period 1.0 ms mean, dq RMS ≤ 1.1 mrad/s) | `src/step1_joint_pd.cpp` |
+| **2** | Joint PD + gravity comp: `τ + g(q)`. libfranka's torque mode adds `g(q)` automatically → no new code, kept as a documented concept in the step 1 header and `README.md`. | **DONE (== step 1 semantics)** | (no new file) |
+| 3 | + Coriolis comp: `τ + g(q) + C(q,q̇)·q̇`. Franka does **not** auto-compensate Coriolis; matters at non-trivial joint speeds. | **DONE (builds), not yet validated on real robot** | `src/step3_joint_pd_coriolis.cpp` |
+| 4 | Joint trajectory tracking: same law as (3), sweep `q_des` smoothly. Find the Kp ceiling before shaking → that's the stable envelope. | **DONE (builds), not yet validated on real robot** | `src/step4_joint_traj.cpp` |
+| 5 | Jacobian-transpose Cartesian PD (no Λ): `τ = Jᵀ(Kp·e + Kd·ė) + C(q,q̇)·q̇`, with `e = x_des - x`. Try the same gains in stretched-out vs. folded-up poses to see config-dependent stiffness directly. | TODO | `src/step5_cart_pd.cpp` |
+| 6 | Add inertial decoupling (full OSC): `τ = Jᵀ·Λ·(Kp·e + Kd·ė) + C(q,q̇)·q̇`, `Λ = (J·M⁻¹·Jᵀ + ε²·I)⁻¹`, `ε ≈ 1e-2`. Compare directly to (5) in the same poses; the difference is the value of decoupling. Push toward elbow extension to see Λ misbehave if `ε` is too small. | TODO | `src/step6_osc.cpp` |
+| 7 | Split position and orientation: separate `Λ_p` (3×3), `Λ_o` (3×3), separate gains, separate errors. Validate orientation error standalone (axis-angle from `R_des · R_curᵀ` in the right frame). Most error-prone piece in the stack; worth isolating. | TODO | `src/step7_osc_pose.cpp` |
+| 8 | Nullspace posture, kinematic projector: `τ += N · (Kp_null·(q₀ - q) - Kd_null·q̇)`, `N = I - J⁺·J`. With `Kd_null = 0` the elbow oscillates; set `Kd_null = 2·√Kp_null`. | TODO | `src/step8_osc_null.cpp` |
+| 9 | Switch to dynamically consistent projector: `J̄ = M⁻¹·Jᵀ·Λ`, `N = I - Jᵀ·J̄ᵀ`. Posture torques now produce zero EE acceleration. Under aggressive posture gains, (8) disturbs the EE and (9) doesn't. | TODO | `src/step9_osc_null_dyn.cpp` |
+| 10 | POSIX shared memory: step 9 binary becomes long-running; Python writes `target_pose / Kp / Kd` to shm. | TODO | `src/osc_shm.cpp` + `python/panda_control/shm_layout.py` |
+| 11 | Python `PandaController(mp.Process)` mirroring `RTDEInterpolationController` (`SharedMemoryQueue` / `RingBuffer` pattern, no interpolator). | TODO | `python/panda_control/controller.py` |
+| 12 | sim2real eval harness; plug in IsaacLab / ACT / diffusion policies. | TODO | `python/scripts/eval_real.py` |
+
+**Important architectural note**: steps 1–9 are intentionally single-process
+with all parameters via CLI. This is *not* a final shape; it's the
+"learn libfranka first" stage. **Step 10 is the inflection point**: that's
+when shared memory IPC enters and Python becomes a first-class citizen.
+
+**Why step 2 has no new file**: libfranka's torque interface implicitly adds
+**gravity `g(q)` and a friction-compensation term** to whatever we return
+from the control callback. Verified in
+`/home/nuc1/Projects/deoxys_control/deoxys/include/franka/robot.h:121`:
+
+> "...joint-level torque commands **without gravity and friction** by
+> providing callback functions."
+
+So step 1's binary already runs as "Joint PD + gravity comp" semantically;
+we simply never compute `g(q)` ourselves. Coriolis `C(q,q̇)·q̇` is **not**
+auto-applied — that is exactly why step 3 needs a separate file: it has to
+call `franka::Model::coriolis(robot_state)` and add the result by hand.
+See the header of `src/step1_joint_pd.cpp` and the "Step 1" section of
+`README.md` for the `τ_cmd` vs `τ_motor` breakdown.
 
 ---
 
@@ -185,7 +216,7 @@ Safety guards baked in:
 - SIGINT/SIGTERM → `franka::MotionFinished(zeros)`.
 
 CLI is intentional — there is no runtime command channel yet (that arrives
-in Step 5). The operator must:
+in Step 10). The operator must:
 1. In Franka Desk: unlock joints (blue LED) + Activate FCI.
 2. Manually move robot to `q_des` (guiding mode).
 3. `./scripts/run_step1.sh` (defaults: `KP=10, DURATION=3`).
@@ -200,8 +231,8 @@ per-tick CSV log.
 - **q_des source**: CLI argument; operator manually positions robot first.
   (Not "read q_init", not "use MotionGenerator to drive there".)
 - **Step 1 form**: pure C++ single file, no Python, no shm.
-- **Architecture trajectory**: stay single-process through step 4, add shm
-  at step 5. POSIX `shm_open` (not ZMQ) when the time comes — same machine,
+- **Architecture trajectory**: stay single-process through step 9, add shm
+  at step 10. POSIX `shm_open` (not ZMQ) when the time comes — same machine,
   microsecond-class latency.
 - **No panda-py**, no PyBind11 embedding of Python into the 1 kHz callback.
 - **No interpolators**. Sim2real consistency is the hill we're dying on.
@@ -210,31 +241,37 @@ per-tick CSV log.
 
 ## 9. Open decisions (defer until ready)
 
-- **Where will the Python policy run in step 5+?**
+- **Where will the Python policy run in step 10+?**
   - Option A: same NUC (shm only). Best for sim2real determinism. Requires
     NUC to host PyTorch inference (typically lightweight — small policies).
   - Option B: separate PC (network IPC). Needed if a beefy GPU is required.
     Reintroduces deoxys-class IPC latency (1-5 ms).
-  - Decision deferred until Step 1 jitter / dq noise data is in hand and we
-    know what the policy stack looks like.
+  - Step 1 jitter / dq noise data is now in hand (period 1.0 ms mean,
+    dq RMS ≤ 1.1 mrad/s) — the loop has the headroom for option A. Final
+    decision still deferred until the policy stack is chosen.
 
-- **Gripper control**: not in any current step. Added once step 4 (OSC) is
-  stable. Will use `franka::Gripper` in a separate small program first,
-  then integrated.
+- **Gripper control**: not in any current step. Added once step 9
+  (full OSC + dynamically consistent nullspace) is stable. Will use
+  `franka::Gripper` in a separate small program first, then integrated.
 
-- **Logging format**: currently a flat CSV per tick. Acceptable for step 1.
-  May switch to HDF5 or NPZ in step 5+ when policy episodes need richer
-  structured logs.
+- **Logging format**: currently a flat CSV per tick. Acceptable for
+  steps 1–9. May switch to HDF5 or NPZ in step 10+ when policy episodes
+  need richer structured logs.
 
 ---
 
 ## 10. Suggested prompt for the next agent
 
-> I'm continuing work on `/home/tao/Projects/panda_control/`. Please first
+> I'm continuing work on `/home/nuc1/Projects/panda_control/`. Please first
 > read `HANDOFF.md` end-to-end so you have full context. Step 1
-> (`src/step1_joint_pd.cpp`) is implemented and builds successfully on the
-> NUC (with the `CONDA_PREFIX` lib fix in `CMakeLists.txt` — DO NOT REMOVE).
-> It has not yet been validated on the real robot.
+> (`src/step1_joint_pd.cpp`) is implemented, builds, and is **validated on
+> the real robot** (period 1.0 ms mean, dq RMS ≤ 1.1 mrad/s on the NUC's
+> PREEMPT_RT kernel). Steps 2 (= step 1 semantics, libfranka auto-adds
+> `g(q)`) and onward are governed by the 12-step roadmap in §5; the next
+> code increment is **step 3** (`src/step3_joint_pd_coriolis.cpp`, joint PD
+> + explicit Coriolis term). The `CONDA_PREFIX` lib fix in `CMakeLists.txt`
+> (including the direct `libboost_filesystem.so.1.82.0` link) — **DO NOT
+> REMOVE** unless you also stop linking against deoxys's libfranka build.
 >
 > My next concrete request is: \<state it here>
 >
@@ -259,7 +296,9 @@ per-tick CSV log.
 
 - `CMakeLists.txt` — build, with mandatory `CONDA_PREFIX` lib fix.
 - `src/step1_joint_pd.cpp` — Joint PD 1 kHz hold.
+- `src/step4_joint_traj.cpp` — Joint trajectory tracking (single-joint sinusoid sweep).
 - `scripts/run_step1.sh` — safe-default wrapper.
+- `scripts/run_step4.sh` — safe-default wrapper for step 4 sweep tests.
 - `README.md` — operator-facing prereqs / build / run / validation checklist.
 - `HANDOFF.md` — this file.
 - `data/` — CSV logs land here (gitignored except `.gitkeep`).

@@ -2,12 +2,17 @@
 #
 # Convenience wrapper to launch step1_joint_pd with sensible defaults.
 #
+# Control law shipped in step1_joint_pd is, semantically, Joint PD + gravity
+# compensation: we send tau_cmd = Kp*(q_des - q) - Kd*dq, and libfranka adds
+# g(q) and Coriolis terms on top automatically. See README.md "Step 1" and the
+# header of src/step1_joint_pd.cpp for the full story.
+#
 # Override anything via env vars, for example:
 #   ROBOT_IP=172.16.0.2 KP=10 DURATION=3 ./scripts/run_step1.sh
 #
-# Q_DES default is Franka's "ready" pose (libfranka examples convention):
-#   [0, -pi/4, 0, -3*pi/4, 0, pi/2, pi/4]
-# IMPORTANT: move the robot to this pose (or whatever you pass) BEFORE running.
+# Q_DES default is set close to your measured pose, with a small visible offset:
+#   [0.12, -0.4, 0.0, -2.6, 0.0, 2.2, 0.9]
+# IMPORTANT: move the robot close to this pose (or whatever you pass) BEFORE running.
 # The binary will refuse to start if |q_init - q_des|_inf > 0.10 rad.
 
 set -euo pipefail
@@ -24,7 +29,7 @@ if [[ ! -x "${BIN}" ]]; then
 fi
 
 ROBOT_IP="${ROBOT_IP:-172.16.0.2}"
-Q_DES="${Q_DES:-0 -0.785398 0 -2.356194 0 1.570796 0.785398}"
+Q_DES="${Q_DES:-0.12 -0.4 0.0 -2.6 0.0 2.2 0.9}"
 KP="${KP:-10.0}"
 DURATION="${DURATION:-3.0}"
 RAMP="${RAMP:-1.5}"
@@ -32,6 +37,11 @@ RAMP="${RAMP:-1.5}"
 TS="$(date +%Y%m%d_%H%M%S)"
 LOG_DEFAULT="${PROJ_ROOT}/data/step1_${TS}.csv"
 LOG_PATH="${LOG:-${LOG_DEFAULT}}"
+
+# Ensure transitive shared libs (e.g. boost from conda) are resolvable at runtime.
+if [[ -n "${CONDA_PREFIX:-}" && -d "${CONDA_PREFIX}/lib" ]]; then
+    export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+fi
 
 mkdir -p "$(dirname "${LOG_PATH}")"
 
