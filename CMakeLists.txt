@@ -17,6 +17,30 @@ endif()
 add_compile_options(-Wall -Wextra -Wpedantic)
 
 # ----------------------------------------------------------------------------
+# Conda libstdc++ link fix
+# ----------------------------------------------------------------------------
+#
+# When deoxys's libfranka is reused (the usual setup on this NUC), its
+# FrankaConfig.cmake declares `fmt::fmt` as a public link dependency.
+# find_package(Franka) -> find_package(fmt) resolves to conda's libfmt,
+# which was built with GCC 11+ and requires GLIBCXX_3.4.29. The system
+# /usr/bin/c++ (Ubuntu 9.4) links against /usr/lib/.../libstdc++.so.6
+# which only goes up to GLIBCXX_3.4.28, so ld fails on libfmt's symbols.
+#
+# Mirror deoxys's trick: push conda's lib to the front of the linker's
+# search path, so the implicit -lstdc++ resolves to conda's libstdc++
+# (GLIBCXX_3.4.34) instead of the system one.
+#
+# Reference: isaaclab_rollout/deoxys_control/deoxys/CMakeLists.txt:28-29
+if(DEFINED ENV{CONDA_PREFIX})
+    set(CMAKE_EXE_LINKER_FLAGS
+        "${CMAKE_EXE_LINKER_FLAGS} -L$ENV{CONDA_PREFIX}/lib -Wl,-rpath,$ENV{CONDA_PREFIX}/lib")
+    set(CMAKE_SHARED_LINKER_FLAGS
+        "${CMAKE_SHARED_LINKER_FLAGS} -L$ENV{CONDA_PREFIX}/lib -Wl,-rpath,$ENV{CONDA_PREFIX}/lib")
+    message(STATUS "panda_control: prepending CONDA_PREFIX/lib to linker search path: $ENV{CONDA_PREFIX}/lib")
+endif()
+
+# ----------------------------------------------------------------------------
 # Dependencies
 # ----------------------------------------------------------------------------
 #
