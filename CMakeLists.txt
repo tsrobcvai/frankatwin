@@ -56,6 +56,29 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
 # ----------------------------------------------------------------------------
+# Conda boost workaround for secure-exec binaries (file capabilities)
+# ----------------------------------------------------------------------------
+#
+# When step1_joint_pd has file capabilities (e.g. cap_sys_nice), glibc treats
+# it as secure-exec and ignores LD_LIBRARY_PATH. Some transitive dependencies
+# (via pinocchio parsers) require boost_filesystem from conda.
+#
+# Linking boost_filesystem directly into our executables makes it a direct
+# dependency resolved via this executable's RUNPATH (which already includes
+# CONDA_PREFIX/lib), avoiding loader failures like:
+#   libboost_filesystem.so.1.82.0: cannot open shared object file
+set(CONDA_BOOST_FILESYSTEM "")
+if(DEFINED ENV{CONDA_PREFIX})
+    set(_CONDA_BOOST_CANDIDATE "$ENV{CONDA_PREFIX}/lib/libboost_filesystem.so.1.82.0")
+    if(EXISTS "${_CONDA_BOOST_CANDIDATE}")
+        set(CONDA_BOOST_FILESYSTEM "${_CONDA_BOOST_CANDIDATE}")
+        message(STATUS "panda_control: using conda boost filesystem: ${CONDA_BOOST_FILESYSTEM}")
+    else()
+        message(WARNING "panda_control: conda boost filesystem not found under $ENV{CONDA_PREFIX}/lib")
+    endif()
+endif()
+
+# ----------------------------------------------------------------------------
 # Step 1: Joint PD hold (standalone)
 # ----------------------------------------------------------------------------
 add_executable(step1_joint_pd src/step1_joint_pd.cpp)
@@ -64,7 +87,55 @@ target_link_libraries(step1_joint_pd
         Franka::Franka
         Eigen3::Eigen
         Threads::Threads)
+if(CONDA_BOOST_FILESYSTEM)
+    target_link_options(step1_joint_pd PRIVATE -Wl,--no-as-needed)
+    target_link_libraries(step1_joint_pd PRIVATE ${CONDA_BOOST_FILESYSTEM})
+endif()
 target_compile_options(step1_joint_pd PRIVATE -O2)
+
+# ----------------------------------------------------------------------------
+# Step 3: Joint PD + explicit Coriolis compensation (standalone)
+# ----------------------------------------------------------------------------
+add_executable(step3_joint_pd_coriolis src/step3_joint_pd_coriolis.cpp)
+target_link_libraries(step3_joint_pd_coriolis
+    PRIVATE
+        Franka::Franka
+        Eigen3::Eigen
+        Threads::Threads)
+if(CONDA_BOOST_FILESYSTEM)
+    target_link_options(step3_joint_pd_coriolis PRIVATE -Wl,--no-as-needed)
+    target_link_libraries(step3_joint_pd_coriolis PRIVATE ${CONDA_BOOST_FILESYSTEM})
+endif()
+target_compile_options(step3_joint_pd_coriolis PRIVATE -O2)
+
+# ----------------------------------------------------------------------------
+# Step 4: Joint trajectory tracking (same law as step 3, time-varying q_des)
+# ----------------------------------------------------------------------------
+add_executable(step4_joint_traj src/step4_joint_traj.cpp)
+target_link_libraries(step4_joint_traj
+    PRIVATE
+        Franka::Franka
+        Eigen3::Eigen
+        Threads::Threads)
+if(CONDA_BOOST_FILESYSTEM)
+    target_link_options(step4_joint_traj PRIVATE -Wl,--no-as-needed)
+    target_link_libraries(step4_joint_traj PRIVATE ${CONDA_BOOST_FILESYSTEM})
+endif()
+target_compile_options(step4_joint_traj PRIVATE -O2)
+
+# ----------------------------------------------------------------------------
+# Utility: Read current joint positions (single readOnce call)
+# ----------------------------------------------------------------------------
+add_executable(read_current_q src/read_current_q.cpp)
+target_link_libraries(read_current_q
+    PRIVATE
+        Franka::Franka
+        Threads::Threads)
+if(CONDA_BOOST_FILESYSTEM)
+    target_link_options(read_current_q PRIVATE -Wl,--no-as-needed)
+    target_link_libraries(read_current_q PRIVATE ${CONDA_BOOST_FILESYSTEM})
+endif()
+target_compile_options(read_current_q PRIVATE -O2)
 
 # ----------------------------------------------------------------------------
 # Future steps will add more executables here:
