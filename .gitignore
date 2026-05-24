@@ -12,6 +12,11 @@ data/*.npz
 data/*.h5
 !data/.gitkeep
 
+# Generic generated files
+*.png
+*.json
+*.csv
+
 # Editor / IDE
 .vscode/
 .idea/

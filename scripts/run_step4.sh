@@ -9,6 +9,10 @@
 # Override via env vars, for example:
 #   KP=50 JOINT=3 AMP=0.1 FREQ=0.25 ./scripts/run_step4.sh
 #
+# KD defaults to auto (2*sqrt(KP), critical damping). To deliberately
+# under-damp and provoke the closed-loop stability limit, lower it, e.g.:
+#   KP=2000 KD=5 ./scripts/run_step4.sh
+#
 # To disable explicit Coriolis for A/B testing:
 #   NO_CORIOLIS=1 ./scripts/run_step4.sh
 
@@ -31,6 +35,7 @@ JOINT="${JOINT:-3}"
 AMP="${AMP:-0.10}"
 FREQ="${FREQ:-0.25}"
 KP="${KP:-10.0}"
+KD="${KD:-}"
 DURATION="${DURATION:-8.0}"
 RAMP="${RAMP:-1.5}"
 AMP_RAMP="${AMP_RAMP:-${RAMP}}"
@@ -52,11 +57,14 @@ EXTRA_ARGS=()
 if [[ "${NO_CORIOLIS}" == "1" ]]; then
     EXTRA_ARGS+=(--no-coriolis)
 fi
+if [[ -n "${KD}" ]]; then
+    EXTRA_ARGS+=(--kd "${KD}")
+fi
 
 echo "[run_step4] ROBOT_IP=${ROBOT_IP}"
 echo "[run_step4] Q_CENTER=${Q_CENTER}"
 echo "[run_step4] JOINT=${JOINT} AMP=${AMP} FREQ=${FREQ}"
-echo "[run_step4] KP=${KP} DURATION=${DURATION} RAMP=${RAMP} AMP_RAMP=${AMP_RAMP}"
+echo "[run_step4] KP=${KP} KD=${KD:-auto(2*sqrt(KP))} DURATION=${DURATION} RAMP=${RAMP} AMP_RAMP=${AMP_RAMP}"
 echo "[run_step4] NO_CORIOLIS=${NO_CORIOLIS}"
 echo "[run_step4] PRINT_ERR_EVERY=${PRINT_ERR_EVERY} ticks (0=off)"
 echo "[run_step4] LOG=${LOG_PATH}"
