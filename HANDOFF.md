@@ -109,7 +109,7 @@ The plan is split into two phases:
 | **2** | Joint PD + gravity comp: `τ + g(q)`. libfranka's torque mode adds `g(q)` automatically → no new code, kept as a documented concept in the step 1 header and `README.md`. | **DONE (== step 1 semantics)** | (no new file) |
 | 3 | + Coriolis comp: `τ + g(q) + C(q,q̇)·q̇`. Franka does **not** auto-compensate Coriolis; matters at non-trivial joint speeds. | **DONE (builds), not yet validated on real robot** | `src/step3_joint_pd_coriolis.cpp` |
 | 4 | Joint trajectory tracking: same law as (3), sweep `q_des` smoothly. Find the Kp ceiling before shaking → that's the stable envelope. | **DONE (builds), not yet validated on real robot** | `src/step4_joint_traj.cpp` |
-| 5 | Jacobian-transpose Cartesian PD (no Λ): `τ = Jᵀ(Kp·e + Kd·ė) + C(q,q̇)·q̇`, with `e = x_des - x`. Try the same gains in stretched-out vs. folded-up poses to see config-dependent stiffness directly. | TODO | `src/step5_cart_pd.cpp` |
+| 5 | Jacobian-transpose Cartesian PD (no Λ): `τ = Jᵀ(Kp·e + Kd·ė) + C(q,q̇)·q̇`, with `e = x_des - x`. Try the same gains in stretched-out vs. folded-up poses to see config-dependent stiffness directly. | **DONE (builds), not yet validated on real robot** | `src/step5_cart_pd.cpp` |
 | 6 | Add inertial decoupling (full OSC): `τ = Jᵀ·Λ·(Kp·e + Kd·ė) + C(q,q̇)·q̇`, `Λ = (J·M⁻¹·Jᵀ + ε²·I)⁻¹`, `ε ≈ 1e-2`. Compare directly to (5) in the same poses; the difference is the value of decoupling. Push toward elbow extension to see Λ misbehave if `ε` is too small. | TODO | `src/step6_osc.cpp` |
 | 7 | Split position and orientation: separate `Λ_p` (3×3), `Λ_o` (3×3), separate gains, separate errors. Validate orientation error standalone (axis-angle from `R_des · R_curᵀ` in the right frame). Most error-prone piece in the stack; worth isolating. | TODO | `src/step7_osc_pose.cpp` |
 | 8 | Nullspace posture, kinematic projector: `τ += N · (Kp_null·(q₀ - q) - Kd_null·q̇)`, `N = I - J⁺·J`. With `Kd_null = 0` the elbow oscillates; set `Kd_null = 2·√Kp_null`. | TODO | `src/step8_osc_null.cpp` |
@@ -297,8 +297,13 @@ per-tick CSV log.
 - `CMakeLists.txt` — build, with mandatory `CONDA_PREFIX` lib fix.
 - `src/step1_joint_pd.cpp` — Joint PD 1 kHz hold.
 - `src/step4_joint_traj.cpp` — Joint trajectory tracking (single-joint sinusoid sweep).
+- `src/step5_cart_pd.cpp` — Jacobian-transpose Cartesian PD (position-only, no Λ).
+- `src/step5b_cart_pose.cpp` — Jacobian-transpose Cartesian PD (6D pose, no Λ).
 - `scripts/run_step1.sh` — safe-default wrapper.
 - `scripts/run_step4.sh` — safe-default wrapper for step 4 sweep tests.
+- `scripts/run_step5.sh` — safe-default wrapper for step 5 Cartesian PD tests.
+- `scripts/run_step5b.sh` — safe-default wrapper for step 5b 6D pose tests.
+- `scripts/plot_step5.py` — offline plotting for Step 5/5b CSV logs.
 - `README.md` — operator-facing prereqs / build / run / validation checklist.
 - `HANDOFF.md` — this file.
 - `data/` — CSV logs land here (gitignored except `.gitkeep`).

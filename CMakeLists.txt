@@ -124,6 +124,36 @@ endif()
 target_compile_options(step4_joint_traj PRIVATE -O2)
 
 # ----------------------------------------------------------------------------
+# Step 5: Jacobian-transpose Cartesian PD (position-only, no Lambda)
+# ----------------------------------------------------------------------------
+add_executable(step5_cart_pd src/step5_cart_pd.cpp)
+target_link_libraries(step5_cart_pd
+    PRIVATE
+        Franka::Franka
+        Eigen3::Eigen
+        Threads::Threads)
+if(CONDA_BOOST_FILESYSTEM)
+    target_link_options(step5_cart_pd PRIVATE -Wl,--no-as-needed)
+    target_link_libraries(step5_cart_pd PRIVATE ${CONDA_BOOST_FILESYSTEM})
+endif()
+target_compile_options(step5_cart_pd PRIVATE -O2)
+
+# ----------------------------------------------------------------------------
+# Step 5b: Jacobian-transpose Cartesian PD (6D pose, no Lambda)
+# ----------------------------------------------------------------------------
+add_executable(step5b_cart_pose src/step5b_cart_pose.cpp)
+target_link_libraries(step5b_cart_pose
+    PRIVATE
+        Franka::Franka
+        Eigen3::Eigen
+        Threads::Threads)
+if(CONDA_BOOST_FILESYSTEM)
+    target_link_options(step5b_cart_pose PRIVATE -Wl,--no-as-needed)
+    target_link_libraries(step5b_cart_pose PRIVATE ${CONDA_BOOST_FILESYSTEM})
+endif()
+target_compile_options(step5b_cart_pose PRIVATE -O2)
+
+# ----------------------------------------------------------------------------
 # Utility: Read current joint positions (single readOnce call)
 # ----------------------------------------------------------------------------
 add_executable(read_current_q src/read_current_q.cpp)

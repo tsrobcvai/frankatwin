@@ -187,6 +187,196 @@ Validation checklist for Step 4:
 4. If error spikes, oscillation appears, or runtime abort triggers, back off
    `KP` and record the previous stable value as that joint's envelope limit.
 
+## Step 5: Jacobian-transpose Cartesian PD (no Lambda)
+
+Control law in `src/step5_cart_pd.cpp` (position-only Cartesian control):
+
+```
+tau_cmd = J_p^T * (Kp * (x_des - x) - Kd * dx) + c(q, dq)
+```
+
+where:
+
+- `x` is end-effector position in the base frame (meters)
+- `J_p` is the translational Jacobian (`zeroJacobian(...).topRows<3>()`)
+- `dx = J_p * dq`
+- `c(q, dq)` comes from `franka::Model::coriolis()`
+
+This is intentionally the non-decoupled Cartesian baseline before Step 6
+(`Lambda`) and before orientation/nullspace terms.
+
+Trajectory mode:
+
+- Default hold: `AMP=0`, so `x_des = x_anchor` (captured at startup)
+- Optional single-axis sinusoid (`AXIS=x|y|z`):
+  - `x_des[axis] += A_eff * sin(2*pi*f*t)`
+  - `A_eff = A * min(1, t / amp_ramp)`
+
+Run Step 5 (safe defaults):
+
+```bash
+./scripts/run_step5.sh
+```
+
+Enable 1 cm scan on z:
+
+```bash
+AMP=0.01 AXIS=z ./scripts/run_step5.sh
+```
+
+CLI reference:
+
+| Arg | Default | Notes |
+|-----|---------|-------|
+| `<robot_ip>` | (required) | e.g. `172.16.0.2` |
+| `--kp K` | `100.0` | Scalar Cartesian stiffness, broadcast to xyz |
+| `--kd K` | `2*sqrt(kp)` | Scalar Cartesian damping |
+| `--axis x|y|z` | `z` | Scan axis in base frame |
+| `--amp A` | `0.0` | Sinusoid amplitude in meters (`0` = hold) |
+| `--freq F` | `0.25` | Sinusoid frequency in Hz |
+| `--duration sec` | `8.0` | `0` = run until Ctrl+C |
+| `--ramp sec` | `1.5` | Kp ramp-in |
+| `--amp-ramp sec` | `--ramp` | Amplitude ramp-in duration |
+| `--no-coriolis` | off | Disable explicit Coriolis for A/B |
+| `--print-err-every N` | `100` | Print Cartesian `|e|_inf` every N ticks (`0`=off) |
+| `--log path` | (no log) | Writes per-tick CSV |
+
+Validation and comparison workflow:
+
+1. In a stretched pose, run hold mode (`AMP=0`) and confirm `abort: none`.
+2. Run `AMP=0.01 AXIS=z` with the same `KP`; record `cart err RMS`.
+3. Increase `KP` (`KP=200`, `KP=500`) and check if `cart err RMS` drops.
+4. Move to a folded pose and repeat the same runs.
+5. Compare stretched vs folded `cart err RMS` under identical gains; this is
+   the Step 5 demonstration of configuration-dependent stiffness without
+   inertial decoupling.
+
+Safety notes specific to Step 5:
+
+- Runtime abort if Cartesian tracking error `|x_des - x|_inf > 0.05 m`.
+- Runtime abort if any joint goes outside nominal Panda limits.
+- Peak desired Cartesian speed check: `amp * 2*pi*freq <= 0.3 m/s`.
+- Keep `AMP` small on first runs (`0.005` to `0.01` m).
+
+## Step 5b: 6D pose Jacobian-transpose Cartesian PD (no Lambda)
+
+Control law in `src/step5b_cart_pose.cpp` (position + orientation):
+
+```
+tau_cmd = J^T * F_task + c(q, dq)
+F_task  = [Kp_pos*(x_des - x) - Kd_pos*v ;
+           Kp_ori*e_o         - Kd_ori*w]
+```
+
+where:
+
+- `J` is the full 6x7 Jacobian from `zeroJacobian(...)`.
+- `v = J_pos * dq`, `w = J_ori * dq`.
+- `e_o = 2 * vec(q_des * q^{-1})` with shortest-path quaternion sign handling.
+- `c(q, dq)` comes from `franka::Model::coriolis()`.
+
+Trajectory mode:
+
+- Position target is optional single-axis sinusoid around `x_anchor`.
+- Orientation target is held at startup anchor (`R_des = R_anchor`).
+
+Run Step 5b (safe defaults):
+
+```bash
+./scripts/run_step5b.sh
+```
+
+Run 1 cm z-axis sweep:
+
+```bash
+KP_POS=200 KP_ORI=20 AMP=0.01 AXIS=z ./scripts/run_step5b.sh
+```
+
+CLI reference:
+
+| Arg | Default | Notes |
+|-----|---------|-------|
+| `<robot_ip>` | (required) | e.g. `172.16.0.2` |
+| `--kp-pos K` | `100.0` | Scalar translational stiffness, broadcast to xyz |
+| `--kd-pos K` | `2*sqrt(kp-pos)` | Scalar translational damping |
+| `--kp-ori K` | `20.0` | Scalar orientation stiffness, broadcast to xyz |
+| `--kd-ori K` | `2*sqrt(kp-ori)` | Scalar orientation damping |
+| `--axis x|y|z` | `z` | Position sweep axis in base frame |
+| `--amp A` | `0.0` | Sinusoid amplitude in meters (`0` = hold) |
+| `--freq F` | `0.25` | Sinusoid frequency in Hz |
+| `--duration sec` | `8.0` | `0` = run until Ctrl+C |
+| `--ramp sec` | `1.5` | Gain ramp-in duration |
+| `--amp-ramp sec` | `--ramp` | Amplitude ramp-in duration |
+| `--no-coriolis` | off | Disable explicit Coriolis for A/B |
+| `--print-err-every N` | `100` | Print `|e_pos|_inf` and `||e_o||` every N ticks (`0`=off) |
+| `--log path` | (no log) | Writes per-tick CSV |
+| `--sidecar path` | derived from `--log` | Per-run JSON sidecar (replace `.csv`->`.json`) |
+
+CSV columns (per tick):
+
+```
+t_s, period_ms,
+q1..q7, dq1..dq7,
+x_x,x_y,x_z, dx_x,dx_y,dx_z,
+quat_x,quat_y,quat_z,quat_w, wx,wy,wz,
+x_des_{x,y,z}, dx_des_{x,y,z},
+quat_des_{x,y,z,w},
+e_x,e_y,e_z, e_ox,e_oy,e_oz,
+tau_pd1..tau_pd7,    # pre-clamp computed torque = J^T * f_task + c_vec
+tau_cmd1..tau_cmd7,  # post-clamp torque actually returned to libfranka
+c1..c7               # explicit Coriolis vector (0 if --no-coriolis)
+```
+
+JSON sidecar (written once per run, in success path AND on exception):
+
+- Identifies the run: `started_utc`, `csv_path`, `sidecar_path`, `controller`,
+  `robot_ip`, `control_rate_hz`, `frame`, `rt_priority`.
+- All CLI args under `args` (including auto-derived `kd_pos` / `kd_ori`).
+- Initial state for sim replay: `q_init[7]`, `x_anchor[3]`, `q_anchor_xyzw[4]`.
+  `null` if connect/readOnce failed before they were captured.
+- `abort` block: `code`, `name`, `joint`, `value`, `time_s`. `code=0` /
+  `name="none"` for clean finish.
+- `summary` block (jitter, dq_rms, c_rms, pos/ori RMS and max errors) when
+  the control loop ran at least one tick; `null` otherwise.
+- `exception` (string or `null`) and `ended_normally` (bool).
+
+Sim2real workflow with these logs:
+
+1. Real run produces `step5b_<ts>.csv` + `step5b_<ts>.json`.
+2. Sim replay reads sidecar JSON: initialize the sim arm to `q_init`, verify
+   `frame` and `args`.
+3. Sim controller streams `(t_s, x_des_*, quat_des_*)` from the CSV at
+   `control_rate_hz`. The same control law (pos+ori PD, no Lambda) keeps
+   the comparison fair.
+4. Sim records its own actual EE pose; align with real `(x_*, quat_*)`
+   columns by `t_s` for direct sim-vs-real residuals.
+
+Safety notes specific to Step 5b:
+
+- Runtime abort if Cartesian tracking error `|x_des - x|_inf > 0.05 m`.
+- Runtime abort if orientation error `||e_o||_2 > 0.30 rad`.
+- Runtime abort if any joint goes outside nominal Panda limits.
+- Peak desired Cartesian speed check: `amp * 2*pi*freq <= 0.3 m/s`.
+
+Sweep and visualization workflow:
+
+```bash
+# 1) Hold test (no position excitation)
+KP_POS=100 KP_ORI=10 AMP=0.0 DURATION=5 ./scripts/run_step5b.sh
+
+# 2) Small-amplitude Cartesian sweep
+KP_POS=200 KP_ORI=20 AMP=0.01 AXIS=z ./scripts/run_step5b.sh
+
+# 3) Increase translational gain
+KP_POS=500 KP_ORI=20 AMP=0.01 AXIS=z ./scripts/run_step5b.sh
+
+# 4) Plot desired vs actual EE trajectory and tracking errors
+python scripts/plot_step5.py --save --show
+```
+
+For stretched-vs-folded comparison, run the same commands in both
+configurations and compare plotted `||e_pos||` plus RMS/max metrics.
+
 ## Prerequisites
 
 1. **PREEMPT_RT kernel** on the machine that runs the binary
@@ -309,11 +499,16 @@ panda_control/
 |-- src/
 |   |-- step1_joint_pd.cpp
 |   |-- step3_joint_pd_coriolis.cpp
-|   `-- step4_joint_traj.cpp
+|   |-- step4_joint_traj.cpp
+|   |-- step5_cart_pd.cpp
+|   `-- step5b_cart_pose.cpp
 |-- scripts/
 |   |-- run_step1.sh
 |   |-- run_step3.sh
-|   `-- run_step4.sh
+|   |-- run_step4.sh
+|   |-- run_step5.sh
+|   |-- run_step5b.sh
+|   `-- plot_step5.py
 `-- data/
     `-- .gitkeep         (CSV logs land here)
 ```
