@@ -154,6 +154,21 @@ endif()
 target_compile_options(step5b_cart_pose PRIVATE -O2)
 
 # ----------------------------------------------------------------------------
+# Step 5c: Jacobian-transpose Cartesian PD replay from target CSV
+# ----------------------------------------------------------------------------
+add_executable(step5c_excite src/step5c_excite.cpp)
+target_link_libraries(step5c_excite
+    PRIVATE
+        Franka::Franka
+        Eigen3::Eigen
+        Threads::Threads)
+if(CONDA_BOOST_FILESYSTEM)
+    target_link_options(step5c_excite PRIVATE -Wl,--no-as-needed)
+    target_link_libraries(step5c_excite PRIVATE ${CONDA_BOOST_FILESYSTEM})
+endif()
+target_compile_options(step5c_excite PRIVATE -O2)
+
+# ----------------------------------------------------------------------------
 # Utility: Read current joint positions (single readOnce call)
 # ----------------------------------------------------------------------------
 add_executable(read_current_q src/read_current_q.cpp)
