@@ -36,6 +36,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--amp-x", type=float, default=0.04, help="X amplitude [m].")
     parser.add_argument("--amp-y", type=float, default=0.04, help="Y amplitude [m].")
     parser.add_argument("--amp-z", type=float, default=0.03, help="Z amplitude [m].")
+    parser.add_argument(
+        "--amp-ramp",
+        type=float,
+        default=2.0,
+        help=(
+            "Smooth half-cosine envelope length [s]. Position offset and "
+            "velocity start at zero and reach the unenveloped trajectory at "
+            "t = amp_ramp. Use 0 to disable (NOT recommended on the real robot)."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -47,36 +57,75 @@ def _load_base_sidecar(path: Path) -> dict:
     return payload
 
 
+def _half_cosine_envelope(t_s: np.ndarray, ramp_s: float) -> tuple[np.ndarray, np.ndarray]:
+    """Return (rho, rho_dot) where rho is a smooth 0->1 envelope.
+
+    rho(t)  = 0.5 * (1 - cos(pi * t / T))   for 0 <= t <= T,  else 1
+    rho'(t) = 0.5 * (pi / T) * sin(pi * t / T) for 0 <= t <= T, else 0
+
+    Boundary conditions: rho(0) = rho'(0) = 0 and rho(T) = 1, rho'(T) = 0,
+    so the resulting trajectory starts exactly at the anchor with zero
+    velocity / zero acceleration jump, and ramp-out is smooth too.
+    """
+    if ramp_s <= 0.0:
+        return np.ones_like(t_s), np.zeros_like(t_s)
+    s = np.clip(t_s / ramp_s, 0.0, 1.0)
+    rho = 0.5 * (1.0 - np.cos(np.pi * s))
+    in_ramp = (t_s >= 0.0) & (t_s < ramp_s)
+    rho_dot = np.zeros_like(t_s)
+    rho_dot[in_ramp] = 0.5 * (np.pi / ramp_s) * np.sin(np.pi * s[in_ramp])
+    return rho, rho_dot
+
+
 def _build_traj(
     t_s: np.ndarray,
     x_anchor: np.ndarray,
     amp_x: float,
     amp_y: float,
     amp_z: float,
+    amp_ramp_s: float,
 ) -> tuple[np.ndarray, np.ndarray]:
     two_pi = 2.0 * np.pi
-    # 2-band trajectory for richer excitation.
-    x = x_anchor[0] + amp_x * (
+
+    # 2-band base trajectory (relative to anchor) for richer excitation.
+    bx = amp_x * (
         np.sin(two_pi * 0.15 * t_s) + 0.4 * np.sin(two_pi * 0.7 * t_s)
     )
-    y = x_anchor[1] + amp_y * (
+    by = amp_y * (
         np.sin(two_pi * 0.20 * t_s + np.pi / 3.0) + 0.4 * np.sin(two_pi * 0.9 * t_s)
     )
-    z = x_anchor[2] + amp_z * (
+    bz = amp_z * (
         np.sin(two_pi * 0.30 * t_s + np.pi / 4.0) + 0.4 * np.sin(two_pi * 1.1 * t_s)
     )
 
-    dx = amp_x * (
-        two_pi * 0.15 * np.cos(two_pi * 0.15 * t_s) + 0.4 * two_pi * 0.7 * np.cos(two_pi * 0.7 * t_s)
+    dbx = amp_x * (
+        two_pi * 0.15 * np.cos(two_pi * 0.15 * t_s)
+        + 0.4 * two_pi * 0.7 * np.cos(two_pi * 0.7 * t_s)
     )
-    dy = amp_y * (
+    dby = amp_y * (
         two_pi * 0.20 * np.cos(two_pi * 0.20 * t_s + np.pi / 3.0)
         + 0.4 * two_pi * 0.9 * np.cos(two_pi * 0.9 * t_s)
     )
-    dz = amp_z * (
+    dbz = amp_z * (
         two_pi * 0.30 * np.cos(two_pi * 0.30 * t_s + np.pi / 4.0)
         + 0.4 * two_pi * 1.1 * np.cos(two_pi * 1.1 * t_s)
     )
+
+    # Smooth amplitude envelope so x_des(0) = x_anchor (kills the initial
+    # 3.5 cm |e_pos|_inf coming from the y/z phase offsets) and dx_des(0) = 0
+    # (no velocity feedforward kick at t=0). Also gives a smooth ramp-out
+    # at t = amp_ramp so there is no acceleration spike when full amplitude
+    # is reached.
+    rho, rho_dot = _half_cosine_envelope(t_s, amp_ramp_s)
+
+    x = x_anchor[0] + rho * bx
+    y = x_anchor[1] + rho * by
+    z = x_anchor[2] + rho * bz
+
+    dx = rho_dot * bx + rho * dbx
+    dy = rho_dot * by + rho * dby
+    dz = rho_dot * bz + rho * dbz
+
     x_des = np.column_stack((x, y, z))
     dx_des = np.column_stack((dx, dy, dz))
     return x_des, dx_des
@@ -99,8 +148,21 @@ def main() -> int:
     dt = 1.0 / float(args.hz)
     n = int(round(float(args.duration) * float(args.hz))) + 1
     t_s = np.arange(n, dtype=np.float64) * dt
-    x_des, dx_des = _build_traj(t_s, x_anchor, args.amp_x, args.amp_y, args.amp_z)
+    x_des, dx_des = _build_traj(
+        t_s,
+        x_anchor,
+        args.amp_x,
+        args.amp_y,
+        args.amp_z,
+        float(args.amp_ramp),
+    )
     quat_des = np.repeat(q_anchor_xyzw.reshape(1, 4), n, axis=0)
+
+    initial_offset = np.linalg.norm(x_des[0] - x_anchor)
+    if initial_offset > 1e-6:
+        raise ValueError(
+            f"sanity check failed: |x_des(0) - x_anchor| = {initial_offset:.6e} m"
+        )
 
     out_csv.parent.mkdir(parents=True, exist_ok=True)
     header = "t_s,x_des_x,x_des_y,x_des_z,dx_des_x,dx_des_y,dx_des_z,quat_des_x,quat_des_y,quat_des_z,quat_des_w"
@@ -117,6 +179,7 @@ def main() -> int:
         "hz": int(args.hz),
         "duration_s": float(args.duration),
         "num_samples": int(n),
+        "amp_ramp_s": float(args.amp_ramp),
         "amplitude_m": {"x": float(args.amp_x), "y": float(args.amp_y), "z": float(args.amp_z)},
         "freq_set_hz": {
             "x": [0.15, 0.7],

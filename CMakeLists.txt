@@ -183,6 +183,25 @@ endif()
 target_compile_options(read_current_q PRIVATE -O2)
 
 # ----------------------------------------------------------------------------
+# Utility: Read current EE pose and emit step5b-style sidecar JSON
+# ----------------------------------------------------------------------------
+# Single readOnce() + model.pose(kEndEffector). Output is consumed by
+# panda_control/scripts/gen_excitation_traj.py via --base-sidecar, so step5c
+# excitation trajectories can be anchored on the robot's *current* pose
+# instead of step5b's frozen x_anchor.
+add_executable(read_current_pose src/read_current_pose.cpp)
+target_link_libraries(read_current_pose
+    PRIVATE
+        Franka::Franka
+        Eigen3::Eigen
+        Threads::Threads)
+if(CONDA_BOOST_FILESYSTEM)
+    target_link_options(read_current_pose PRIVATE -Wl,--no-as-needed)
+    target_link_libraries(read_current_pose PRIVATE ${CONDA_BOOST_FILESYSTEM})
+endif()
+target_compile_options(read_current_pose PRIVATE -O2)
+
+# ----------------------------------------------------------------------------
 # Future steps will add more executables here:
 #   step2_task_pd, step3_osc, ...
 # ----------------------------------------------------------------------------
