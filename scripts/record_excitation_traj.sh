@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# One-shot wrapper for held-out excitation data collection (step5c).
+# One-shot wrapper for held-out excitation data collection (step5c / step5d).
 #
 # Pipeline:
 #   1. read_current_pose <ip>    -> tmp/<stem>_anchor.json  (current EE pose)
@@ -10,25 +10,38 @@
 #
 # The anchor JSON is generated fresh each run from the robot's current pose,
 # so the operator does NOT have to manually teach the robot back to the
-# step5b anchor before recording. Just put the EE somewhere with ~10 cm of
-# free workspace in all 3 axes and run.
+# step5b anchor before recording. Just put the EE somewhere with ~10-15 cm of
+# free workspace in all 3 axes (a bit more for step5d, which adds rotation)
+# and run.
 #
-# Env overrides:
-#   DURATION=3.0   -> short safety pre-flight (default 12.0)
-#   KP_POS=200     -> kp for step5c (default 200)
-#   KP_ORI=20      -> kp_ori for step5c (default 20)
-#   RAMP=1.5       -> ramp for step5c (default 1.5)
+# Defaults are selected per output stem:
+#   * STEM starts with "step5c_"  -> step5c amps (4/4/3 cm, no rotation)
+#   * STEM starts with "step5d_"  -> step5d amps (10/10/8 cm + 0.25/0.20 rad)
+#   * Default STEM is step5d_<timestamp>.
+#
+# Env overrides (all optional, applied on top of the per-stem defaults):
+#   DURATION=3.0          -> short safety pre-flight (default 12.0)
+#   KP_POS=200            -> kp for the C++ controller
+#   KP_ORI=20             -> kp_ori for the C++ controller
+#   RAMP=1.5              -> hold-pose ramp duration [s]
+#   AMP_X / AMP_Y / AMP_Z -> low-band position amplitudes [m]
+#   AMP_YAW / AMP_ROLL    -> low-band rotation amplitudes [rad]
+#                             yaw is about base-z (drives j1);
+#                             roll is about EE-z (drives j5/j7).
+#   HIGH_BAND_RATIO=0.20  -> high-band amp as a fraction of low-band amp.
 
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
   echo "Usage: $0 <robot_ip> [output_stem]"
-  echo "Example: $0 172.16.0.2 step5c_$(date +%Y%m%d_%H%M%S)"
+  echo "Examples:"
+  echo "  $0 172.16.0.2                                   # step5d_<ts> (rotation excited)"
+  echo "  $0 172.16.0.2 step5c_\$(date +%Y%m%d_%H%M%S)    # legacy step5c (no rotation)"
   exit 1
 fi
 
 ROBOT_IP="$1"
-STEM="${2:-step5c_$(date +%Y%m%d_%H%M%S)}"
+STEM="${2:-step5d_$(date +%Y%m%d_%H%M%S)}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -47,6 +60,24 @@ DURATION="${DURATION:-12.0}"
 KP_POS="${KP_POS:-200}"
 KP_ORI="${KP_ORI:-20}"
 RAMP="${RAMP:-1.5}"
+
+# Per-stem default amplitudes.
+if [[ "${STEM}" == step5c_* ]]; then
+  AMP_X="${AMP_X:-0.04}"
+  AMP_Y="${AMP_Y:-0.04}"
+  AMP_Z="${AMP_Z:-0.03}"
+  AMP_YAW="${AMP_YAW:-0.0}"
+  AMP_ROLL="${AMP_ROLL:-0.0}"
+  HIGH_BAND_RATIO="${HIGH_BAND_RATIO:-0.40}"
+else
+  # step5d defaults: bigger Cartesian sweep + multi-band base-z and EE-z rotation.
+  AMP_X="${AMP_X:-0.10}"
+  AMP_Y="${AMP_Y:-0.10}"
+  AMP_Z="${AMP_Z:-0.08}"
+  AMP_YAW="${AMP_YAW:-0.25}"
+  AMP_ROLL="${AMP_ROLL:-0.20}"
+  HIGH_BAND_RATIO="${HIGH_BAND_RATIO:-0.20}"
+fi
 
 READ_POSE_BIN="${ROOT_DIR}/build/read_current_pose"
 STEP5C_BIN="${ROOT_DIR}/build/step5c_excite"
@@ -74,11 +105,17 @@ echo "[record_excitation] reading current robot pose ..."
   > /dev/null
 
 echo "[record_excitation] generating excitation target around current anchor ..."
+echo "[record_excitation]   stem      = ${STEM}"
+echo "[record_excitation]   pos amps  = (${AMP_X}, ${AMP_Y}, ${AMP_Z}) m"
+echo "[record_excitation]   ori amps  = yaw=${AMP_YAW} roll=${AMP_ROLL} rad   (high-band ratio ${HIGH_BAND_RATIO})"
 python "${SCRIPT_DIR}/gen_excitation_traj.py" \
   --base-sidecar "${ANCHOR_JSON}" \
   --out-csv "${TARGET_CSV}" \
   --out-sidecar "${TARGET_JSON}" \
-  --duration "${DURATION}"
+  --duration "${DURATION}" \
+  --amp-x "${AMP_X}" --amp-y "${AMP_Y}" --amp-z "${AMP_Z}" \
+  --amp-yaw "${AMP_YAW}" --amp-roll "${AMP_ROLL}" \
+  --high-band-ratio "${HIGH_BAND_RATIO}"
 
 echo "[record_excitation] running step5c_excite (duration=${DURATION}s) ..."
 "${STEP5C_BIN}" "${ROBOT_IP}" \
