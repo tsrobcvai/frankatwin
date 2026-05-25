@@ -34,6 +34,8 @@ POS_COLUMNS = ["x_x", "x_y", "x_z"]
 POS_DES_COLUMNS = ["x_des_x", "x_des_y", "x_des_z"]
 QUAT_COLUMNS = ["quat_x", "quat_y", "quat_z", "quat_w"]
 QUAT_DES_COLUMNS = ["quat_des_x", "quat_des_y", "quat_des_z", "quat_des_w"]
+JOINT_POS_COLUMNS = [f"q{i}" for i in range(1, 8)]
+JOINT_VEL_COLUMNS = [f"dq{i}" for i in range(1, 8)]
 
 
 def parse_args() -> argparse.Namespace:
@@ -142,6 +144,76 @@ def make_theta_figure(t, theta_real, theta_sim, save_path: Path | None, show: bo
     ax.set_title("Shortest-path angle to target quaternion")
     ax.grid(True, alpha=0.3)
     ax.legend(loc="upper right")
+    fig.tight_layout()
+    if save_path is not None:
+        fig.savefig(save_path, dpi=dpi)
+        print(f"[compare] wrote {save_path}")
+    if show:
+        plt.show()
+    plt.close(fig)
+
+
+def make_joints_figure(
+    t: np.ndarray,
+    q_real: np.ndarray,
+    q_sim: np.ndarray,
+    dq_real: np.ndarray,
+    dq_sim: np.ndarray,
+    save_path: Path | None,
+    show: bool,
+    dpi: int,
+):
+    """7x2 grid: per-joint q (left) and dq (right), sim vs real."""
+    import matplotlib.pyplot as plt
+
+    fig, axes = plt.subplots(7, 2, figsize=(12, 14), sharex=True)
+    for j in range(7):
+        ax_q = axes[j, 0]
+        ax_dq = axes[j, 1]
+        ax_q.plot(t, q_real[:, j], color="C0", linewidth=1.0, label="real" if j == 0 else None)
+        ax_q.plot(t, q_sim[:, j], color="C1", linewidth=1.0, alpha=0.85, label="sim" if j == 0 else None)
+        ax_q.set_ylabel(f"joint {j+1}\nq [rad]", fontsize=9)
+        ax_q.grid(True, alpha=0.3)
+        ax_dq.plot(t, dq_real[:, j], color="C0", linewidth=1.0)
+        ax_dq.plot(t, dq_sim[:, j], color="C1", linewidth=1.0, alpha=0.85)
+        ax_dq.set_ylabel(f"dq [rad/s]", fontsize=9)
+        ax_dq.grid(True, alpha=0.3)
+        if j == 0:
+            ax_q.set_title("Joint position q")
+            ax_dq.set_title("Joint velocity dq")
+            ax_q.legend(loc="upper right", fontsize=8)
+    axes[-1, 0].set_xlabel("t [s]")
+    axes[-1, 1].set_xlabel("t [s]")
+    fig.suptitle("Per-joint sim vs real (7x2)")
+    fig.tight_layout()
+    if save_path is not None:
+        fig.savefig(save_path, dpi=dpi)
+        print(f"[compare] wrote {save_path}")
+    if show:
+        plt.show()
+    plt.close(fig)
+
+
+def make_joint_error_figure(
+    t: np.ndarray,
+    q_real: np.ndarray,
+    q_sim: np.ndarray,
+    save_path: Path | None,
+    show: bool,
+    dpi: int,
+):
+    """Single panel: (q_sim - q_real) per joint."""
+    import matplotlib.pyplot as plt
+
+    err = q_sim - q_real
+    fig, ax = plt.subplots(figsize=(10, 5))
+    for j in range(7):
+        ax.plot(t, err[:, j] * 1000.0, linewidth=1.0, label=f"j{j+1}")
+    ax.set_xlabel("t [s]")
+    ax.set_ylabel("q_sim - q_real [mrad]")
+    ax.set_title("Per-joint sim-real position error")
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="upper right", ncol=7, fontsize=8)
     fig.tight_layout()
     if save_path is not None:
         fig.savefig(save_path, dpi=dpi)
@@ -287,6 +359,15 @@ def main() -> int:
     theta_real = quat_theta_xyzw(quat_real, quat_des_real)
     theta_sim = quat_theta_xyzw(quat_sim, quat_des_real)
 
+    have_joints = all(c in real.columns for c in JOINT_POS_COLUMNS) and all(c in sim.columns for c in JOINT_POS_COLUMNS)
+    have_joint_vel = all(c in real.columns for c in JOINT_VEL_COLUMNS) and all(c in sim.columns for c in JOINT_VEL_COLUMNS)
+    if have_joints:
+        q_real_arr = real[JOINT_POS_COLUMNS].to_numpy()
+        q_sim_arr = align_to_real_time(t_real, t_sim, sim[JOINT_POS_COLUMNS].to_numpy())
+    if have_joint_vel:
+        dq_real_arr = real[JOINT_VEL_COLUMNS].to_numpy()
+        dq_sim_arr = align_to_real_time(t_real, t_sim, sim[JOINT_VEL_COLUMNS].to_numpy())
+
     print_sidecar_header(
         Path(args.real_sidecar) if args.real_sidecar else None,
         Path(args.sim_sidecar) if args.sim_sidecar else None,
@@ -310,6 +391,8 @@ def main() -> int:
             "quat": out_dir / "quaternion_timeseries.png",
             "theta": out_dir / "orientation_theta.png",
             "traj3d": out_dir / "traj3d.png",
+            "joints": out_dir / "joint_absolute_values_7x2.png",
+            "joint_err": out_dir / "joint_error_timeseries.png",
         }
 
     if not args.show:
@@ -333,6 +416,17 @@ def main() -> int:
         x_des_real, x_real, x_sim,
         save_paths["traj3d"] if save_paths else None, args.show, args.dpi,
     )
+    if have_joints:
+        make_joints_figure(
+            t_real, q_real_arr, q_sim_arr,
+            dq_real_arr if have_joint_vel else np.zeros_like(q_real_arr),
+            dq_sim_arr if have_joint_vel else np.zeros_like(q_real_arr),
+            save_paths["joints"] if save_paths else None, args.show, args.dpi,
+        )
+        make_joint_error_figure(
+            t_real, q_real_arr, q_sim_arr,
+            save_paths["joint_err"] if save_paths else None, args.show, args.dpi,
+        )
 
     if save_paths:
         print(f"[compare] figures saved under {out_dir}")
