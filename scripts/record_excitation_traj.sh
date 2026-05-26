@@ -29,6 +29,12 @@
 #                             yaw is about base-z (drives j1);
 #                             roll is about EE-z (drives j5/j7).
 #   HIGH_BAND_RATIO=0.20  -> high-band amp as a fraction of low-band amp.
+#   CART_ABORT            -> runtime |e_pos|_inf abort threshold [m].
+#                             step5c default 0.05, step5d default 0.15
+#                             (controller has no dx_des feedforward, so
+#                             tracking lag scales with amplitude).
+#   ORI_ABORT             -> runtime ||e_ori|| abort threshold [rad].
+#                             step5c default 0.30, step5d default 0.40.
 
 set -euo pipefail
 
@@ -61,7 +67,11 @@ KP_POS="${KP_POS:-200}"
 KP_ORI="${KP_ORI:-20}"
 RAMP="${RAMP:-1.5}"
 
-# Per-stem default amplitudes.
+# Per-stem default amplitudes and matching runtime abort thresholds.
+# The abort thresholds need to scale with the commanded amplitude because
+# step5c_excite has no dx_des feedforward, so tracking lag scales roughly
+# linearly with reference amplitude.  Empirically step5c (4/4/3 cm) peaks
+# at ~4.5 cm err_pos_inf and step5d (10/10/8 cm) would peak ~11-12 cm.
 if [[ "${STEM}" == step5c_* ]]; then
   AMP_X="${AMP_X:-0.04}"
   AMP_Y="${AMP_Y:-0.04}"
@@ -69,6 +79,8 @@ if [[ "${STEM}" == step5c_* ]]; then
   AMP_YAW="${AMP_YAW:-0.0}"
   AMP_ROLL="${AMP_ROLL:-0.0}"
   HIGH_BAND_RATIO="${HIGH_BAND_RATIO:-0.40}"
+  CART_ABORT="${CART_ABORT:-0.05}"
+  ORI_ABORT="${ORI_ABORT:-0.30}"
 else
   # step5d defaults: bigger Cartesian sweep + multi-band base-z and EE-z rotation.
   AMP_X="${AMP_X:-0.10}"
@@ -77,6 +89,8 @@ else
   AMP_YAW="${AMP_YAW:-0.25}"
   AMP_ROLL="${AMP_ROLL:-0.20}"
   HIGH_BAND_RATIO="${HIGH_BAND_RATIO:-0.20}"
+  CART_ABORT="${CART_ABORT:-0.15}"
+  ORI_ABORT="${ORI_ABORT:-0.40}"
 fi
 
 READ_POSE_BIN="${ROOT_DIR}/build/read_current_pose"
@@ -117,13 +131,15 @@ python "${SCRIPT_DIR}/gen_excitation_traj.py" \
   --amp-yaw "${AMP_YAW}" --amp-roll "${AMP_ROLL}" \
   --high-band-ratio "${HIGH_BAND_RATIO}"
 
-echo "[record_excitation] running step5c_excite (duration=${DURATION}s) ..."
+echo "[record_excitation] running step5c_excite (duration=${DURATION}s, cart_abort=${CART_ABORT}m, ori_abort=${ORI_ABORT}rad) ..."
 "${STEP5C_BIN}" "${ROBOT_IP}" \
   --traj-csv "${TARGET_CSV}" \
   --kp-pos "${KP_POS}" \
   --kp-ori "${KP_ORI}" \
   --ramp "${RAMP}" \
   --duration "${DURATION}" \
+  --cart-abort "${CART_ABORT}" \
+  --ori-abort "${ORI_ABORT}" \
   --log "${REAL_CSV}" \
   --sidecar "${REAL_JSON}"
 
