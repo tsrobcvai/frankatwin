@@ -1,0 +1,55 @@
+# panda_control runtime config.
+#
+# The NUC daemon reads this to know where the robot lives and what to default
+# gains to. The PC client reads the same file to know where the NUC daemon
+# listens.
+#
+# Override path via the PANDA_CONFIG environment variable:
+#   PANDA_CONFIG=/path/to/local.yaml python examples/cart_impedance.py
+
+network:
+  # Hostname or IP of the NUC running panda_control.daemon. The PC client
+  # connects to tcp://nuc_host:cmd_port (REQ/REP) and tcp://nuc_host:state_port
+  # (SUB).
+  nuc_host: "172.16.0.1"
+  cmd_port: 5555
+  state_port: 5556
+  # PC-side cache depth (number of state frames buffered locally for get_state).
+  state_cache: 256
+
+robot:
+  # FCI IP (visible only from the NUC).
+  ip: "172.16.0.2"
+  # Default home / init joint configuration in radians (7 floats).
+  init_q: [0.0, -0.785398, 0.0, -2.356194, 0.0, 1.570796, 0.785398]
+
+control:
+  # 1 kHz fixed; documented for clarity.
+  frequency_hz: 1000
+  # Default Cartesian impedance gains. These are seeded into shm on osc_shm
+  # startup and can be overridden at runtime via robot.set_gains(...).
+  kp_pos: 200.0      # N/m
+  kp_ori: 20.0       # Nm/rad
+  kd_pos: null       # null -> 2 * sqrt(kp_pos)
+  kd_ori: null       # null -> 2 * sqrt(kp_ori)
+  # Per-tick error clamp inside osc_shm. Acts as a hard safety: |e_pos|_inf
+  # larger than this aborts the control loop; same for ||e_o||.
+  error_delta_pos: 0.05    # m
+  error_delta_rot: 0.30    # rad
+
+paths:
+  # Path to the panda_control build directory (where osc_shm and move_to live).
+  # Resolved relative to the repo root unless absolute.
+  build_dir: "build"
+  # POSIX shm name (must start with '/'). Daemon and osc_shm must agree.
+  shm_name: "/panda_osc"
+
+reset:
+  # Default speed factor for move_to --q. Range (0, 0.5].
+  joint_speed_factor: 0.2
+  # Default duration (s) for move_to --pose.
+  pose_duration: 5.0
+
+# Reserved for future gripper integration. Not used by the current daemon.
+gripper:
+  enabled: false

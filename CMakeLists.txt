@@ -202,6 +202,64 @@ endif()
 target_compile_options(read_current_pose PRIVATE -O2)
 
 # ----------------------------------------------------------------------------
+# Step 10: POSIX shm + Python API
+# ----------------------------------------------------------------------------
+#
+# `osc_shm` is the long-running 1 kHz controller. It mirrors the step5b
+# Jacobian-transpose 6D pose impedance law but reads setpoint/gains from a
+# POSIX shm segment and publishes the robot state into the same segment.
+#
+# `move_to` is the one-shot reset utility. It links the vendored libfranka
+# example MotionGenerator for joint-space min-jerk motion and uses libfranka's
+# built-in CartesianPose motion type for EE-pose targets.
+#
+# Both link librt for shm_open / shm_unlink (POSIX shared memory).
+
+# Vendored helper from libfranka examples (MotionGenerator + setDefaultBehavior).
+add_library(panda_examples_common STATIC src/examples_common.cpp)
+target_include_directories(panda_examples_common PUBLIC src)
+target_link_libraries(panda_examples_common
+    PUBLIC
+        Franka::Franka
+        Eigen3::Eigen)
+target_compile_options(panda_examples_common PRIVATE -O2)
+
+# ----------------------------------------------------------------------------
+# osc_shm: long-running 1 kHz Cartesian impedance controller (shm-backed)
+# ----------------------------------------------------------------------------
+add_executable(osc_shm src/osc_shm.cpp)
+target_include_directories(osc_shm PRIVATE src)
+target_link_libraries(osc_shm
+    PRIVATE
+        Franka::Franka
+        Eigen3::Eigen
+        Threads::Threads
+        rt)
+if(CONDA_BOOST_FILESYSTEM)
+    target_link_options(osc_shm PRIVATE -Wl,--no-as-needed)
+    target_link_libraries(osc_shm PRIVATE ${CONDA_BOOST_FILESYSTEM})
+endif()
+target_compile_options(osc_shm PRIVATE -O2)
+
+# ----------------------------------------------------------------------------
+# move_to: one-shot reset via libfranka MotionGenerator (joint) or
+# franka::CartesianPose (EE pose)
+# ----------------------------------------------------------------------------
+add_executable(move_to src/move_to.cpp)
+target_include_directories(move_to PRIVATE src)
+target_link_libraries(move_to
+    PRIVATE
+        panda_examples_common
+        Franka::Franka
+        Eigen3::Eigen
+        Threads::Threads)
+if(CONDA_BOOST_FILESYSTEM)
+    target_link_options(move_to PRIVATE -Wl,--no-as-needed)
+    target_link_libraries(move_to PRIVATE ${CONDA_BOOST_FILESYSTEM})
+endif()
+target_compile_options(move_to PRIVATE -O2)
+
+# ----------------------------------------------------------------------------
 # Future steps will add more executables here:
 #   step2_task_pd, step3_osc, ...
 # ----------------------------------------------------------------------------
