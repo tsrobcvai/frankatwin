@@ -56,8 +56,8 @@ const Eigen::Matrix<double, 7, 1> Q_MAX =
      3.7525, 2.8973)
         .finished();
 
-constexpr double CART_TRACK_ABORT_M = 0.05;
-constexpr double ORI_TRACK_ABORT_RAD = 0.30;
+constexpr double CART_TRACK_ABORT_M_DEFAULT = 0.05;
+constexpr double ORI_TRACK_ABORT_RAD_DEFAULT = 0.30;
 
 std::atomic<bool> g_stop_flag{false};
 void signal_handler(int /*signo*/) { g_stop_flag.store(true); }
@@ -75,6 +75,12 @@ struct Args {
   double ramp{1.5};
   bool no_coriolis{false};
   int print_err_every{100};
+  // Runtime safety abort thresholds. Defaults match step5b/step5c (small-amp
+  // sweeps). step5d uses larger Cartesian + rotation amplitudes and should
+  // pass --cart-abort / --ori-abort with looser thresholds because this
+  // controller has no velocity feedforward and tracking lag scales with amp.
+  double cart_track_abort_m{CART_TRACK_ABORT_M_DEFAULT};
+  double ori_track_abort_rad{ORI_TRACK_ABORT_RAD_DEFAULT};
   std::string log_path;
   std::string sidecar_path;
 };
@@ -108,6 +114,7 @@ bool parse_args(int argc, char** argv, Args& out) {
     std::cerr << "Usage: " << argv[0] << " <robot_ip> --traj-csv path "
               << "[--kp-pos K] [--kd-pos K] [--kp-ori K] [--kd-ori K] "
               << "[--duration sec] [--ramp sec] [--no-coriolis] "
+              << "[--cart-abort m] [--ori-abort rad] "
               << "[--print-err-every N] [--log path] [--sidecar path]\n";
     return false;
   }
@@ -150,6 +157,14 @@ bool parse_args(int argc, char** argv, Args& out) {
     } else if (key == "--no-coriolis") {
       out.no_coriolis = true;
       i += 1;
+    } else if (key == "--cart-abort") {
+      if (i + 1 >= argc) return false;
+      out.cart_track_abort_m = std::atof(argv[i + 1]);
+      i += 2;
+    } else if (key == "--ori-abort") {
+      if (i + 1 >= argc) return false;
+      out.ori_track_abort_rad = std::atof(argv[i + 1]);
+      i += 2;
     } else if (key == "--print-err-every") {
       if (i + 1 >= argc) return false;
       out.print_err_every = std::atoi(argv[i + 1]);
@@ -177,6 +192,16 @@ bool parse_args(int argc, char** argv, Args& out) {
   if (!out.kd_ori_set) out.kd_ori = 2.0 * std::sqrt(out.kp_ori);
   if (out.ramp < 0.0) out.ramp = 0.0;
   if (out.print_err_every < 0) return false;
+  if (!(out.cart_track_abort_m > 0.0)) {
+    std::cerr << "[step5c] --cart-abort must be > 0 (got "
+              << out.cart_track_abort_m << ")\n";
+    return false;
+  }
+  if (!(out.ori_track_abort_rad > 0.0)) {
+    std::cerr << "[step5c] --ori-abort must be > 0 (got "
+              << out.ori_track_abort_rad << ")\n";
+    return false;
+  }
   return true;
 }
 
@@ -449,7 +474,11 @@ void write_sidecar_json(const RunRecord& r) {
   f << "    \"ramp\": " << json_double(r.args.ramp) << ",\n";
   f << "    \"no_coriolis\": " << (r.args.no_coriolis ? "true" : "false")
     << ",\n";
-  f << "    \"print_err_every\": " << r.args.print_err_every << "\n";
+  f << "    \"print_err_every\": " << r.args.print_err_every << ",\n";
+  f << "    \"cart_track_abort_m\": " << json_double(r.args.cart_track_abort_m)
+    << ",\n";
+  f << "    \"ori_track_abort_rad\": "
+    << json_double(r.args.ori_track_abort_rad) << "\n";
   f << "  },\n";
   if (r.has_init) {
     f << "  \"q_init\": " << json_double_array(r.q_init.data(), 7) << ",\n";
@@ -551,6 +580,10 @@ int main(int argc, char** argv) {
             << "[step5c] ramp = " << args.ramp << " s\n"
             << "[step5c] coriolis = "
             << (args.no_coriolis ? "disabled (--no-coriolis)" : "enabled")
+            << "\n"
+            << "[step5c] abort thresholds: |e_pos|_inf > "
+            << args.cart_track_abort_m << " m, ||e_ori|| > "
+            << args.ori_track_abort_rad << " rad"
             << std::endl;
 
   std::ofstream log_file;
@@ -725,12 +758,12 @@ int main(int argc, char** argv) {
           }
         }
       }
-      if (abort_code == 0 && err_pos_inf > CART_TRACK_ABORT_M) {
+      if (abort_code == 0 && err_pos_inf > args.cart_track_abort_m) {
         abort_code = 1;
         abort_time = elapsed;
         abort_value = err_pos_inf;
       }
-      if (abort_code == 0 && err_ori_norm > ORI_TRACK_ABORT_RAD) {
+      if (abort_code == 0 && err_ori_norm > args.ori_track_abort_rad) {
         abort_code = 3;
         abort_time = elapsed;
         abort_value = err_ori_norm;
