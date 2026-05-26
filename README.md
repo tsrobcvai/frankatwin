@@ -11,6 +11,85 @@ We are *not* using deoxys's NUC/ZMQ/protobuf architecture, and we are *not*
 using `panda-py`. The goal is full transparency from policy command down to
 joint torque.
 
+## Setup
+
+The repo is split into two install paths. The **NUC** (PREEMPT_RT, directly
+cabled to the Franka FCI port) builds the C++ binaries and runs the daemon.
+The **PC** (workstation with GPU / policy / data tooling) only needs the
+Python package.
+
+### NUC side (C++ + Python)
+
+Build the C++ binaries (`step1_*`, `step5b_*`, `osc_shm`, `move_to`, ...)
+and install the Python package locally so the daemon can be started.
+
+```bash
+git clone <repo> /home/nuc1/Projects/panda_control
+cd /home/nuc1/Projects/panda_control
+
+# 1. System deps (libfranka is reused from deoxys's build tree by default;
+#    see `HANDOFF.md` §6 if you need to switch sources).
+sudo apt install libeigen3-dev
+
+# 2. Build C++.
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+#   Sanity check:
+ls build/osc_shm build/move_to
+
+# 3. Install Python package (editable). pyzmq + numpy + pyyaml are pulled in.
+pip install -e .
+
+# 4. Sanity-check the shm layout binding (compiles a tiny C++ helper, no robot).
+PYTHONPATH=python python -m pytest tests/test_shm_layout.py -v
+```
+
+Make sure deoxys's `franka-interface` daemon is **not** running before
+launching `osc_shm` or the panda_control daemon:
+
+```bash
+pgrep -a franka-interface || echo "ok"
+```
+
+### PC side (Python only)
+
+The PC never talks to libfranka; it only talks to the NUC daemon over ZMQ.
+
+```bash
+git clone <repo> ~/Projects/panda_control
+cd ~/Projects/panda_control
+pip install -e .
+
+# Edit config/robot.yaml if your NUC is reachable at something other than
+# 172.16.0.1 or you want different default gains.
+$EDITOR config/robot.yaml
+```
+
+That's it. No C++ build, no libfranka, no PREEMPT_RT kernel required on this
+machine. Verify the install:
+
+```bash
+python -c "import panda_control; print(panda_control.load_config().robot.ip)"
+```
+
+### Verifying the full pipeline (smoke test)
+
+On the NUC:
+
+```bash
+python -m panda_control.daemon --config config/robot.yaml
+```
+
+On the PC:
+
+```bash
+python examples/reset_home.py    # blocking, ~3-5 s
+python examples/cart_impedance.py
+```
+
+See [Step 10](#step-10-python-cartesian-impedance-api-pc--nuc) below for the
+Python API reference.
+
 ## Roadmap
 
 | Step | Goal | Files |
@@ -19,9 +98,9 @@ joint torque.
 | 2  | Task-space PD (no inertial decoupling). Hold a fixed EE pose. | `src/step2_task_pd.cpp` |
 | 3  | Add null-space term for the 7-DOF redundancy. | `src/step3_task_pd_null.cpp` |
 | 4  | OSC with inertial decoupling (full operational-space control). | `src/step4_osc.cpp` |
-| 5  | Wrap step 4 with POSIX shared memory: C++ binary takes `target_pose / Kp / Kd` from shm. | `src/osc_shm.cpp` + `python/panda_control/shm_layout.py` |
-| 6  | Python `PandaController(mp.Process)` mirroring `RTDEInterpolationController`. | `python/panda_control/controller.py` |
-| 7  | sim2real evaluation harness mirroring `isaaclab_rollout/rollout_act.py` patterns. | `python/scripts/eval_real.py` |
+| 5b | 6D pose Jacobian-transpose Cartesian PD (no Lambda). | `src/step5b_cart_pose.cpp` |
+| **10** | POSIX shm + Python API: PC ↔ NUC ZMQ daemon, `osc_shm` (1 kHz J^T impedance) and `move_to` (libfranka MotionGenerator / CartesianPose) | `src/osc_shm.cpp`, `src/move_to.cpp`, `python/panda_control/*.py` |
+| 11 | sim2real evaluation harness mirroring `isaaclab_rollout/rollout_act.py` patterns. | `python/scripts/eval_real.py` |
 
 Implemented so far: step 1 (joint hold), step 3 (explicit Coriolis for hold),
 and step 4 (joint trajectory tracking).
@@ -489,26 +568,109 @@ It prints:
 4. **Step up duration**: `DURATION=30`, `DURATION=120`. Watch for
    thermal/error issues over time.
 
+## Step 10: Python Cartesian impedance API (PC ↔ NUC)
+
+1 kHz J^T 6D pose impedance (same control law as Step 5b) driven from any
+Python process. PC sends EE pose / gains over ZMQ; NUC daemon writes them to
+POSIX shm; C++ binary `osc_shm` reads the shm and runs the 1 kHz loop. Gains
+live in `config/robot.yaml`.
+
+### On the NUC (once per boot)
+
+```bash
+cd /home/nuc1/Projects/panda_control
+python -m panda_control.daemon --config config/robot.yaml
+```
+
+The daemon owns the shm segment, launches `build/osc_shm`, and exposes
+`tcp://*:5555` (REQ/REP) + `tcp://*:5556` (state PUB @ 100 Hz).
+
+### On the PC
+
+```bash
+pip install -e .    # one-time
+python examples/cart_impedance.py    # 20 Hz z-axis sinusoid
+python examples/reset_home.py        # one-shot move to home
+```
+
+Python API:
+
+```python
+from panda_control import load_config, RemotePandaClient
+
+cfg = load_config()           # reads ./config/robot.yaml or $PANDA_CONFIG
+with RemotePandaClient(cfg) as robot:
+    robot.move_to_q(cfg.robot.init_q, speed_factor=0.2)   # blocking reset
+    robot.set_gains(kp_pos=200, kp_ori=20)
+    robot.set_ee_target(pos, quat_wxyz)                   # 10–20 Hz from policy
+    state = robot.get_state()                             # latest cached frame
+```
+
+Notes:
+- `move_to_q` uses libfranka's `MotionGenerator` (min-jerk, no external IK).
+- `move_to_pose` uses libfranka's `franka::CartesianPose` motion type (also
+  no external IK; libfranka rate-limits internally).
+- `set_ee_target` does NOT interpolate; rely on the J^T impedance for
+  smoothing (`Kp_pos ≈ 100–300`, `Kp_ori ≈ 20` are reasonable for Franka FR3).
+- Reset and impedance share one libfranka session; the daemon stops `osc_shm`
+  before invoking `move_to`, then restarts it. Do not run `osc_shm` and
+  `move_to` manually at the same time.
+- The `franka-interface` daemon (deoxys) must NOT be running.
+
+CLI for the underlying binaries (useful for debugging without Python):
+
+```bash
+./build/osc_shm 172.16.0.2 --init-shm --print-every 1000
+./build/move_to 172.16.0.2 --q  0 -0.785 0 -2.356 0 1.571 0.785 --speed-factor 0.2
+./build/move_to 172.16.0.2 --pose 0.5 0.0 0.4 1 0 0 0 --duration 5.0
+```
+
+The Python ↔ C++ POSIX shm layout is pinned by `tests/test_shm_layout.py`,
+which compiles `tests/dump_shm_offsets.cpp` and cross-checks every field
+against `python/panda_control/shm_layout.py`. Run it after any layout edit:
+
+```bash
+PYTHONPATH=python python -m pytest tests/test_shm_layout.py
+```
+
 ## Layout
 
 ```
 panda_control/
 |-- CMakeLists.txt
 |-- README.md
+|-- HANDOFF.md
+|-- pyproject.toml
 |-- .gitignore
 |-- src/
-|   |-- step1_joint_pd.cpp
+|   |-- step1_joint_pd.cpp        # Step 1 / 3 / 4 / 5* are the bottom-up stack
 |   |-- step3_joint_pd_coriolis.cpp
 |   |-- step4_joint_traj.cpp
 |   |-- step5_cart_pd.cpp
-|   `-- step5b_cart_pose.cpp
-|-- scripts/
-|   |-- run_step1.sh
-|   |-- run_step3.sh
-|   |-- run_step4.sh
-|   |-- run_step5.sh
-|   |-- run_step5b.sh
-|   `-- plot_step5.py
+|   |-- step5b_cart_pose.cpp
+|   |-- step5c_excite.cpp
+|   |-- shm_layout.h              # Step 10: POSIX shm contract
+|   |-- osc_shm.cpp               # Step 10: 1 kHz controller, shm-backed
+|   |-- move_to.cpp               # Step 10: libfranka reset utility
+|   |-- examples_common.{h,cpp}   # vendored MotionGenerator
+|   |-- read_current_q.cpp
+|   `-- read_current_pose.cpp
+|-- scripts/                       # bash wrappers + plotting for steps 1-5
+|-- python/
+|   `-- panda_control/
+|       |-- config.py             # load_config + schema validation
+|       |-- shm_layout.py         # numpy.dtype mirror of shm_layout.h
+|       |-- local_controller.py   # LocalPandaController (NUC, same-machine)
+|       |-- remote_client.py      # RemotePandaClient (PC, ZMQ)
+|       `-- daemon.py             # NUC ZMQ daemon, REP+PUB
+|-- config/
+|   `-- robot.yaml                # IPs, default gains, init_q, paths
+|-- examples/
+|   |-- cart_impedance.py
+|   `-- reset_home.py
+|-- tests/
+|   |-- dump_shm_offsets.cpp
+|   `-- test_shm_layout.py
 `-- data/
-    `-- .gitkeep         (CSV logs land here)
+    `-- .gitkeep                  (CSV logs land here)
 ```
