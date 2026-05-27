@@ -17,40 +17,19 @@ held-out trajectories.
 ## Architecture
 
 ```
-        PC (workstation)                            NUC (cabled to Franka FCI)                  Franka FR3
-        ──────────────                              ───────────────────                         ──────────
-                                       ZMQ REQ/REP @ port 5555
-        examples/cart_impedance.py ◄──────────────────────────────►  panda_control.daemon
-        examples/reset_home.py                                              │
-                                       ZMQ PUB/SUB @ port 5556              │  spawns / supervises
-        Python user code               ◄──────  state stream  ──────        ▼
-                ▲                                                      ┌─── osc_shm ────┐  libfranka
-                │ uses                                                 │  1 kHz J^T     │  ─────────►   FR3
-                ▼                                                      │  impedance     │     control
-        panda_control.remote_client                                    │  controller    │     loop
-        (RemotePandaClient)                                            └────────────────┘
-                                       POSIX shm (/panda_osc)               ▲
-                                       state ring buffer +                  │  one-shot resets
-                                       command seqlock                      ▼
-                                                                       ┌─── move_to ────┐
-                                                                       │  MotionGenerator│
-                                                                       └────────────────┘
+      PC                          NUC                            FR3
+  ┌──────────┐    ZMQ      ┌──────────────┐                 ┌─────────┐
+  │  user    │ ◄────────►  │  daemon      │                 │ Franka  │
+  │  scripts │             │     ↕ shm    │   libfranka     │  FCI    │
+  │  +remote │             │   osc_shm    │ ──────────────► │         │
+  │  client  │             │   (1 kHz)    │                 └─────────┘
+  └──────────┘             │   move_to    │
+                           └──────────────┘
 ```
 
-- **`osc_shm`** is the long-running 1 kHz Jacobian-transpose Cartesian impedance controller. It reads target pose / gains / safety clamps from POSIX shared memory and publishes joint + EE state into the same segment.
-- **`move_to`** is a short-lived libfranka MotionGenerator used for joint-space resets. The daemon stops `osc_shm`, runs `move_to`, then restarts `osc_shm` (libfranka allows only one FCI session at a time).
-- **`panda_control.daemon`** (Python) owns the shm segment, supervises both binaries, and bridges them to the PC over ZMQ.
-
-## Repository Layout
-
-```
-src/                  C++ realtime binaries (NUC): osc_shm, move_to, read_current_{q,pose}
-python/panda_control/ Python package: daemon, RemotePandaClient, shm bindings
-examples/             reset_home.py, cart_impedance.py
-scripts/              excitation trajectory generators (v3, v4) + sim-vs-real comparison
-config/robot.yaml     FCI IP, NUC host, default gains, safety clamps
-tests/                Python ↔ C++ shm layout contract test
-```
+- **`osc_shm`** — long-running 1 kHz Jacobian-transpose Cartesian impedance controller; reads target pose / gains / safety clamps from POSIX shm and publishes joint + EE state back.
+- **`move_to`** — short-lived libfranka MotionGenerator for joint-space resets. The daemon stops `osc_shm`, runs `move_to`, then restarts `osc_shm` (libfranka allows only one FCI session at a time).
+- **`panda_control.daemon`** (Python) — owns the shm segment, supervises both binaries, bridges them to the PC over ZMQ (`tcp://*:5555` cmd / `tcp://*:5556` state).
 
 ## Installation
 
@@ -96,6 +75,18 @@ pip install -e .
 # Verify your robot.yaml points at the NUC.
 grep nuc_host config/robot.yaml   # default: 172.16.0.1
 ```
+
+## Configuration
+
+`config/robot.yaml` keeps NUC and PC in agreement on:
+
+- `network.nuc_host` / `cmd_port` / `state_port` — ZMQ endpoints.
+- `robot.ip` — FCI IP, used only on the NUC side.
+- `robot.init_q` — joint-space home configuration.
+- `control.kp_pos` / `kp_ori` — default impedance gains (overridable per-run via `set_gains`).
+- `control.error_delta_pos` / `error_delta_rot` — per-tick safety clamps inside `osc_shm` (overridable at runtime via `set_gains(error_delta_pos=…)`).
+
+Override the config path with `PANDA_CONFIG=/path/to/local.yaml`.
 
 ## Quick Start
 
@@ -260,18 +251,6 @@ sim trace sits on top of the real trace, individual-joint RMSE 12-30 mrad
 (1.9 - 8.3 % of per-joint motion range):
 
 ![Per-joint q and dq: sim vs real](./docs/images/v3_sysid_v4chirp_joints.png)
-
-## Configuration
-
-`config/robot.yaml` keeps NUC and PC in agreement on:
-
-- `network.nuc_host` / `cmd_port` / `state_port` — ZMQ endpoints.
-- `robot.ip` — FCI IP, used only on the NUC side.
-- `robot.init_q` — joint-space home configuration.
-- `control.kp_pos` / `kp_ori` — default impedance gains (overridable per-run via `set_gains`).
-- `control.error_delta_pos` / `error_delta_rot` — per-tick safety clamps inside `osc_shm` (overridable at runtime via `set_gains(error_delta_pos=…)`).
-
-Override the config path with `PANDA_CONFIG=/path/to/local.yaml`.
 
 ## Safety Notes
 
