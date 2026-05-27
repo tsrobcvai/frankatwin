@@ -44,58 +44,13 @@ held-out trajectories.
 ## Repository Layout
 
 ```
-src/                          C++ realtime binaries (NUC only)
-  osc_shm.cpp                 1 kHz Cartesian impedance controller
-  move_to.cpp                 libfranka reset utility
-  read_current_q.cpp          one-shot joint position read
-  read_current_pose.cpp       one-shot EE pose read (sidecar JSON output)
-  shm_layout.h                C++ shm contract
-  examples_common.{cpp,h}     vendored libfranka MotionGenerator
-
-python/panda_control/         Python package (PC and NUC)
-  daemon.py                   NUC-side ZMQ daemon (REP + PUB)
-  local_controller.py         shm manager + osc_shm/move_to lifecycle
-  remote_client.py            PC-side ZMQ client (RemotePandaClient)
-  shm_layout.py               Python shm contract (pinned by tests/)
-  config.py                   YAML config loader
-
-examples/
-  reset_home.py               joint-space reset to home pose
-  cart_impedance.py           Cartesian impedance + excitation runner
-                              (modes: sine | step5d | chirp)
-
-scripts/
-  gen_excitation_traj.py      v3 two-band excitation generator
-  gen_chirp_traj.py           v4 linear-chirp excitation generator
-  compare_sim_real.py         3-way overlay: target vs real vs sim
-  read_q.sh                   convenience wrapper around read_current_q
-
-config/robot.yaml             FCI IP, NUC host, default gains, safety clamps
-tests/                        shm layout contract test (Python ↔ C++ pinned)
+src/                  C++ realtime binaries (NUC): osc_shm, move_to, read_current_{q,pose}
+python/panda_control/ Python package: daemon, RemotePandaClient, shm bindings
+examples/             reset_home.py, cart_impedance.py
+scripts/              excitation trajectory generators (v3, v4) + sim-vs-real comparison
+config/robot.yaml     FCI IP, NUC host, default gains, safety clamps
+tests/                Python ↔ C++ shm layout contract test
 ```
-
-## Excitation Trajectories
-
-Both trajectories drive the same `cart_impedance.py` Cartesian impedance loop;
-they differ only in the *reference* sent to the controller.
-
-| | **v3** (`gen_excitation_traj.py`) | **v4** (`gen_chirp_traj.py`) |
-|---|---|---|
-| Spectrum | two-band sinusoid per axis (low ≈ 0.15-0.30 Hz + high ≈ 0.7-1.1 Hz) | linear chirp f<sub>0</sub>→f<sub>1</sub>, 0.1→1.5 Hz |
-| Active DOFs | x, y, z + optional yaw / roll | x, y, z, r<sub>x</sub>, r<sub>y</sub>, r<sub>z</sub> (always-on, π/3 phase-staggered) |
-| Amplitudes | 4 / 4 / 3 cm + 0.05 rad yaw/roll | 10 / 10 / 15 cm + 0.50 / 0.25 / 0.50 rad |
-| Envelope | symmetric 2 s half-cosine | asymmetric 2 s up / 3 s down (linear) |
-| Duration | 12 s | 8 s |
-| Origin | this repo (step5d lineage) | adapted from UR5e [`omnireset/diffusion_policy/scripts/sim2real/collect_sysid_data.py`](https://github.com/uw-lab/omnireset) |
-
-### v4 changes vs the UR5e original
-
-UR5e collects at 500 Hz with kp=1000 / kp_rot=50 and chirps to 3.0 Hz. Three
-Franka-specific adjustments were needed:
-
-1. **f<sub>1</sub> halved 3.0 → 1.5 Hz** (and 0.7 Hz for the operating point used in production). Franka's wrist joints J5–J7 have a 12 N·m effort limit; at the UR5e chirp top frequency they saturate, the controller goes unstable, and `osc_shm` latches its abort clamp.
-2. **kp lowered 1000 → 500 N/m, kp<sub>ori</sub> 50 → 30** for application parity with the downstream policy controller.
-3. **Per-tick safety clamps relaxed** (`error_delta_pos: 0.05 → 0.15 m`, `error_delta_rot: 0.30 → 0.80 rad`) because the lower kp + UR5e amplitudes give larger steady-state tracking error than osc_shm's default safety envelope tolerates. These can be set at runtime via `cart_impedance.py --err-delta-pos / --err-delta-rot`.
 
 ## Installation
 
@@ -220,7 +175,30 @@ consumes it on the next 1 kHz tick.
 The sysid optimizer (CMA-ES over 29 parameters: armature + static / dynamic /
 viscous friction × 7 joints + motor delay) lives in the
 [uw-lab/IsaacLab](https://github.com/uw-lab/IsaacLab) tree under
-`scripts/tools/sysid_franka_osc.py`. The end-to-end workflow:
+`scripts/tools/sysid_franka_osc.py`. This repo ships the excitation generators
+and the real-side runner; the optimizer and IsaacLab sim live next door.
+
+### Excitation Trajectories
+
+Both trajectories drive the same `cart_impedance.py` Cartesian impedance loop;
+they differ only in the *reference* sent to the controller.
+
+| | **v3** (`gen_excitation_traj.py`) | **v4** (`gen_chirp_traj.py`) |
+|---|---|---|
+| Spectrum | two-band sinusoid per axis (low ≈ 0.15-0.30 Hz + high ≈ 0.7-1.1 Hz) | linear chirp f<sub>0</sub>→f<sub>1</sub>, 0.1→1.5 Hz |
+| Active DOFs | x, y, z + optional yaw / roll | x, y, z, r<sub>x</sub>, r<sub>y</sub>, r<sub>z</sub> (always-on, π/3 phase-staggered) |
+| Amplitudes | 4 / 4 / 3 cm + 0.05 rad yaw/roll | 10 / 10 / 15 cm + 0.50 / 0.25 / 0.50 rad |
+| Envelope | symmetric 2 s half-cosine | asymmetric 2 s up / 3 s down (linear) |
+| Duration | 12 s | 8 s |
+| Origin | this repo (step5d lineage) | adapted from UR5e [`omnireset/diffusion_policy/scripts/sim2real/collect_sysid_data.py`](https://github.com/uw-lab/omnireset) |
+
+v4 follows the UR5e chirp shape exactly, with three Franka-specific deltas:
+
+1. **f<sub>1</sub> halved 3.0 → 1.5 Hz** (0.7 Hz for the production operating point). Franka's wrist joints J5–J7 have a 12 N·m effort limit; at the UR5e chirp top frequency they saturate and `osc_shm` latches its abort clamp.
+2. **kp lowered 1000 → 500 N/m, kp<sub>ori</sub> 50 → 30** for parity with the downstream policy controller.
+3. **Per-tick safety clamps relaxed** (`error_delta_pos: 0.05 → 0.15 m`, `error_delta_rot: 0.30 → 0.80 rad`) because lower kp + UR5e amplitudes give larger steady-state tracking error than osc_shm's default envelope tolerates. Set at runtime via `cart_impedance.py --err-delta-pos / --err-delta-rot`.
+
+### Workflow
 
 1. Collect real excitation data with `examples/cart_impedance.py --mode {step5d|chirp}` — produces `<run>.csv` and `<run>.json` sidecar.
 2. Optimize: `sysid_franka_osc.py --real_csv <run>.csv --real_sidecar <run>.json …` — produces `sysid_best_params.json`.
