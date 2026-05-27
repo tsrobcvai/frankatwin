@@ -59,7 +59,7 @@ find_package(Threads REQUIRED)
 # Conda boost workaround for secure-exec binaries (file capabilities)
 # ----------------------------------------------------------------------------
 #
-# When step1_joint_pd has file capabilities (e.g. cap_sys_nice), glibc treats
+# When osc_shm runs with file capabilities (e.g. cap_sys_nice), glibc treats
 # it as secure-exec and ignores LD_LIBRARY_PATH. Some transitive dependencies
 # (via pinocchio parsers) require boost_filesystem from conda.
 #
@@ -77,96 +77,6 @@ if(DEFINED ENV{CONDA_PREFIX})
         message(WARNING "panda_control: conda boost filesystem not found under $ENV{CONDA_PREFIX}/lib")
     endif()
 endif()
-
-# ----------------------------------------------------------------------------
-# Step 1: Joint PD hold (standalone)
-# ----------------------------------------------------------------------------
-add_executable(step1_joint_pd src/step1_joint_pd.cpp)
-target_link_libraries(step1_joint_pd
-    PRIVATE
-        Franka::Franka
-        Eigen3::Eigen
-        Threads::Threads)
-if(CONDA_BOOST_FILESYSTEM)
-    target_link_options(step1_joint_pd PRIVATE -Wl,--no-as-needed)
-    target_link_libraries(step1_joint_pd PRIVATE ${CONDA_BOOST_FILESYSTEM})
-endif()
-target_compile_options(step1_joint_pd PRIVATE -O2)
-
-# ----------------------------------------------------------------------------
-# Step 3: Joint PD + explicit Coriolis compensation (standalone)
-# ----------------------------------------------------------------------------
-add_executable(step3_joint_pd_coriolis src/step3_joint_pd_coriolis.cpp)
-target_link_libraries(step3_joint_pd_coriolis
-    PRIVATE
-        Franka::Franka
-        Eigen3::Eigen
-        Threads::Threads)
-if(CONDA_BOOST_FILESYSTEM)
-    target_link_options(step3_joint_pd_coriolis PRIVATE -Wl,--no-as-needed)
-    target_link_libraries(step3_joint_pd_coriolis PRIVATE ${CONDA_BOOST_FILESYSTEM})
-endif()
-target_compile_options(step3_joint_pd_coriolis PRIVATE -O2)
-
-# ----------------------------------------------------------------------------
-# Step 4: Joint trajectory tracking (same law as step 3, time-varying q_des)
-# ----------------------------------------------------------------------------
-add_executable(step4_joint_traj src/step4_joint_traj.cpp)
-target_link_libraries(step4_joint_traj
-    PRIVATE
-        Franka::Franka
-        Eigen3::Eigen
-        Threads::Threads)
-if(CONDA_BOOST_FILESYSTEM)
-    target_link_options(step4_joint_traj PRIVATE -Wl,--no-as-needed)
-    target_link_libraries(step4_joint_traj PRIVATE ${CONDA_BOOST_FILESYSTEM})
-endif()
-target_compile_options(step4_joint_traj PRIVATE -O2)
-
-# ----------------------------------------------------------------------------
-# Step 5: Jacobian-transpose Cartesian PD (position-only, no Lambda)
-# ----------------------------------------------------------------------------
-add_executable(step5_cart_pd src/step5_cart_pd.cpp)
-target_link_libraries(step5_cart_pd
-    PRIVATE
-        Franka::Franka
-        Eigen3::Eigen
-        Threads::Threads)
-if(CONDA_BOOST_FILESYSTEM)
-    target_link_options(step5_cart_pd PRIVATE -Wl,--no-as-needed)
-    target_link_libraries(step5_cart_pd PRIVATE ${CONDA_BOOST_FILESYSTEM})
-endif()
-target_compile_options(step5_cart_pd PRIVATE -O2)
-
-# ----------------------------------------------------------------------------
-# Step 5b: Jacobian-transpose Cartesian PD (6D pose, no Lambda)
-# ----------------------------------------------------------------------------
-add_executable(step5b_cart_pose src/step5b_cart_pose.cpp)
-target_link_libraries(step5b_cart_pose
-    PRIVATE
-        Franka::Franka
-        Eigen3::Eigen
-        Threads::Threads)
-if(CONDA_BOOST_FILESYSTEM)
-    target_link_options(step5b_cart_pose PRIVATE -Wl,--no-as-needed)
-    target_link_libraries(step5b_cart_pose PRIVATE ${CONDA_BOOST_FILESYSTEM})
-endif()
-target_compile_options(step5b_cart_pose PRIVATE -O2)
-
-# ----------------------------------------------------------------------------
-# Step 5c: Jacobian-transpose Cartesian PD replay from target CSV
-# ----------------------------------------------------------------------------
-add_executable(step5c_excite src/step5c_excite.cpp)
-target_link_libraries(step5c_excite
-    PRIVATE
-        Franka::Franka
-        Eigen3::Eigen
-        Threads::Threads)
-if(CONDA_BOOST_FILESYSTEM)
-    target_link_options(step5c_excite PRIVATE -Wl,--no-as-needed)
-    target_link_libraries(step5c_excite PRIVATE ${CONDA_BOOST_FILESYSTEM})
-endif()
-target_compile_options(step5c_excite PRIVATE -O2)
 
 # ----------------------------------------------------------------------------
 # Utility: Read current joint positions (single readOnce call)
@@ -259,7 +169,3 @@ if(CONDA_BOOST_FILESYSTEM)
 endif()
 target_compile_options(move_to PRIVATE -O2)
 
-# ----------------------------------------------------------------------------
-# Future steps will add more executables here:
-#   step2_task_pd, step3_osc, ...
-# ----------------------------------------------------------------------------
