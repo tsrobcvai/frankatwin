@@ -1,6 +1,6 @@
 """Cartesian task-impedance example.
 
-Two trajectory modes are supported (selected via ``--mode``):
+Three trajectory modes are supported (selected via ``--mode``):
 
 * ``sine`` (default, original behavior): single z-axis sinusoid around the
   pose captured at startup. Used as a smoke test for the PC ↔ NUC daemon
@@ -12,6 +12,12 @@ Two trajectory modes are supported (selected via ``--mode``):
   v3 training data). Intended for the Python ↔ sim2real comparison: drives a
   step5d-shaped target via the 50 Hz Python control loop, optionally logs
   per-tick state to CSV + sidecar so the IsaacLab replay can be applied.
+
+* ``chirp``: SysID v4 linear-chirp excitation (see ``scripts/gen_chirp_traj.py``).
+  Linear frequency sweep f0->f1 across all 6 Cartesian DOFs (xyz + rx/ry/rz)
+  with phase offsets at k*pi/3, asymmetric ramp.  Recommended companion gains
+  are kp_pos=800, kp_ori=50 (stiff -- the chirp design assumes tight tracking
+  so the recorded q is rich in high-freq content).
 
 Prerequisites:
   * On the NUC: ``python -m panda_control.daemon --config config/robot.yaml``
@@ -57,6 +63,12 @@ from gen_excitation_traj import (  # noqa: E402
     POS_FREQS,
     build_step5d_trajectory,
 )
+from gen_chirp_traj import (  # noqa: E402
+    CHIRP_F0_DEFAULT,
+    CHIRP_F1_DEFAULT,
+    PHASE_OFFSETS,
+    build_chirp_trajectory,
+)
 
 # Safety conventions inherited from step5b/step5d (gen_excitation_traj.py:341-380
 # and step5b_cart_pose.cpp pre-flight). The Python loop runs at lower rate so
@@ -69,7 +81,7 @@ ORI_TRACK_ABORT_RAD = 0.30
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    p.add_argument("--mode", choices=["sine", "step5d"], default="sine",
+    p.add_argument("--mode", choices=["sine", "step5d", "chirp"], default="sine",
                    help="Trajectory shape (default: sine — README smoke test).")
     p.add_argument("--config", type=str, default=None, help="Path to robot.yaml")
     p.add_argument("--duration", type=float, default=None,
@@ -80,6 +92,15 @@ def parse_args() -> argparse.Namespace:
                    help="Cartesian position stiffness (default: from robot.yaml).")
     p.add_argument("--kp-ori", type=float, default=None,
                    help="Cartesian orientation stiffness (default: from robot.yaml).")
+    # osc_shm per-tick safety clamps.  Default None -> daemon keeps its
+    # current value (which comes from robot.yaml at daemon startup).  Pass
+    # explicitly to relax the clamps for aggressive trajectories (e.g. chirp
+    # mode at full UR5e amps): the controller will then run despite large
+    # tracking error instead of latching its tau output to zero.
+    p.add_argument("--err-delta-pos", type=float, default=None,
+                   help="Override osc_shm |e_pos|_inf abort threshold [m] (default: keep daemon value, typically 0.05).")
+    p.add_argument("--err-delta-rot", type=float, default=None,
+                   help="Override osc_shm |e_ori| abort threshold [rad] (default: keep daemon value, typically 0.30).")
 
     # sine-mode parameters
     p.add_argument("--amp", type=float, default=0.05,
@@ -87,10 +108,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--freq", type=float, default=0.5,
                    help="[sine] sinusoid frequency [Hz] (default: 0.5).")
 
-    # step5d-mode parameters
-    p.add_argument("--amp-x", type=float, default=0.04, help="[step5d] X amplitude [m].")
-    p.add_argument("--amp-y", type=float, default=0.04, help="[step5d] Y amplitude [m].")
-    p.add_argument("--amp-z", type=float, default=0.03, help="[step5d] Z amplitude [m].")
+    # step5d / chirp shared position amplitudes.  Defaults resolve in main()
+    # based on --mode: step5d gets (0.04, 0.04, 0.03), chirp gets (0.05, 0.05, 0.07).
+    p.add_argument("--amp-x", type=float, default=None, help="X amplitude [m] (mode-dependent default).")
+    p.add_argument("--amp-y", type=float, default=None, help="Y amplitude [m] (mode-dependent default).")
+    p.add_argument("--amp-z", type=float, default=None, help="Z amplitude [m] (mode-dependent default).")
     p.add_argument("--amp-yaw", type=float, default=0.0,
                    help="[step5d] yaw (about world-z, drives j1) amplitude [rad].")
     p.add_argument("--amp-roll", type=float, default=0.0,
@@ -99,6 +121,23 @@ def parse_args() -> argparse.Namespace:
                    help="[step5d] high-band amplitude as fraction of low-band.")
     p.add_argument("--amp-ramp", type=float, default=2.0,
                    help="[step5d] half-cosine envelope ramp length [s].")
+
+    # chirp-mode parameters (v4) -- match UR5e collect_sysid_data shape exactly,
+    # with f1 halved (UR5e=3.0) so |dx|_peak stays ~1 m/s on Franka.
+    p.add_argument("--f0", type=float, default=CHIRP_F0_DEFAULT,
+                   help="[chirp] start frequency [Hz] (default: 0.1, UR5e).")
+    p.add_argument("--f1", type=float, default=CHIRP_F1_DEFAULT,
+                   help="[chirp] end frequency [Hz] (default: 1.5, halved from UR5e 3.0).")
+    p.add_argument("--amp-rx", type=float, default=0.50,
+                   help="[chirp] world-x rotation amplitude [rad] (default: 0.50, UR5e).")
+    p.add_argument("--amp-ry", type=float, default=0.25,
+                   help="[chirp] world-y rotation amplitude [rad] (default: 0.25, UR5e; drives J6).")
+    p.add_argument("--amp-rz", type=float, default=0.50,
+                   help="[chirp] world-z rotation amplitude [rad] (default: 0.50, UR5e; drives J1).")
+    p.add_argument("--ramp-up", type=float, default=2.0,
+                   help="[chirp] linear ramp-up length [s] (default: 2.0, UR5e).")
+    p.add_argument("--ramp-down", type=float, default=3.0,
+                   help="[chirp] linear ramp-down length [s] (default: 3.0, UR5e).")
 
     # logging
     p.add_argument("--log", type=str, default=None,
@@ -129,7 +168,13 @@ def _build_trajectory(
     q_anchor_xyzw: np.ndarray,
     args: argparse.Namespace,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Return (x_des, dx_des, quat_des_xyzw, yaw, roll) for the requested mode."""
+    """Return (x_des, dx_des, quat_des_xyzw, rot_a, rot_b) for the requested mode.
+
+    For ``step5d``: rot_a = yaw, rot_b = roll (scalar per-tick).
+    For ``chirp``:  rot_a = (rx, ry, rz) magnitude per-tick (axis-angle norm),
+                    rot_b = zeros (kept for tuple compatibility).
+    For ``sine``:   both zeros.
+    """
     if mode == "step5d":
         x_des, dx_des, quat_des_xyzw, yaw, roll = build_step5d_trajectory(
             t_grid, x_anchor, q_anchor_xyzw,
@@ -139,6 +184,24 @@ def _build_trajectory(
             amp_ramp_s=args.amp_ramp,
         )
         return x_des, dx_des, quat_des_xyzw, yaw, roll
+
+    if mode == "chirp":
+        x_des, dx_des, quat_des_xyzw, rot_offsets = build_chirp_trajectory(
+            t_grid, x_anchor, q_anchor_xyzw,
+            f0=args.f0, f1=args.f1,
+            amp_x=args.amp_x, amp_y=args.amp_y, amp_z=args.amp_z,
+            amp_rx=args.amp_rx, amp_ry=args.amp_ry, amp_rz=args.amp_rz,
+            ramp_up_s=args.ramp_up, ramp_down_s=args.ramp_down,
+        )
+        # rot_offsets is (T, 3); flatten to a magnitude for the legacy
+        # (yaw, roll) interface so the rest of the pipeline keeps working.
+        # _print_peak_rates is patched separately to inspect the full vector.
+        rot_a = np.linalg.norm(rot_offsets, axis=1)
+        rot_b = np.zeros_like(rot_a)
+        # Stash the full (T,3) on args so the peak-rate / sidecar paths can
+        # report per-axis numbers without re-running the builder.
+        args._chirp_rot_offsets = rot_offsets  # type: ignore[attr-defined]
+        return x_des, dx_des, quat_des_xyzw, rot_a, rot_b
 
     # sine mode: single z-axis sinusoid around the anchor, orientation held.
     omega = 2.0 * math.pi * args.freq
@@ -158,14 +221,65 @@ def _build_trajectory(
 
 def _print_peak_rates(
     dx_des: np.ndarray,
-    yaw: np.ndarray,
-    roll: np.ndarray,
+    rot_a: np.ndarray,
+    rot_b: np.ndarray,
     args: argparse.Namespace,
 ) -> dict:
-    """Print and return peak-rate diagnostics; warn if safety conventions exceeded."""
+    """Print and return peak-rate diagnostics; warn if safety conventions exceeded.
+
+    ``rot_a`` / ``rot_b`` interpretation depends on mode (see _build_trajectory).
+    """
     dt_grid = 1.0 / args.rate
     peak_dx, peak_dy, peak_dz = np.max(np.abs(dx_des), axis=0).tolist()
     peak_cart_speed = float(np.max(np.linalg.norm(dx_des, axis=1)))
+
+    if args.mode == "chirp":
+        # rot_a stores |rot_offset|; the per-axis vectors live on args.
+        rot_offsets = getattr(args, "_chirp_rot_offsets", None)
+        if rot_offsets is None or rot_offsets.size == 0:
+            peak_drx = peak_dry = peak_drz = 0.0
+            peak_ori_offset = 0.0
+        else:
+            drot = np.gradient(rot_offsets, dt_grid, axis=0)
+            peak_drx, peak_dry, peak_drz = np.max(np.abs(drot), axis=0).tolist()
+            peak_ori_offset = float(np.max(np.linalg.norm(rot_offsets, axis=1)))
+        peak_ang_rate = float(max(peak_drx, peak_dry, peak_drz))
+        print(
+            f"[cart_impedance] peak |dx_des| [m/s]: x={peak_dx:.4f}, y={peak_dy:.4f}, "
+            f"z={peak_dz:.4f}  (|dx|_max={peak_cart_speed:.4f}, convention {CART_DX_PEAK_LIMIT_MPS:.2f})"
+        )
+        print(
+            f"[cart_impedance] peak rotation rates [rad/s]: drx={peak_drx:.4f}, "
+            f"dry={peak_dry:.4f}, drz={peak_drz:.4f}  (convention {ORI_DOT_PEAK_LIMIT_RPS:.2f}). "
+            f"max |rot_offset| ~ {peak_ori_offset:.3f} rad (abort {ORI_TRACK_ABORT_RAD:.2f})"
+        )
+        if peak_cart_speed > CART_DX_PEAK_LIMIT_MPS:
+            print(
+                f"[cart_impedance] WARNING: peak Cartesian speed {peak_cart_speed:.3f} > "
+                f"{CART_DX_PEAK_LIMIT_MPS:.2f} m/s convention. Reduce --amp-x/y/z or --f1.",
+                file=sys.stderr,
+            )
+        if peak_ang_rate > ORI_DOT_PEAK_LIMIT_RPS:
+            print(
+                f"[cart_impedance] WARNING: peak angular rate {peak_ang_rate:.3f} > "
+                f"{ORI_DOT_PEAK_LIMIT_RPS:.2f} rad/s convention.",
+                file=sys.stderr,
+            )
+        if peak_ori_offset > 0.8 * ORI_TRACK_ABORT_RAD:
+            print(
+                f"[cart_impedance] WARNING: max |rot_offset| = {peak_ori_offset:.3f} rad "
+                f"is > 80% of {ORI_TRACK_ABORT_RAD:.2f} rad runtime abort.",
+                file=sys.stderr,
+            )
+        return {
+            "cart_speed_m_s": peak_cart_speed,
+            "dx_m_s": [peak_dx, peak_dy, peak_dz],
+            "drot_rad_s": [peak_drx, peak_dry, peak_drz],
+            "max_ori_offset_rad": peak_ori_offset,
+        }
+
+    # --- step5d / sine path (legacy interface: rot_a=yaw, rot_b=roll) ----
+    yaw, roll = rot_a, rot_b
     peak_dyaw = float(np.max(np.abs(np.gradient(yaw, dt_grid)))) if yaw.size > 1 else 0.0
     peak_droll = float(np.max(np.abs(np.gradient(roll, dt_grid)))) if roll.size > 1 else 0.0
     peak_ori_offset = float(args.amp_yaw + args.amp_roll) * (1.0 + float(args.high_band_ratio))
@@ -256,12 +370,30 @@ def _write_sidecar(
         ori_freq_set = {axis: list(ORI_FREQS[axis][:2]) for axis in ("yaw", "roll")}
         ori_phase_set = {axis: [ORI_FREQS[axis][2], 0.0] for axis in ("yaw", "roll")}
         controller_name = "python_step5d_excitation"
+    elif args.mode == "chirp":
+        # Linear chirp: report (f0, f1) per axis and per-axis phase offsets.
+        axes = ["x", "y", "z", "rx", "ry", "rz"]
+        pos_freq_set = {axes[i]: [float(args.f0), float(args.f1)] for i in range(3)}
+        pos_phase_set = {axes[i]: [float(PHASE_OFFSETS[i]), 0.0] for i in range(3)}
+        ori_freq_set = {axes[i]: [float(args.f0), float(args.f1)] for i in range(3, 6)}
+        ori_phase_set = {axes[i]: [float(PHASE_OFFSETS[i]), 0.0] for i in range(3, 6)}
+        controller_name = "python_v4_chirp_excitation"
     else:
         pos_freq_set = {"z": [args.freq, 0.0]}
         pos_phase_set = {"z": [0.0, 0.0]}
         ori_freq_set = {}
         ori_phase_set = {}
         controller_name = "python_sine"
+
+    if args.mode == "step5d":
+        amplitude_m = {"x": float(args.amp_x), "y": float(args.amp_y), "z": float(args.amp_z)}
+        amplitude_rad = {"yaw": float(args.amp_yaw), "roll": float(args.amp_roll)}
+    elif args.mode == "chirp":
+        amplitude_m = {"x": float(args.amp_x), "y": float(args.amp_y), "z": float(args.amp_z)}
+        amplitude_rad = {"rx": float(args.amp_rx), "ry": float(args.amp_ry), "rz": float(args.amp_rz)}
+    else:
+        amplitude_m = {"x": 0.0, "y": 0.0, "z": float(args.amp)}
+        amplitude_rad = {"yaw": 0.0, "roll": 0.0}
 
     payload = {
         "schema_version": 2,
@@ -274,10 +406,8 @@ def _write_sidecar(
         "num_samples": int(num_samples),
         "amp_ramp_s": float(args.amp_ramp) if args.mode == "step5d" else 0.0,
         "high_band_ratio": float(args.high_band_ratio) if args.mode == "step5d" else 0.0,
-        "amplitude_m": {"x": float(args.amp_x), "y": float(args.amp_y), "z": float(args.amp_z)}
-            if args.mode == "step5d"
-            else {"x": 0.0, "y": 0.0, "z": float(args.amp)},
-        "amplitude_rad": {"yaw": float(args.amp_yaw), "roll": float(args.amp_roll)},
+        "amplitude_m": amplitude_m,
+        "amplitude_rad": amplitude_rad,
         "freq_set_hz": pos_freq_set,
         "phase_rad": pos_phase_set,
         "ori_freq_set_hz": ori_freq_set,
@@ -294,6 +424,11 @@ def _write_sidecar(
             "duration": float(duration_s),
             "rate": float(args.rate),
             "mode": args.mode,
+            "err_delta_pos_override": args.err_delta_pos,
+            "err_delta_rot_override": args.err_delta_rot,
+            **({"f0_hz": float(args.f0), "f1_hz": float(args.f1),
+                "ramp_up_s": float(args.ramp_up), "ramp_down_s": float(args.ramp_down)}
+                if args.mode == "chirp" else {}),
         },
         "abort": abort,
         "summary": summary,
@@ -326,7 +461,19 @@ def _compute_summary(
 def main() -> int:
     args = parse_args()
     if args.duration is None:
-        args.duration = 12.0 if args.mode == "step5d" else 4.0
+        # UR5e chirp default is 8.0 s; step5d historically uses 12.0 s.
+        args.duration = 8.0 if args.mode == "chirp" else (12.0 if args.mode == "step5d" else 4.0)
+    # Resolve mode-dependent amplitude defaults.
+    # step5d: small XY > Z (0.04/0.04/0.03).
+    # chirp v4: UR5e-exact magnitudes (0.10/0.10/0.15, Z = 1.5x XY).
+    if args.mode == "chirp":
+        if args.amp_x is None: args.amp_x = 0.10
+        if args.amp_y is None: args.amp_y = 0.10
+        if args.amp_z is None: args.amp_z = 0.15
+    else:
+        if args.amp_x is None: args.amp_x = 0.04
+        if args.amp_y is None: args.amp_y = 0.04
+        if args.amp_z is None: args.amp_z = 0.03
     if args.log is None and not args.dry_run:
         print("[cart_impedance] (no --log given, state will not be saved to disk)", file=sys.stderr)
 
@@ -367,7 +514,17 @@ def main() -> int:
     kp_ori = float(args.kp_ori) if args.kp_ori is not None else float(cfg.control.kp_ori)
 
     with RemotePandaClient(cfg) as robot:
-        robot.set_gains(kp_pos=kp_pos, kp_ori=kp_ori)
+        robot.set_gains(
+            kp_pos=kp_pos,
+            kp_ori=kp_ori,
+            error_delta_pos=args.err_delta_pos,
+            error_delta_rot=args.err_delta_rot,
+        )
+        if args.err_delta_pos is not None or args.err_delta_rot is not None:
+            print(
+                f"[cart_impedance] osc_shm clamps overridden: "
+                f"err_delta_pos={args.err_delta_pos}, err_delta_rot={args.err_delta_rot}"
+            )
         state = robot.wait_for_state(timeout_s=3.0)
         q_init = state.q.copy()
         x_anchor = state.ee_pos.copy()
