@@ -251,17 +251,17 @@ EE position — sim (orange) overlays real (blue) almost exactly; both lag the
 target (dashed grey) by the same amount because the impedance controller is
 identical in both worlds:
 
-![EE position: target vs real vs sim](docs/images/v3_sysid_v4chirp_position.png)
+![EE position: target vs real vs sim](./docs/images/v3_sysid_v4chirp_position.png)
 
 EE orientation quaternion — same story, all three components track in lockstep:
 
-![EE quaternion: target vs real vs sim](docs/images/v3_sysid_v4chirp_orientation.png)
+![EE quaternion: target vs real vs sim](./docs/images/v3_sysid_v4chirp_orientation.png)
 
 Joint-space view (q on the left, dq on the right, 7 joints stacked) — each
 sim trace sits on top of the real trace, individual-joint RMSE 12-30 mrad
 (1.9 - 8.3 % of per-joint motion range):
 
-![Per-joint q and dq: sim vs real](docs/images/v3_sysid_v4chirp_joints.png)
+![Per-joint q and dq: sim vs real](./docs/images/v3_sysid_v4chirp_joints.png)
 
 ## Configuration
 
