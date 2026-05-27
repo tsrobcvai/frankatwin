@@ -220,7 +220,7 @@ v4 follows the UR5e chirp shape exactly, with three Franka-specific deltas:
 > for legacy 1 kHz C++ collector CSVs — feeding it a 50 Hz log silently
 > truncates the sim to 5 % of the trajectory length.
 
-## Example Results
+### Example Results
 
 The CMA-ES sysid run on combined step5b/c/d (v3) real data produced the
 parameters below. Validated on a held-out v4 chirp (kp = 500 / 30, f<sub>1</sub>
@@ -244,8 +244,6 @@ parameters generalise across the broader-spectrum v4 chirp.
   }
 }
 ```
-
-### Sim vs real on v4 chirp (held-out)
 
 EE position — sim (orange) overlays real (blue) almost exactly; both lag the
 target (dashed grey) by the same amount because the impedance controller is
