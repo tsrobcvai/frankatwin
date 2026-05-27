@@ -213,20 +213,31 @@ def _build_quat_traj(
     return q_des, yaw, roll
 
 
-def _build_traj(
+def build_step5d_trajectory(
     t_s: np.ndarray,
     x_anchor: np.ndarray,
     q_anchor_xyzw: np.ndarray,
-    amp_x: float,
-    amp_y: float,
-    amp_z: float,
-    amp_yaw: float,
-    amp_roll: float,
-    high_band_ratio: float,
-    amp_ramp_s: float,
+    amp_x: float = 0.04,
+    amp_y: float = 0.04,
+    amp_z: float = 0.03,
+    amp_yaw: float = 0.0,
+    amp_roll: float = 0.0,
+    high_band_ratio: float = 0.4,
+    amp_ramp_s: float = 2.0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    # Smooth amplitude envelope so x_des(0) = x_anchor, dx_des(0) = 0, and the
-    # rotation also starts at q_anchor with zero angular velocity feedforward.
+    """Build the step5d multi-band excitation trajectory on an arbitrary time grid.
+
+    Returns
+    -------
+    x_des : (N, 3) Cartesian target positions, in the same frame as ``x_anchor``.
+    dx_des : (N, 3) target Cartesian velocities (analytic derivative).
+    quat_des : (N, 4) target orientation quaternions, **xyzw** order, unit-norm.
+    yaw : (N,) yaw angle (about world-z) applied to the anchor.
+    roll : (N,) roll angle (about EE local-z) applied to the anchor.
+
+    Setting both ``amp_yaw`` and ``amp_roll`` to 0 reproduces step5c (orientation
+    held at ``q_anchor_xyzw``). Default amplitudes match step5c's command line.
+    """
     rho, rho_dot = _half_cosine_envelope(t_s, amp_ramp_s)
     x_des, dx_des = _build_pos_traj(t_s, x_anchor, amp_x, amp_y, amp_z, rho, rho_dot, high_band_ratio)
     quat_des, yaw, roll = _build_quat_traj(t_s, q_anchor_xyzw, amp_yaw, amp_roll, rho, high_band_ratio)
@@ -250,17 +261,17 @@ def main() -> int:
     dt = 1.0 / float(args.hz)
     n = int(round(float(args.duration) * float(args.hz))) + 1
     t_s = np.arange(n, dtype=np.float64) * dt
-    x_des, dx_des, quat_des, yaw_traj, roll_traj = _build_traj(
+    x_des, dx_des, quat_des, yaw_traj, roll_traj = build_step5d_trajectory(
         t_s,
         x_anchor,
         q_anchor_xyzw,
-        args.amp_x,
-        args.amp_y,
-        args.amp_z,
-        float(args.amp_yaw),
-        float(args.amp_roll),
-        float(args.high_band_ratio),
-        float(args.amp_ramp),
+        amp_x=args.amp_x,
+        amp_y=args.amp_y,
+        amp_z=args.amp_z,
+        amp_yaw=float(args.amp_yaw),
+        amp_roll=float(args.amp_roll),
+        high_band_ratio=float(args.high_band_ratio),
+        amp_ramp_s=float(args.amp_ramp),
     )
 
     initial_offset = np.linalg.norm(x_des[0] - x_anchor)
