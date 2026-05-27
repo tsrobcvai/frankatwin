@@ -1,676 +1,263 @@
 # panda_control
 
-From-scratch Franka controller stack. The plan is to grow this repo
-**bottom-up, one small step at a time**, each step a tiny standalone program
-that exercises libfranka's `robot.control(...)` at 1 kHz directly. Once the
-C++ bottom layer is solid we add Python wrappers (via POSIX shared memory)
-that mimic the structure of the UR controller in
-`omnireset/diffusion_policy/diffusion_policy/real_world/rtde_interpolation_controller.py`.
+Real-time Cartesian impedance control for the **Franka Research 3 (FR3)**, built
+with a PC↔NUC split architecture and tuned for **sim-to-real transfer**. The
+codebase ships with two excitation-trajectory families and a system-ID pipeline
+that brings the IsaacLab simulator to within a few mm RMS of the real arm on
+held-out trajectories.
 
-We are *not* using deoxys's NUC/ZMQ/protobuf architecture, and we are *not*
-using `panda-py`. The goal is full transparency from policy command down to
-joint torque.
+## Highlights
 
-## Setup
+- **1 kHz J<sup>T</sup> task-space impedance controller** running natively on the NUC via libfranka.
+- **PC↔NUC** split: realtime control on the NUC; Python policies / data tooling on the PC.
+- **POSIX shared memory + ZMQ** for low-latency cross-process state and command flow.
+- **System identification** delivers IsaacLab joint-position RMSE ≈ 1-3 % of motion range across a held-out chirp (v3 best params on v4 chirp: 4.8e-4 rad²).
+- Two excitation trajectories included: **v3** (multi-band sinusoid) and **v4** (UR5e-style linear chirp, adapted for Franka).
 
-The repo is split into two install paths. The **NUC** (PREEMPT_RT, directly
-cabled to the Franka FCI port) builds the C++ binaries and runs the daemon.
-The **PC** (workstation with GPU / policy / data tooling) only needs the
-Python package.
+## Architecture
 
-### NUC side (C++ + Python)
+```
+        PC (workstation)                            NUC (cabled to Franka FCI)                  Franka FR3
+        ──────────────                              ───────────────────                         ──────────
+                                       ZMQ REQ/REP @ port 5555
+        examples/cart_impedance.py ◄──────────────────────────────►  panda_control.daemon
+        examples/reset_home.py                                              │
+                                       ZMQ PUB/SUB @ port 5556              │  spawns / supervises
+        Python user code               ◄──────  state stream  ──────        ▼
+                ▲                                                      ┌─── osc_shm ────┐  libfranka
+                │ uses                                                 │  1 kHz J^T     │  ─────────►   FR3
+                ▼                                                      │  impedance     │     control
+        panda_control.remote_client                                    │  controller    │     loop
+        (RemotePandaClient)                                            └────────────────┘
+                                       POSIX shm (/panda_osc)               ▲
+                                       state ring buffer +                  │  one-shot resets
+                                       command seqlock                      ▼
+                                                                       ┌─── move_to ────┐
+                                                                       │  MotionGenerator│
+                                                                       └────────────────┘
+```
 
-Build the C++ binaries (`step1_*`, `step5b_*`, `osc_shm`, `move_to`, ...)
-and install the Python package locally so the daemon can be started.
+- **`osc_shm`** is the long-running 1 kHz Jacobian-transpose Cartesian impedance controller. It reads target pose / gains / safety clamps from POSIX shared memory and publishes joint + EE state into the same segment.
+- **`move_to`** is a short-lived libfranka MotionGenerator used for joint-space resets. The daemon stops `osc_shm`, runs `move_to`, then restarts `osc_shm` (libfranka allows only one FCI session at a time).
+- **`panda_control.daemon`** (Python) owns the shm segment, supervises both binaries, and bridges them to the PC over ZMQ.
+
+## Repository Layout
+
+```
+src/                          C++ realtime binaries (NUC only)
+  osc_shm.cpp                 1 kHz Cartesian impedance controller
+  move_to.cpp                 libfranka reset utility
+  read_current_q.cpp          one-shot joint position read
+  read_current_pose.cpp       one-shot EE pose read (sidecar JSON output)
+  shm_layout.h                C++ shm contract
+  examples_common.{cpp,h}     vendored libfranka MotionGenerator
+
+python/panda_control/         Python package (PC and NUC)
+  daemon.py                   NUC-side ZMQ daemon (REP + PUB)
+  local_controller.py         shm manager + osc_shm/move_to lifecycle
+  remote_client.py            PC-side ZMQ client (RemotePandaClient)
+  shm_layout.py               Python shm contract (pinned by tests/)
+  config.py                   YAML config loader
+
+examples/
+  reset_home.py               joint-space reset to home pose
+  cart_impedance.py           Cartesian impedance + excitation runner
+                              (modes: sine | step5d | chirp)
+
+scripts/
+  gen_excitation_traj.py      v3 two-band excitation generator
+  gen_chirp_traj.py           v4 linear-chirp excitation generator
+  compare_sim_real.py         3-way overlay: target vs real vs sim
+  read_q.sh                   convenience wrapper around read_current_q
+
+config/robot.yaml             FCI IP, NUC host, default gains, safety clamps
+tests/                        shm layout contract test (Python ↔ C++ pinned)
+```
+
+## Excitation Trajectories
+
+Both trajectories drive the same `cart_impedance.py` Cartesian impedance loop;
+they differ only in the *reference* sent to the controller.
+
+| | **v3** (`gen_excitation_traj.py`) | **v4** (`gen_chirp_traj.py`) |
+|---|---|---|
+| Spectrum | two-band sinusoid per axis (low ≈ 0.15-0.30 Hz + high ≈ 0.7-1.1 Hz) | linear chirp f<sub>0</sub>→f<sub>1</sub>, 0.1→1.5 Hz |
+| Active DOFs | x, y, z + optional yaw / roll | x, y, z, r<sub>x</sub>, r<sub>y</sub>, r<sub>z</sub> (always-on, π/3 phase-staggered) |
+| Amplitudes | 4 / 4 / 3 cm + 0.05 rad yaw/roll | 10 / 10 / 15 cm + 0.50 / 0.25 / 0.50 rad |
+| Envelope | symmetric 2 s half-cosine | asymmetric 2 s up / 3 s down (linear) |
+| Duration | 12 s | 8 s |
+| Origin | this repo (step5d lineage) | adapted from UR5e [`omnireset/diffusion_policy/scripts/sim2real/collect_sysid_data.py`](https://github.com/uw-lab/omnireset) |
+
+### v4 changes vs the UR5e original
+
+UR5e collects at 500 Hz with kp=1000 / kp_rot=50 and chirps to 3.0 Hz. Three
+Franka-specific adjustments were needed:
+
+1. **f<sub>1</sub> halved 3.0 → 1.5 Hz** (and 0.7 Hz for the operating point used in production). Franka's wrist joints J5–J7 have a 12 N·m effort limit; at the UR5e chirp top frequency they saturate, the controller goes unstable, and `osc_shm` latches its abort clamp.
+2. **kp lowered 1000 → 500 N/m, kp<sub>ori</sub> 50 → 30** for application parity with the downstream policy controller.
+3. **Per-tick safety clamps relaxed** (`error_delta_pos: 0.05 → 0.15 m`, `error_delta_rot: 0.30 → 0.80 rad`) because the lower kp + UR5e amplitudes give larger steady-state tracking error than osc_shm's default safety envelope tolerates. These can be set at runtime via `cart_impedance.py --err-delta-pos / --err-delta-rot`.
+
+## Installation
+
+The NUC is the machine cabled to the FR3's FCI port; the PC is the workstation
+running policies and data tooling. The PC never opens an FCI session.
+
+### NUC (libfranka + Python)
 
 ```bash
-git clone <repo> /home/nuc1/Projects/panda_control
-cd /home/nuc1/Projects/panda_control
+# Prerequisites: libfranka built/installed system-wide (e.g. via deoxys
+# franka-interface, or built from source), conda/python 3.10+, cmake >= 3.10.
 
-# 1. System deps (libfranka is reused from deoxys's build tree by default;
-#    see `HANDOFF.md` §6 if you need to switch sources).
-sudo apt install libeigen3-dev
+git clone <repo> /home/nuc/Projects/panda_control
+cd /home/nuc/Projects/panda_control
 
-# 2. Build C++.
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+# Build the C++ binaries.
+cmake -S . -B build
 cmake --build build -j
-#   Sanity check:
-ls build/osc_shm build/move_to
 
-# 3. Install Python package (editable). pyzmq + numpy + pyyaml are pulled in.
+# Confirm the four binaries are present.
+ls build/osc_shm build/move_to build/read_current_q build/read_current_pose
+
+# Install the Python package (editable). Pulls pyzmq, numpy, pyyaml.
 pip install -e .
 
-# 4. Sanity-check the shm layout binding (compiles a tiny C++ helper, no robot).
-PYTHONPATH=python python -m pytest tests/test_shm_layout.py -v
+# Sanity-check the shm layout pinning.
+python -m pytest tests/test_shm_layout.py -q
+
+# Important: deoxys's franka-interface must NOT be running -- libfranka
+# only grants one FCI session at a time.
+pgrep -a franka-interface && echo "kill franka-interface before continuing"
 ```
 
-Make sure deoxys's `franka-interface` daemon is **not** running before
-launching `osc_shm` or the panda_control daemon:
-
-```bash
-pgrep -a franka-interface || echo "ok"
-```
-
-### PC side (Python only)
-
-The PC never talks to libfranka; it only talks to the NUC daemon over ZMQ.
+### PC (Python only)
 
 ```bash
 git clone <repo> ~/Projects/panda_control
 cd ~/Projects/panda_control
+
+# No C++ build needed on the PC.
 pip install -e .
 
-# Edit config/robot.yaml if your NUC is reachable at something other than
-# 172.16.0.1 or you want different default gains.
-$EDITOR config/robot.yaml
+# Verify your robot.yaml points at the NUC.
+grep nuc_host config/robot.yaml   # default: 172.16.0.1
 ```
 
-That's it. No C++ build, no libfranka, no PREEMPT_RT kernel required on this
-machine. Verify the install:
+## Quick Start
 
-```bash
-python -c "import panda_control; print(panda_control.load_config().robot.ip)"
-```
-
-### Verifying the full pipeline (smoke test)
-
-On the NUC:
+### 1. Start the daemon on the NUC (once per boot)
 
 ```bash
 python -m panda_control.daemon --config config/robot.yaml
 ```
 
-On the PC:
+This binds `tcp://*:5555` (REQ/REP) and `tcp://*:5556` (state PUB @ 100 Hz),
+claims the POSIX shm segment `/panda_osc`, and launches `osc_shm`.
+
+### 2. Reset to home (joint-space position control)
 
 ```bash
-python examples/reset_home.py    # blocking, ~3-5 s
+# On the PC
+python examples/reset_home.py
+```
+
+Internally: daemon stops `osc_shm` → spawns `move_to` (libfranka
+MotionGenerator, min-jerk) → waits for arrival → restarts `osc_shm` anchored to
+the new EE pose.
+
+### 3. Task impedance control (no null-space term)
+
+```bash
+# Smoke test: 4 s of z-axis sine around the current pose.
 python examples/cart_impedance.py
+
+# v4 chirp excitation for sysid (recommended Franka operating point).
+python examples/cart_impedance.py --mode chirp \
+    --rate 50 --kp-pos 500 --kp-ori 30 --f1 0.7 \
+    --err-delta-pos 0.15 --err-delta-rot 0.80 \
+    --log data/run_$(date +%Y%m%d_%H%M%S).csv
 ```
 
-See [Step 10](#step-10-python-cartesian-impedance-api-pc--nuc) below for the
-Python API reference.
-
-## Roadmap
-
-| Step | Goal | Files |
-|------|------|-------|
-| **1**  | Joint PD hold at a CLI-given `q_des`. Validate 1 kHz, RT priority, dq noise. | `src/step1_joint_pd.cpp` |
-| 2  | Task-space PD (no inertial decoupling). Hold a fixed EE pose. | `src/step2_task_pd.cpp` |
-| 3  | Add null-space term for the 7-DOF redundancy. | `src/step3_task_pd_null.cpp` |
-| 4  | OSC with inertial decoupling (full operational-space control). | `src/step4_osc.cpp` |
-| 5b | 6D pose Jacobian-transpose Cartesian PD (no Lambda). | `src/step5b_cart_pose.cpp` |
-| **10** | POSIX shm + Python API: PC ↔ NUC ZMQ daemon, `osc_shm` (1 kHz J^T impedance) and `move_to` (libfranka MotionGenerator / CartesianPose) | `src/osc_shm.cpp`, `src/move_to.cpp`, `python/panda_control/*.py` |
-| 11 | sim2real evaluation harness mirroring `isaaclab_rollout/rollout_act.py` patterns. | `python/scripts/eval_real.py` |
-
-Implemented so far: step 1 (joint hold), step 3 (explicit Coriolis for hold),
-and step 4 (joint trajectory tracking).
-
-## Step 1: Joint PD hold (== Joint PD + gravity comp)
-
-Control law we write in `src/step1_joint_pd.cpp`:
-
-```
-tau_cmd = Kp * (q_des - q) - Kd * dq
-```
-
-Effective control law actually applied on the robot:
-
-```
-tau_motor = tau_cmd + g(q) + tau_friction
-```
-
-libfranka, when used via `robot.control(callback)` returning `franka::Torques`,
-adds gravity `g(q)` and a friction-compensation term to whatever we return
-(see `franka/robot.h`: *"joint-level torque commands **without gravity and
-friction** by providing callback functions"*). It does **not**
-auto-compensate Coriolis — that has to be computed and added explicitly via
-`franka::Model::coriolis()`, which is what step 3 will do.
-
-So **step 1 is, semantically, a "Joint PD + gravity comp" controller
-already**; we just never compute `g(q)` ourselves. There is no separate
-`step1.5` file.
-
-Parameters / defaults:
-
-- `Kp` scalar-broadcast to 7 joints.
-- `Kd = 2*sqrt(Kp)` (critical damping) unless `--kd` overrides.
-- `tau_cmd` is clamped per joint to Franka's nominal motor limits
-  `[87, 87, 87, 87, 12, 12, 12]` Nm. The clamp applies to our PD output only,
-  not to the gravity/Coriolis term that libfranka adds afterwards.
-
-### Why these defaults
-
-- `Kp` ramps from 0 to the target over `--ramp` seconds (default 1.5 s),
-  so the initial torque is always 0 even if `q_des` and `q_init` happen to
-  differ slightly. Gradual ramp lets you catch problems before they become
-  spikes.
-- The binary refuses to start if `|q_init - q_des|_inf > 0.25 rad`
-  (~14.3 deg). Move the robot to `q_des` first (Franka Desk guiding mode is
-  fine), then run.
-- The CSV log records per-tick `(t, period_ms, q, dq, tau)` so you can
-  inspect timing jitter and `dq` noise floor offline.
-
-## Step 3: Joint PD + Coriolis compensation
-
-Control law in `src/step3_joint_pd_coriolis.cpp`:
-
-```
-tau_cmd = Kp * (q_des - q) - Kd * dq + c(q, dq)
-```
-
-where `c(q, dq) = C(q, dq) * dq` comes from `franka::Model::coriolis()`.
-
-Effective robot-side torque remains:
-
-```
-tau_motor = tau_cmd + g(q) + tau_friction
-```
-
-because libfranka automatically adds gravity and friction compensation in
-torque mode. Step 3 only adds the missing Coriolis vector term explicitly.
-
-How Coriolis is obtained in code:
-
-- Create the model once before entering the 1 kHz callback:
-  `franka::Model model = robot.loadModel();`
-- Inside the callback, fetch:
-  `std::array<double, 7> c_arr = model.coriolis(robot_state);`
-- Map `c_arr` to Eigen and add it to `tau_cmd`.
-
-Run Step 3:
-
-```bash
-./scripts/run_step3.sh
-```
-
-A/B testing without explicit Coriolis:
-
-```bash
-NO_CORIOLIS=1 ./scripts/run_step3.sh
-```
-
-Validation expectations for hold tests:
-
-- `period (ms)` and `dq RMS` should look similar to step 1.
-- `c  RMS (Nm) per j` should be near zero order (typically around `1e-3` Nm
-  or lower) because hold tests have very small `dq`.
-- `NO_CORIOLIS=1` vs default should look nearly identical in static hold.
-
-## Step 4: Joint trajectory tracking
-
-Control law in `src/step4_joint_traj.cpp` (same structure as step 3, but
-`q_des` is now time-varying):
-
-```
-tau_cmd(t) = Kp * (q_des(t) - q) - Kd * dq + c(q, dq)
-```
-
-Design note (A vs current choice):
-
-- We intentionally do **not** use form A
-  `tau = Kp*(q_des-q) + Kd*(dq_des-dq) + c(q,dq)` in Step 4.
-- We keep the literal Step 3 damping form `-Kd*dq` to match the planned
-  control-law progression.
-- Reason: under trajectory excitation, A's `+Kd*dq_des` term itself injects a
-  phase-leading disturbance into the tracking-error dynamics, which can mask
-  the specific effect we want to observe here when sweeping `Kp` for the
-  stability envelope.
-
-Trajectory is a single-joint sinusoid around `q_center`:
-
-```
-A_eff(t) = A * min(1, t / amp_ramp)
-q_des_j(t) = q_center_j + A_eff(t) * sin(2*pi*f*t)
-```
-
-where only one selected joint is swept (`--joint`), all others hold `q_center`.
-
-Run Step 4:
-
-```bash
-./scripts/run_step4.sh
-```
-
-Typical Kp sweep workflow:
-
-```bash
-KP=10  ./scripts/run_step4.sh
-KP=30  ./scripts/run_step4.sh
-KP=80  ./scripts/run_step4.sh
-KP=150 ./scripts/run_step4.sh
-```
-
-CLI reference:
-
-| Arg | Default | Notes |
-|-----|---------|-------|
-| `<robot_ip>` | (required) | e.g. `172.16.0.2` |
-| `--q-center q1..q7` | (required) | 7 floats, radians |
-| `--joint J` | `3` | 0-based sweep joint index (`3` = 4th joint/elbow) |
-| `--amp A` | `0.10` | Sinusoid amplitude (rad) |
-| `--freq F` | `0.25` | Sinusoid frequency (Hz) |
-| `--kp K` | `50.0` | Scalar, broadcast to 7 joints |
-| `--kd K` | `2*sqrt(kp)` | Scalar, broadcast to 7 joints |
-| `--duration sec` | `8.0` | `0` = run until Ctrl+C |
-| `--ramp sec` | `1.5` | Kp ramp-in |
-| `--amp-ramp sec` | `--ramp` | Amplitude ramp-in duration |
-| `--no-coriolis` | off | Disable explicit Coriolis for A/B |
-| `--print-err-every N` | `100` | Print `|q_des-q|_inf` every N ticks (`0`=off) |
-| `--log path` | (no log) | Writes per-tick CSV |
-
-Validation checklist for Step 4:
-
-1. Start with defaults (`KP=10`, `AMP=0.10`, `FREQ=0.25`, `DURATION=8`).
-2. Confirm summary prints `tracking err RMS` and `tracking err |max|` columns.
-3. Increase `KP` gradually; stable regime should reduce `tracking err RMS`.
-4. If error spikes, oscillation appears, or runtime abort triggers, back off
-   `KP` and record the previous stable value as that joint's envelope limit.
-
-## Step 5: Jacobian-transpose Cartesian PD (no Lambda)
-
-Control law in `src/step5_cart_pd.cpp` (position-only Cartesian control):
-
-```
-tau_cmd = J_p^T * (Kp * (x_des - x) - Kd * dx) + c(q, dq)
-```
-
-where:
-
-- `x` is end-effector position in the base frame (meters)
-- `J_p` is the translational Jacobian (`zeroJacobian(...).topRows<3>()`)
-- `dx = J_p * dq`
-- `c(q, dq)` comes from `franka::Model::coriolis()`
-
-This is intentionally the non-decoupled Cartesian baseline before Step 6
-(`Lambda`) and before orientation/nullspace terms.
-
-Trajectory mode:
-
-- Default hold: `AMP=0`, so `x_des = x_anchor` (captured at startup)
-- Optional single-axis sinusoid (`AXIS=x|y|z`):
-  - `x_des[axis] += A_eff * sin(2*pi*f*t)`
-  - `A_eff = A * min(1, t / amp_ramp)`
-
-Run Step 5 (safe defaults):
-
-```bash
-./scripts/run_step5.sh
-```
-
-Enable 1 cm scan on z:
-
-```bash
-AMP=0.01 AXIS=z ./scripts/run_step5.sh
-```
-
-CLI reference:
-
-| Arg | Default | Notes |
-|-----|---------|-------|
-| `<robot_ip>` | (required) | e.g. `172.16.0.2` |
-| `--kp K` | `100.0` | Scalar Cartesian stiffness, broadcast to xyz |
-| `--kd K` | `2*sqrt(kp)` | Scalar Cartesian damping |
-| `--axis x|y|z` | `z` | Scan axis in base frame |
-| `--amp A` | `0.0` | Sinusoid amplitude in meters (`0` = hold) |
-| `--freq F` | `0.25` | Sinusoid frequency in Hz |
-| `--duration sec` | `8.0` | `0` = run until Ctrl+C |
-| `--ramp sec` | `1.5` | Kp ramp-in |
-| `--amp-ramp sec` | `--ramp` | Amplitude ramp-in duration |
-| `--no-coriolis` | off | Disable explicit Coriolis for A/B |
-| `--print-err-every N` | `100` | Print Cartesian `|e|_inf` every N ticks (`0`=off) |
-| `--log path` | (no log) | Writes per-tick CSV |
-
-Validation and comparison workflow:
-
-1. In a stretched pose, run hold mode (`AMP=0`) and confirm `abort: none`.
-2. Run `AMP=0.01 AXIS=z` with the same `KP`; record `cart err RMS`.
-3. Increase `KP` (`KP=200`, `KP=500`) and check if `cart err RMS` drops.
-4. Move to a folded pose and repeat the same runs.
-5. Compare stretched vs folded `cart err RMS` under identical gains; this is
-   the Step 5 demonstration of configuration-dependent stiffness without
-   inertial decoupling.
-
-Safety notes specific to Step 5:
-
-- Runtime abort if Cartesian tracking error `|x_des - x|_inf > 0.05 m`.
-- Runtime abort if any joint goes outside nominal Panda limits.
-- Peak desired Cartesian speed check: `amp * 2*pi*freq <= 0.3 m/s`.
-- Keep `AMP` small on first runs (`0.005` to `0.01` m).
-
-## Step 5b: 6D pose Jacobian-transpose Cartesian PD (no Lambda)
-
-Control law in `src/step5b_cart_pose.cpp` (position + orientation):
-
-```
-tau_cmd = J^T * F_task + c(q, dq)
-F_task  = [Kp_pos*(x_des - x) - Kd_pos*v ;
-           Kp_ori*e_o         - Kd_ori*w]
-```
-
-where:
-
-- `J` is the full 6x7 Jacobian from `zeroJacobian(...)`.
-- `v = J_pos * dq`, `w = J_ori * dq`.
-- `e_o = 2 * vec(q_des * q^{-1})` with shortest-path quaternion sign handling.
-- `c(q, dq)` comes from `franka::Model::coriolis()`.
-
-Trajectory mode:
-
-- Position target is optional single-axis sinusoid around `x_anchor`.
-- Orientation target is held at startup anchor (`R_des = R_anchor`).
-
-Run Step 5b (safe defaults):
-
-```bash
-./scripts/run_step5b.sh
-```
-
-Run 1 cm z-axis sweep:
-
-```bash
-KP_POS=200 KP_ORI=20 AMP=0.01 AXIS=z ./scripts/run_step5b.sh
-```
-
-CLI reference:
-
-| Arg | Default | Notes |
-|-----|---------|-------|
-| `<robot_ip>` | (required) | e.g. `172.16.0.2` |
-| `--kp-pos K` | `100.0` | Scalar translational stiffness, broadcast to xyz |
-| `--kd-pos K` | `2*sqrt(kp-pos)` | Scalar translational damping |
-| `--kp-ori K` | `20.0` | Scalar orientation stiffness, broadcast to xyz |
-| `--kd-ori K` | `2*sqrt(kp-ori)` | Scalar orientation damping |
-| `--axis x|y|z` | `z` | Position sweep axis in base frame |
-| `--amp A` | `0.0` | Sinusoid amplitude in meters (`0` = hold) |
-| `--freq F` | `0.25` | Sinusoid frequency in Hz |
-| `--duration sec` | `8.0` | `0` = run until Ctrl+C |
-| `--ramp sec` | `1.5` | Gain ramp-in duration |
-| `--amp-ramp sec` | `--ramp` | Amplitude ramp-in duration |
-| `--no-coriolis` | off | Disable explicit Coriolis for A/B |
-| `--print-err-every N` | `100` | Print `|e_pos|_inf` and `||e_o||` every N ticks (`0`=off) |
-| `--log path` | (no log) | Writes per-tick CSV |
-| `--sidecar path` | derived from `--log` | Per-run JSON sidecar (replace `.csv`->`.json`) |
-
-CSV columns (per tick):
-
-```
-t_s, period_ms,
-q1..q7, dq1..dq7,
-x_x,x_y,x_z, dx_x,dx_y,dx_z,
-quat_x,quat_y,quat_z,quat_w, wx,wy,wz,
-x_des_{x,y,z}, dx_des_{x,y,z},
-quat_des_{x,y,z,w},
-e_x,e_y,e_z, e_ox,e_oy,e_oz,
-tau_pd1..tau_pd7,    # pre-clamp computed torque = J^T * f_task + c_vec
-tau_cmd1..tau_cmd7,  # post-clamp torque actually returned to libfranka
-c1..c7               # explicit Coriolis vector (0 if --no-coriolis)
-```
-
-JSON sidecar (written once per run, in success path AND on exception):
-
-- Identifies the run: `started_utc`, `csv_path`, `sidecar_path`, `controller`,
-  `robot_ip`, `control_rate_hz`, `frame`, `rt_priority`.
-- All CLI args under `args` (including auto-derived `kd_pos` / `kd_ori`).
-- Initial state for sim replay: `q_init[7]`, `x_anchor[3]`, `q_anchor_xyzw[4]`.
-  `null` if connect/readOnce failed before they were captured.
-- `abort` block: `code`, `name`, `joint`, `value`, `time_s`. `code=0` /
-  `name="none"` for clean finish.
-- `summary` block (jitter, dq_rms, c_rms, pos/ori RMS and max errors) when
-  the control loop ran at least one tick; `null` otherwise.
-- `exception` (string or `null`) and `ended_normally` (bool).
-
-Sim2real workflow with these logs:
-
-1. Real run produces `step5b_<ts>.csv` + `step5b_<ts>.json`.
-2. Sim replay reads sidecar JSON: initialize the sim arm to `q_init`, verify
-   `frame` and `args`.
-3. Sim controller streams `(t_s, x_des_*, quat_des_*)` from the CSV at
-   `control_rate_hz`. The same control law (pos+ori PD, no Lambda) keeps
-   the comparison fair.
-4. Sim records its own actual EE pose; align with real `(x_*, quat_*)`
-   columns by `t_s` for direct sim-vs-real residuals.
-
-Safety notes specific to Step 5b:
-
-- Runtime abort if Cartesian tracking error `|x_des - x|_inf > 0.05 m`.
-- Runtime abort if orientation error `||e_o||_2 > 0.30 rad`.
-- Runtime abort if any joint goes outside nominal Panda limits.
-- Peak desired Cartesian speed check: `amp * 2*pi*freq <= 0.3 m/s`.
-
-Sweep and visualization workflow:
-
-```bash
-# 1) Hold test (no position excitation)
-KP_POS=100 KP_ORI=10 AMP=0.0 DURATION=5 ./scripts/run_step5b.sh
-
-# 2) Small-amplitude Cartesian sweep
-KP_POS=200 KP_ORI=20 AMP=0.01 AXIS=z ./scripts/run_step5b.sh
-
-# 3) Increase translational gain
-KP_POS=500 KP_ORI=20 AMP=0.01 AXIS=z ./scripts/run_step5b.sh
-
-# 4) Plot desired vs actual EE trajectory and tracking errors
-python scripts/plot_step5.py --save --show
-```
-
-For stretched-vs-folded comparison, run the same commands in both
-configurations and compare plotted `||e_pos||` plus RMS/max metrics.
-
-## Prerequisites
-
-1. **PREEMPT_RT kernel** on the machine that runs the binary
-   (same machine that has the direct ethernet link to the FCI port).
-   Check with `uname -a` &mdash; the kernel string should contain `PREEMPT_RT`
-   (or `-rt`).
-2. **libfranka** installed and matching the robot's FCI firmware. Either:
-   - System-installed, so that `find_package(Franka)` resolves; OR
-   - Reuse the libfranka already built inside the deoxys repo
-     (`isaaclab_rollout/deoxys_control/deoxys/libfranka`) by passing its
-     install/build prefix as `-DCMAKE_PREFIX_PATH=...` at configure time.
-3. **Eigen3** (`sudo apt install libeigen3-dev`).
-4. **FCI license active** on the controller, joint brakes released, blue
-   robot LED, **emergency stop within reach.**
-5. **Real-time scheduling permission** for the user. Either:
-   - Add user to a `realtime` group with `/etc/security/limits.conf` entries:
-     ```
-     @realtime  -  rtprio   99
-     @realtime  -  memlock  unlimited
-     ```
-   - Or grant the binary `sudo setcap 'cap_sys_nice=eip' build/step1_joint_pd`
-     after building.
-
-If the binary cannot set `SCHED_FIFO` it prints a warning and continues
-without RT priority &mdash; useful for smoke tests off-robot, but jitter
-numbers will be meaningless.
-
-## Build
-
-```bash
-cd /home/tao/Projects/panda_control
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
-```
-
-If `find_package(Franka)` cannot find libfranka, point CMake at where
-libfranka was installed/built, e.g.:
-
-```bash
-cmake -S . -B build \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_PREFIX_PATH=/path/to/libfranka/install
-```
-
-## Run
-
-The wrapper script applies safe defaults (`Kp=10`, `duration=3 s`):
-
-```bash
-# 1. Move the robot to q_des manually (use Franka Desk guiding mode).
-# 2. Then:
-./scripts/run_step1.sh
-```
-
-Or call the binary directly with custom args:
-
-```bash
-./build/step1_joint_pd 172.16.0.2 \
-    --q-des 0 -0.785398 0 -2.356194 0 1.570796 0.785398 \
-    --kp 50.0 \
-    --duration 30 \
-    --ramp 1.5 \
-    --log data/step1_$(date +%Y%m%d_%H%M%S).csv
-```
-
-CLI reference:
-
-| Arg | Default | Notes |
-|-----|---------|-------|
-| `<robot_ip>` | (required) | e.g. `172.16.0.2` |
-| `--q-des q1..q7` | (required) | 7 floats, radians |
-| `--kp K` | `50.0` | Scalar, broadcast to 7 joints. Range checked `[0, 2000]`. |
-| `--kd K` | `2*sqrt(kp)` | Scalar, broadcast to 7 joints. |
-| `--duration sec` | `30.0` | `0` = run until Ctrl+C. |
-| `--ramp sec` | `1.5` | Kp ramp-in time. |
-| `--log path` | (no log) | If set, append one CSV row per tick. |
-
-### Read current joint position (`q`)
-
-Use this utility to print the robot's current 7 joint angles once:
-
-```bash
-./scripts/read_q.sh
-```
-
-Or with custom IP:
-
-```bash
-ROBOT_IP=172.16.0.2 ./scripts/read_q.sh
-```
-
-It prints:
-- current `q` in radians;
-- one copy-paste line for `step1_joint_pd --q-des`.
-
-## Validation checklist (run after step 1)
-
-1. **First run**: use the script defaults (`KP=10`, `DURATION=3`). Robot
-   should remain visibly still. If it twitches or drifts, stop and check
-   `data/step1_*.csv`.
-2. **Console summary** should show:
-   - `RT priority : yes`
-   - `period (ms) mean / std` &asymp; `1.000 / < 0.10` on a PREEMPT_RT
-     kernel. Much larger std indicates RT priority did not actually take
-     effect or another RT task is starving the loop.
-   - `dq RMS` per joint typically a few mrad/s &mdash; this is the velocity
-     noise floor for later OSC tuning.
-3. **Step up Kp progressively**: `KP=50`, `KP=200`. The robot should feel
-   stiffer; jitter and `dq` RMS should not change much.
-4. **Step up duration**: `DURATION=30`, `DURATION=120`. Watch for
-   thermal/error issues over time.
-
-## Step 10: Python Cartesian impedance API (PC ↔ NUC)
-
-1 kHz J^T 6D pose impedance (same control law as Step 5b) driven from any
-Python process. PC sends EE pose / gains over ZMQ; NUC daemon writes them to
-POSIX shm; C++ binary `osc_shm` reads the shm and runs the 1 kHz loop. Gains
-live in `config/robot.yaml`.
-
-### On the NUC (once per boot)
-
-```bash
-cd /home/nuc1/Projects/panda_control
-python -m panda_control.daemon --config config/robot.yaml
-```
-
-The daemon owns the shm segment, launches `build/osc_shm`, and exposes
-`tcp://*:5555` (REQ/REP) + `tcp://*:5556` (state PUB @ 100 Hz).
-
-### On the PC
-
-```bash
-pip install -e .    # one-time
-python examples/cart_impedance.py    # 20 Hz z-axis sinusoid
-python examples/reset_home.py        # one-shot move to home
-```
-
-Python API:
+The Cartesian impedance law is `F = K_p · (x_des - x) - K_d · v`, mapped through
+`τ = J^T · F`, with `K_d = 2·√K_p` (critical damping by default). No explicit
+null-space term — the J<sup>T</sup> formulation lets joint-space null motion
+settle under gravity and joint damping.
+
+### 4. Send a custom target from Python
 
 ```python
-from panda_control import load_config, RemotePandaClient
+import numpy as np
+import time
+from panda_control.config import load_config
+from panda_control.remote_client import RemotePandaClient
 
-cfg = load_config()           # reads ./config/robot.yaml or $PANDA_CONFIG
+cfg = load_config()                          # reads config/robot.yaml
 with RemotePandaClient(cfg) as robot:
-    robot.move_to_q(cfg.robot.init_q, speed_factor=0.2)   # blocking reset
-    robot.set_gains(kp_pos=200, kp_ori=20)
-    robot.set_ee_target(pos, quat_wxyz)                   # 10–20 Hz from policy
-    state = robot.get_state()                             # latest cached frame
+    robot.set_gains(kp_pos=500.0, kp_ori=30.0)
+    state = robot.wait_for_state(timeout_s=3.0)
+    anchor_pos  = state.ee_pos               # (3,) world frame, meters
+    anchor_quat = state.ee_quat              # (4,) wxyz
+
+    # Drive a +5 cm z offset at 50 Hz for 2 s.
+    dt = 0.02
+    for k in range(int(2.0 / dt)):
+        t = k * dt
+        offset = np.array([0.0, 0.0, 0.05 * np.sin(2 * np.pi * t)])
+        robot.set_ee_target(anchor_pos + offset, anchor_quat)
+        time.sleep(dt)
+
+    # State is also streamed; pull the latest frame.
+    s = robot.get_state()
+    print(f"q = {s.q}, ee_pos = {s.ee_pos}")
 ```
 
-Notes:
-- `move_to_q` uses libfranka's `MotionGenerator` (min-jerk, no external IK).
-- `move_to_pose` uses libfranka's `franka::CartesianPose` motion type (also
-  no external IK; libfranka rate-limits internally).
-- `set_ee_target` does NOT interpolate; rely on the J^T impedance for
-  smoothing (`Kp_pos ≈ 100–300`, `Kp_ori ≈ 20` are reasonable for Franka FR3).
-- Reset and impedance share one libfranka session; the daemon stops `osc_shm`
-  before invoking `move_to`, then restarts it. Do not run `osc_shm` and
-  `move_to` manually at the same time.
-- The `franka-interface` daemon (deoxys) must NOT be running.
+`RemotePandaClient` exposes `set_ee_target`, `set_gains`, `get_state` /
+`wait_for_state`, `move_to_q`, `move_to_pose`, `enable` / `disable`, and `ping`.
+All methods are non-blocking on the realtime path — `set_ee_target` writes a
+seqlock-protected command frame to shm and returns immediately; `osc_shm`
+consumes it on the next 1 kHz tick.
 
-CLI for the underlying binaries (useful for debugging without Python):
+## System Identification
 
-```bash
-./build/osc_shm 172.16.0.2 --init-shm --print-every 1000
-./build/move_to 172.16.0.2 --q  0 -0.785 0 -2.356 0 1.571 0.785 --speed-factor 0.2
-./build/move_to 172.16.0.2 --pose 0.5 0.0 0.4 1 0 0 0 --duration 5.0
-```
+The sysid optimizer (CMA-ES over 29 parameters: armature + static / dynamic /
+viscous friction × 7 joints + motor delay) lives in the
+[uw-lab/IsaacLab](https://github.com/uw-lab/IsaacLab) tree under
+`scripts/tools/sysid_franka_osc.py`. The end-to-end workflow:
 
-The Python ↔ C++ POSIX shm layout is pinned by `tests/test_shm_layout.py`,
-which compiles `tests/dump_shm_offsets.cpp` and cross-checks every field
-against `python/panda_control/shm_layout.py`. Run it after any layout edit:
+1. Collect real excitation data with `examples/cart_impedance.py --mode {step5d|chirp}` — produces `<run>.csv` and `<run>.json` sidecar.
+2. Optimize: `sysid_franka_osc.py --real_csv <run>.csv --real_sidecar <run>.json …` — produces `sysid_best_params.json`.
+3. Validate by re-running the same real trajectory in IsaacLab and overlaying:
+   ```bash
+   # IsaacLab side
+   python scripts/tools/apply_sysid_params.py \
+       --best logs/sysid_franka/<ts>/sysid_best_params.json --invoke-replay \
+       --real-csv <run>.csv --real-sidecar <run>.json \
+       --replay-script scripts/tools/replay_python_csv_sim.py
+   # panda_control side
+   python scripts/compare_sim_real.py \
+       --real-csv <run>.csv --sim-csv <run>_sim_sysid.csv --save
+   ```
 
-```bash
-PYTHONPATH=python python -m pytest tests/test_shm_layout.py
-```
+> Use `replay_python_csv_sim.py` (zero-order hold at 50 Hz) for
+> `cart_impedance.py` logs. The other replay script
+> (`replay_real_step5b_sim.py`) hardcodes a 1 kHz sim step and is only valid
+> for legacy 1 kHz C++ collector CSVs — feeding it a 50 Hz log silently
+> truncates the sim to 5 % of the trajectory length.
 
-## Layout
+## Configuration
 
-```
-panda_control/
-|-- CMakeLists.txt
-|-- README.md
-|-- HANDOFF.md
-|-- pyproject.toml
-|-- .gitignore
-|-- src/
-|   |-- step1_joint_pd.cpp        # Step 1 / 3 / 4 / 5* are the bottom-up stack
-|   |-- step3_joint_pd_coriolis.cpp
-|   |-- step4_joint_traj.cpp
-|   |-- step5_cart_pd.cpp
-|   |-- step5b_cart_pose.cpp
-|   |-- step5c_excite.cpp
-|   |-- shm_layout.h              # Step 10: POSIX shm contract
-|   |-- osc_shm.cpp               # Step 10: 1 kHz controller, shm-backed
-|   |-- move_to.cpp               # Step 10: libfranka reset utility
-|   |-- examples_common.{h,cpp}   # vendored MotionGenerator
-|   |-- read_current_q.cpp
-|   `-- read_current_pose.cpp
-|-- scripts/                       # bash wrappers + plotting for steps 1-5
-|-- python/
-|   `-- panda_control/
-|       |-- config.py             # load_config + schema validation
-|       |-- shm_layout.py         # numpy.dtype mirror of shm_layout.h
-|       |-- local_controller.py   # LocalPandaController (NUC, same-machine)
-|       |-- remote_client.py      # RemotePandaClient (PC, ZMQ)
-|       `-- daemon.py             # NUC ZMQ daemon, REP+PUB
-|-- config/
-|   `-- robot.yaml                # IPs, default gains, init_q, paths
-|-- examples/
-|   |-- cart_impedance.py
-|   `-- reset_home.py
-|-- tests/
-|   |-- dump_shm_offsets.cpp
-|   `-- test_shm_layout.py
-`-- data/
-    `-- .gitkeep                  (CSV logs land here)
-```
+`config/robot.yaml` keeps NUC and PC in agreement on:
+
+- `network.nuc_host` / `cmd_port` / `state_port` — ZMQ endpoints.
+- `robot.ip` — FCI IP, used only on the NUC side.
+- `robot.init_q` — joint-space home configuration.
+- `control.kp_pos` / `kp_ori` — default impedance gains (overridable per-run via `set_gains`).
+- `control.error_delta_pos` / `error_delta_rot` — per-tick safety clamps inside `osc_shm` (overridable at runtime via `set_gains(error_delta_pos=…)`).
+
+Override the config path with `PANDA_CONFIG=/path/to/local.yaml`.
+
+## Safety Notes
+
+- Always raise the user-stop and verify FCI mode before running anything.
+- `deoxys`'s `franka-interface` daemon must NOT be running concurrently.
+- `osc_shm` enforces per-tick `|e_pos|_inf` and `|e_ori|` clamps; if either is exceeded, it latches `τ = 0` and the arm holds against gravity. Lower-stiffness operating points (e.g. kp=500) and aggressive references may need looser clamps — see `cart_impedance.py --err-delta-pos / --err-delta-rot`.
+- Cartesian peak speed convention (inherited from earlier validation): `|dx|_peak ≤ 0.30 m/s`, `|ω|_peak ≤ 0.50 rad/s`. The v4 chirp defaults exceed both — this is expected; libfranka's internal limits remain the hard safety boundary.
