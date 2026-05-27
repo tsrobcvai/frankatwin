@@ -49,7 +49,7 @@
 #include <fcntl.h>
 #include <pthread.h>
 #include <sched.h>
-#include <signal.h>
+#include <csignal>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <time.h>

@@ -118,7 +118,17 @@ class LocalPandaController:
         self._shm = SharedMemoryAccess(name=cfg.paths.shm_name, create=True)
 
         if autostart:
-            self.start_controller()
+            try:
+                self.start_controller()
+            except BaseException:
+                # __del__/__exit__ won't run if __init__ raises, so we must
+                # release the shm segment ourselves to avoid a leaked POSIX
+                # shm name on the next launch.
+                try:
+                    self._shm.close(unlink=True)
+                finally:
+                    self._shm = None
+                raise
 
     # ------------------------------------------------------------------ lifecycle
     def start_controller(self) -> None:
