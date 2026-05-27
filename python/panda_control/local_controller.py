@@ -35,9 +35,14 @@ from panda_control.shm_layout import (
 
 logger = logging.getLogger(__name__)
 
-_OSC_STARTUP_TIMEOUT_S = 5.0
+_OSC_STARTUP_TIMEOUT_S = 10.0
 _OSC_SHUTDOWN_TIMEOUT_S = 3.0
 _MOVE_TO_TIMEOUT_S = 30.0
+# After osc_shm's PID is alive, require state_head to advance this many frames
+# before considering it "ready".  state_head ticks at 1 kHz so 5 frames = 5 ms;
+# the meaningful wait is the libfranka session setup + first control tick
+# which can take 0.5-2 s, not the 5 ms.
+_OSC_READY_STATE_HEAD_ADVANCE = 5
 
 
 def _wxyz_from(quat: np.ndarray) -> np.ndarray:
@@ -191,11 +196,36 @@ class LocalPandaController:
         return self._shm.view
 
     def _wait_until_running(self, timeout: float) -> None:
+        """Wait for osc_shm to actually be producing state frames.
+
+        Two-stage check:
+          1. controller_pid is set + that PID is alive (osc_shm process started)
+          2. state_head advances by >= _OSC_READY_STATE_HEAD_ADVANCE frames
+             (libfranka session is up AND the 1 kHz loop is publishing fresh
+             state into shm)
+
+        Stage 2 closes the race after move_to_q: previously this returned as
+        soon as the C++ process registered, but libfranka session setup +
+        first control tick still take 0.5-2 s, during which the daemon's PUB
+        has nothing fresh to send.  A wait_for_state immediately after a
+        reset would then time out spuriously.
+        """
         deadline = time.monotonic() + timeout
+        seen_pid = False
+        baseline_head: Optional[int] = None
         while time.monotonic() < deadline:
             pid = self._view.controller_pid
-            if pid != 0 and self._is_pid_alive(pid):
-                return
+            if not seen_pid:
+                if pid != 0 and self._is_pid_alive(pid):
+                    seen_pid = True
+                    baseline_head = self._view.state_head
+            else:
+                current_head = self._view.state_head
+                if (
+                    baseline_head is not None
+                    and current_head >= baseline_head + _OSC_READY_STATE_HEAD_ADVANCE
+                ):
+                    return
             if self._proc is not None and self._proc.poll() is not None:
                 stderr = b""
                 try:
@@ -207,8 +237,14 @@ class LocalPandaController:
                     f"stderr: {stderr.decode(errors='replace')[:512]}"
                 )
             time.sleep(0.05)
+        if not seen_pid:
+            raise TimeoutError(
+                f"osc_shm did not register pid in shm within {timeout:.1f} s"
+            )
         raise TimeoutError(
-            f"osc_shm did not register pid in shm within {timeout:.1f} s"
+            f"osc_shm pid registered but state_head did not advance "
+            f"{_OSC_READY_STATE_HEAD_ADVANCE} frames within {timeout:.1f} s "
+            f"(baseline {baseline_head} -> {self._view.state_head})"
         )
 
     @staticmethod
