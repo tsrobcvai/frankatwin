@@ -192,7 +192,6 @@ from panda_control.remote_client import RemotePandaClient
 
 cfg = load_config()                          # reads config/robot.yaml
 with RemotePandaClient(cfg) as robot:
-    robot.set_gains(kp_pos=500.0, kp_ori=30.0)
     state = robot.wait_for_state(timeout_s=3.0)
     anchor_pos  = state.ee_pos               # (3,) world frame, meters
     anchor_quat = state.ee_quat              # (4,) wxyz
@@ -242,6 +241,49 @@ viscous friction × 7 joints + motor delay) lives in the
 > (`replay_real_step5b_sim.py`) hardcodes a 1 kHz sim step and is only valid
 > for legacy 1 kHz C++ collector CSVs — feeding it a 50 Hz log silently
 > truncates the sim to 5 % of the trajectory length.
+
+## Example Results
+
+The CMA-ES sysid run on combined step5b/c/d (v3) real data produced the
+parameters below. Validated on a held-out v4 chirp (kp = 500 / 30, f<sub>1</sub>
+= 0.7 Hz, 8 s, UR5e amplitudes), the resulting IsaacLab simulation tracks the
+real arm to 1-3 % of joint motion range — joint-position MSE = 4.8 × 10<sup>-4</sup>
+rad², roughly **0.21× the in-distribution training score**, confirming that v3
+parameters generalise across the broader-spectrum v4 chirp.
+
+**v3 best parameters** (`logs/sysid_franka/20260525_145807/sysid_best_params.json`):
+
+```json
+{
+  "best_score": 0.002247,
+  "best_params_decoded": {
+    "armature":          [0.382, 0.159, 0.157, 0.174, 0.239, 0.180, 0.060],
+    "mu_static":         [0.728, 1.168, 0.591, 1.026, 1.632, 1.141, 1.065],
+    "dynamic_ratio":     [0.399, 0.767, 0.573, 0.794, 0.566, 0.508, 0.467],
+    "mu_dynamic":        [0.291, 0.895, 0.339, 0.815, 0.924, 0.580, 0.497],
+    "mu_viscous":        [3.676, 2.289, 2.875, 2.367, 3.296, 0.788, 1.937],
+    "motor_delay_steps": 1
+  }
+}
+```
+
+### Sim vs real on v4 chirp (held-out)
+
+EE position — sim (orange) overlays real (blue) almost exactly; both lag the
+target (dashed grey) by the same amount because the impedance controller is
+identical in both worlds:
+
+![EE position: target vs real vs sim](docs/images/v3_sysid_v4chirp_position.png)
+
+EE orientation quaternion — same story, all three components track in lockstep:
+
+![EE quaternion: target vs real vs sim](docs/images/v3_sysid_v4chirp_orientation.png)
+
+Joint-space view (q on the left, dq on the right, 7 joints stacked) — each
+sim trace sits on top of the real trace, individual-joint RMSE 12-30 mrad
+(1.9 - 8.3 % of per-joint motion range):
+
+![Per-joint q and dq: sim vs real](docs/images/v3_sysid_v4chirp_joints.png)
 
 ## Configuration
 
