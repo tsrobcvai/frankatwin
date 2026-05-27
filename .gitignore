@@ -16,6 +16,8 @@ data/*.h5
 *.png
 *.json
 *.csv
+# Ship the README example-results figures.
+!docs/images/*.png
 
 # Editor / IDE
 .vscode/
