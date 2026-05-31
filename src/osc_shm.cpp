@@ -84,6 +84,13 @@ const Eigen::Matrix<double, 7, 1> Q_MAX =
 constexpr double DEFAULT_KP_POS = 200.0;
 constexpr double DEFAULT_KP_ORI = 20.0;
 
+// Commanded-torque slew-rate limit [Nm/s], per joint.  libfranka aborts with
+// the "controller_torque_discontinuity" reflex when |dtau_J_d/dt| exceeds its
+// internal kMaxTorqueRate (1000 Nm/s).  We default to 800 (20% margin) so the
+// impedance law's torque steps (at setpoint/gain jumps) ramp over a few ms
+// instead of stepping.  Set to <= 0 to disable the limiter.
+constexpr double DEFAULT_MAX_TORQUE_RATE = 800.0;
+
 std::atomic<bool> g_stop_flag{false};
 void signal_handler(int /*signo*/) { g_stop_flag.store(true); }
 
@@ -94,12 +101,14 @@ struct Args {
   bool no_coriolis{false};
   int print_every{0};
   double duration{0.0};
+  double max_torque_rate{DEFAULT_MAX_TORQUE_RATE};
 };
 
 void print_usage(const char* prog) {
   std::cerr << "Usage: " << prog << " <robot_ip>"
             << " [--shm-name NAME] [--init-shm] [--no-coriolis]"
-            << " [--print-every N] [--duration sec]" << std::endl;
+            << " [--print-every N] [--duration sec]"
+            << " [--max-torque-rate Nm_per_s]" << std::endl;
 }
 
 bool parse_args(int argc, char** argv, Args& out) {
@@ -132,6 +141,10 @@ bool parse_args(int argc, char** argv, Args& out) {
     } else if (key == "--duration") {
       if (i + 1 >= argc) return false;
       out.duration = std::atof(argv[i + 1]);
+      i += 2;
+    } else if (key == "--max-torque-rate") {
+      if (i + 1 >= argc) return false;
+      out.max_torque_rate = std::atof(argv[i + 1]);
       i += 2;
     } else if (key == "-h" || key == "--help") {
       print_usage(argv[0]);
@@ -279,6 +292,11 @@ int main(int argc, char** argv) {
   const bool rt_ok = try_set_realtime_priority();
   std::cout << "[osc_shm] RT       = " << (rt_ok ? "SCHED_FIFO" : "non-RT")
             << std::endl;
+  std::cout << "[osc_shm] tau_rate = "
+            << (args.max_torque_rate > 0.0
+                    ? std::to_string(args.max_torque_rate) + " Nm/s (slew limit)"
+                    : std::string("OFF"))
+            << std::endl;
 
   const double t_start_mono = monotonic_seconds();
 
@@ -341,6 +359,11 @@ int main(int argc, char** argv) {
     int abort_code = 0;
     double abort_value = 0.0;
     int abort_joint = -1;
+    // Previous commanded torque, for the per-tick slew-rate limiter.  Starts at
+    // zero: the robot enters control from rest, and the seeded setpoint
+    // (anchor == current pose) yields ~zero torque, so ramping up from 0 is
+    // both correct and smoother than the (unlimited) original first command.
+    Eigen::Matrix<double, 7, 1> tau_prev = Eigen::Matrix<double, 7, 1>::Zero();
 
     auto callback = [&](const franka::RobotState& s,
                         franka::Duration period) -> franka::Torques {
@@ -407,8 +430,33 @@ int main(int argc, char** argv) {
         // Hold mode: zero command torque (libfranka still adds gravity + friction).
         tau_pd.setZero();
       }
-      const Eigen::Matrix<double, 7, 1> tau_cmd =
+      Eigen::Matrix<double, 7, 1> tau_cmd =
           tau_pd.cwiseMax(-TAU_LIMIT).cwiseMin(TAU_LIMIT);
+
+      // Torque slew-rate limiter.  The Jacobian-transpose impedance law emits a
+      // STEP in commanded torque whenever its inputs jump discontinuously --
+      // the setpoint (x_des/q_des) at a trajectory phase boundary, the gains
+      // (set_gains), or enabled (enable/disable).  libfranka monitors the rate
+      // of the commanded torque tau_J_d and aborts with the
+      // "controller_torque_discontinuity" reflex when it exceeds kMaxTorqueRate
+      // (1000 Nm/s).  Clamping each joint's per-tick change to
+      // max_torque_rate*dt makes the torque RAMP to the new value over a few ms
+      // instead of stepping, so the reflex cannot fire for ANY setpoint jump at
+      // ANY configuration.  During normal in-phase motion dtau/dt is far below
+      // the limit, so the limiter is inactive and does not alter the tracked
+      // trajectory -- it only shapes the few-ms transitions at boundaries.
+      if (args.max_torque_rate > 0.0) {
+        double dt = period.toSec();
+        if (dt <= 0.0) dt = 1e-3;  // libfranka's first callback reports period 0
+        const double max_dtau = args.max_torque_rate * dt;
+        for (int j = 0; j < 7; ++j) {
+          const double lo = tau_prev(j) - max_dtau;
+          const double hi = tau_prev(j) + max_dtau;
+          if (tau_cmd(j) < lo) tau_cmd(j) = lo;
+          else if (tau_cmd(j) > hi) tau_cmd(j) = hi;
+        }
+      }
+      tau_prev = tau_cmd;
 
       // Publish the state frame to the ring buffer.
       PandaShmStateFrame frame{};
