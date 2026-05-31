@@ -136,6 +136,12 @@ class LocalPandaController:
                 "--shm-name",
                 self.cfg.paths.shm_name,
             ]
+            # Register an EE payload (e.g. mounted camera) for gravity comp.
+            load = getattr(self.cfg, "load", None)
+            if load is not None and load.mass > 0.0:
+                args += ["--load-mass", f"{load.mass:.6f}"]
+                args += ["--load-com", *[f"{v:.6f}" for v in load.com]]
+                args += ["--load-inertia", *[f"{v:.9f}" for v in load.inertia]]
             if self.verbose:
                 logger.info("starting osc_shm: %s", " ".join(args))
             self._proc = subprocess.Popen(

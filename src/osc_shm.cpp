@@ -102,13 +102,19 @@ struct Args {
   int print_every{0};
   double duration{0.0};
   double max_torque_rate{DEFAULT_MAX_TORQUE_RATE};
+  // End-effector payload (mounted camera, etc.). mass<=0 -> don't call setLoad.
+  double load_mass{0.0};
+  std::array<double, 3> load_com{{0.0, 0.0, 0.0}};       // flange->load COM [m]
+  std::array<double, 9> load_inertia{{0, 0, 0, 0, 0, 0, 0, 0, 0}};  // about COM [kg m^2]
 };
 
 void print_usage(const char* prog) {
   std::cerr << "Usage: " << prog << " <robot_ip>"
             << " [--shm-name NAME] [--init-shm] [--no-coriolis]"
             << " [--print-every N] [--duration sec]"
-            << " [--max-torque-rate Nm_per_s]" << std::endl;
+            << " [--max-torque-rate Nm_per_s]"
+            << " [--load-mass kg] [--load-com x y z]"
+            << " [--load-inertia i0 .. i8]" << std::endl;
 }
 
 bool parse_args(int argc, char** argv, Args& out) {
@@ -146,6 +152,19 @@ bool parse_args(int argc, char** argv, Args& out) {
       if (i + 1 >= argc) return false;
       out.max_torque_rate = std::atof(argv[i + 1]);
       i += 2;
+    } else if (key == "--load-mass") {
+      if (i + 1 >= argc) return false;
+      out.load_mass = std::atof(argv[i + 1]);
+      i += 2;
+    } else if (key == "--load-com") {
+      if (i + 3 >= argc) return false;
+      out.load_com = {std::atof(argv[i + 1]), std::atof(argv[i + 2]),
+                      std::atof(argv[i + 3])};
+      i += 4;
+    } else if (key == "--load-inertia") {
+      if (i + 9 >= argc) return false;
+      for (int k = 0; k < 9; ++k) out.load_inertia[k] = std::atof(argv[i + 1 + k]);
+      i += 10;
     } else if (key == "-h" || key == "--help") {
       print_usage(argv[0]);
       return false;
@@ -302,6 +321,22 @@ int main(int argc, char** argv) {
 
   try {
     franka::Robot robot(args.robot_ip);
+
+    // Register an end-effector payload (e.g. a mounted camera) so libfranka's
+    // gravity/inertia compensation accounts for it.  Without this, the extra
+    // weight is uncompensated and the impedance controller sags (notably in z).
+    // Must be called before robot.control(). mass<=0 -> leave the Desk-configured
+    // load untouched (default).
+    if (args.load_mass > 0.0) {
+      robot.setLoad(args.load_mass, args.load_com, args.load_inertia);
+      std::cout << "[osc_shm] load     = " << args.load_mass << " kg, com=["
+                << args.load_com[0] << ", " << args.load_com[1] << ", "
+                << args.load_com[2] << "] m (gravity-compensated)" << std::endl;
+    } else {
+      std::cout << "[osc_shm] load     = none (using Desk-configured load)"
+                << std::endl;
+    }
+
     robot.setCollisionBehavior(
         {{20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0}},
         {{20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0}},

@@ -89,6 +89,20 @@ class GripperConfig:
 
 
 @dataclass
+class LoadConfig:
+    """End-effector payload (e.g. a mounted camera) for gravity compensation.
+
+    mass <= 0 means "no extra load" -> osc_shm leaves the Desk-configured load
+    untouched (calls no setLoad).  com is the flange->load COM vector [m];
+    inertia is the 3x3 about the COM, row-major [kg m^2].
+    """
+
+    mass: float = 0.0
+    com: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
+    inertia: List[float] = field(default_factory=lambda: [0.0] * 9)
+
+
+@dataclass
 class RobotConfig:
     """Top-level config bundle. Pass-through for clients/daemon/local."""
 
@@ -98,6 +112,7 @@ class RobotConfig:
     paths: PathsConfig
     reset: ResetConfig = field(default_factory=ResetConfig)
     gripper: GripperConfig = field(default_factory=GripperConfig)
+    load: LoadConfig = field(default_factory=LoadConfig)
     source_path: Optional[pathlib.Path] = None
 
 
@@ -201,6 +216,19 @@ def load_config(path: Optional[os.PathLike] = None) -> RobotConfig:
         grip = raw.get("gripper", {}) or {}
         grip_cfg = GripperConfig(enabled=bool(grip.get("enabled", False)))
 
+        load = raw.get("load", {}) or {}
+        load_cfg = LoadConfig(
+            mass=float(load.get("mass", 0.0)),
+            com=[float(x) for x in load.get("com", [0.0, 0.0, 0.0])],
+            inertia=[float(x) for x in load.get("inertia", [0.0] * 9)],
+        )
+        if load_cfg.mass < 0.0:
+            raise ValueError(f"load.mass must be >= 0, got {load_cfg.mass}")
+        if len(load_cfg.com) != 3:
+            raise ValueError(f"load.com must have 3 elements, got {load_cfg.com!r}")
+        if len(load_cfg.inertia) != 9:
+            raise ValueError(f"load.inertia must have 9 elements, got {load_cfg.inertia!r}")
+
     except KeyError as e:
         raise KeyError(f"missing required config key: {e}") from e
 
@@ -211,5 +239,6 @@ def load_config(path: Optional[os.PathLike] = None) -> RobotConfig:
         paths=paths_cfg,
         reset=reset_cfg,
         gripper=grip_cfg,
+        load=load_cfg,
         source_path=chosen,
     )
