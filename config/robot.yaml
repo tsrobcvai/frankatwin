@@ -53,3 +53,25 @@ reset:
 # Reserved for future gripper integration. Not used by the current daemon.
 gripper:
   enabled: false
+
+# End-effector payload for libfranka gravity/inertia compensation.
+# osc_shm calls robot.setLoad(mass, com, inertia) at startup when mass > 0;
+# mass = 0 disables it (uses the Desk-configured load). Restart the daemon after
+# changing these -- no recompile needed (only osc_shm.cpp needed the one-time
+# rebuild that added setLoad support).
+#
+# Current values = ZED Mini camera + mount estimate.
+#   - Bare ZED Mini: 0.0629 kg (Stereolabs spec).
+#   - The MOUNTED load (camera + bracket + connector) is heavier; the no-cam vs
+#     with-cam run showed ~6 mm static z sag at home -> ~0.3 kg effective
+#     (k_z * sag / g = 500 * 0.006 / 9.81). BEST: weigh the full camera+bracket
+#     assembly and put that here.
+#   - com: vector from the FLANGE frame origin to the load COM [m] (flange z is
+#     the tool axis). Estimate from the bracket; mass dominates the gravity
+#     force, com mainly shifts the joint-torque split.
+#   - inertia: 3x3 about the COM, row-major [kg m^2]; ~0 is fine for a ~0.1 kg cam.
+# After setting, re-run six_dof and check the with-cam z sag is largely gone.
+load:
+  mass: 0.0                 # set to measured camera+bracket mass, e.g. 0.20
+  com: [0.0, 0.0, 0.05]
+  inertia: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]

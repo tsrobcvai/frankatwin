@@ -60,32 +60,47 @@ from panda_control.config import load_config
 from panda_control.remote_client import RemotePandaClient
 
 # ---------------------------------------------------------------------------
-# Phase schedule (verbatim copy of the sim script's PHASES).
+# Phase schedule (verbatim copy of the sim script's PHASES -- NO settle, so it
+# matches IsaacLab Franka-Debug-v2 for an apples-to-apples sim2real diff).
 # (name, duration_s, [δ_x, δ_y, δ_z] m/tick, [δ_rx, δ_ry, δ_rz] rad/tick)
 # ---------------------------------------------------------------------------
-# Settle periods between active phases are CRITICAL on real: without them the
-# sudden direction change at the phase boundary (arm has ~5 cm/s in phase N's
-# direction, the next tick suddenly commands phase N+1's direction) drives
-# joint jerk past libfranka's safety thresholds and the arm latches into the
-# REFLEX mode, killing osc_shm and silently freezing the rest of the test.
-# 0.3 s is far more than the Kp/Kd time constant (~25 ms) so velocity damps
-# cleanly to 0 before the next command.
-_S = 0.3
-PHASES = [
+# HISTORY / why no settle by default:
+#   We previously interleaved 0.3 s "settle" phases here, believing the
+#   direction change at a phase boundary tripped libfranka's REFLEX.  That was
+#   WRONG -- verified 2026-05-31: with settle the arm STILL froze at the same
+#   phase2_y onset.  The real cause is `controller_torque_discontinuity`: the
+#   Jacobian-transpose impedance law emitted a STEP in commanded torque when the
+#   setpoint jumped, exceeding libfranka's 1000 Nm/s torque-rate limit.  Fixed
+#   in the controller (osc_shm torque slew-rate limiter, default 800 Nm/s), NOT
+#   at the trajectory level.  Settle is therefore unnecessary AND breaks sim
+#   parity, so it is OFF by default.  `--settle S` can re-insert it for ad-hoc
+#   experiments, but do not use it for sim2real data collection.
+ACTIVE_PHASES = [
     ("phase1_x",    2.0, [0.015, 0.0,   0.0  ], [0.0,   0.0,   0.0  ]),
-    ("settle1",     _S,  [0.0,   0.0,   0.0  ], [0.0,   0.0,   0.0  ]),
     ("phase2_y",    2.0, [0.0,   0.015, 0.0  ], [0.0,   0.0,   0.0  ]),
-    ("settle2",     _S,  [0.0,   0.0,   0.0  ], [0.0,   0.0,   0.0  ]),
     ("phase3_z",    2.0, [0.0,   0.0,   0.015], [0.0,   0.0,   0.0  ]),
-    ("settle3",     _S,  [0.0,   0.0,   0.0  ], [0.0,   0.0,   0.0  ]),
     ("phase4_rx",   2.0, [0.0,   0.0,   0.0  ], [0.05,  0.0,   0.0  ]),
-    ("settle4",     _S,  [0.0,   0.0,   0.0  ], [0.0,   0.0,   0.0  ]),
     ("phase5_ry",   2.0, [0.0,   0.0,   0.0  ], [0.0,   0.05,  0.0  ]),
-    ("settle5",     _S,  [0.0,   0.0,   0.0  ], [0.0,   0.0,   0.0  ]),
     ("phase6_rz",   2.0, [0.0,   0.0,   0.0  ], [0.0,   0.0,   0.05 ]),
-    ("settle6",     _S,  [0.0,   0.0,   0.0  ], [0.0,   0.0,   0.0  ]),
     ("phase7_all6", 2.0, [0.008, 0.008, 0.008], [0.025, 0.025, 0.025]),
 ]
+
+
+def _with_settle(active_phases, settle_s: float):
+    """Interleave a zero-delta hold phase between active phases (default: none).
+
+    settle_s <= 0 returns the active phases unchanged (sim-parity default).
+    Kept only for ad-hoc experiments; the reflex is fixed in osc_shm, not here.
+    """
+    if settle_s <= 0.0:
+        return list(active_phases)
+    out = []
+    for i, ph in enumerate(active_phases):
+        out.append(ph)
+        if i < len(active_phases) - 1:
+            out.append((f"settle{i + 1}", float(settle_s),
+                        [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]))
+    return out
 
 # ---- Defaults matched to the sim Franka-Debug-v2 run ----------------------
 V2_KP_POS = 500.0
@@ -101,6 +116,15 @@ def parse_args() -> argparse.Namespace:
         default=50.0,
         help="Target re-anchor rate [Hz] (default 50). Sim uses 1000 Hz physics; "
         "rate-mismatch caveat applies (see fixed_delta_pose_test.py docstring).",
+    )
+    p.add_argument(
+        "--settle",
+        type=float,
+        default=0.0,
+        help="Zero-delta hold [s] between active phases (default 0 = OFF, matches "
+        "the sim). Only for ad-hoc experiments; the reflex is fixed in osc_shm, "
+        "so settle is NOT needed and breaks sim2real parity. Do not use for data "
+        "collection.",
     )
     p.add_argument(
         "--kp-pos",
@@ -141,6 +165,14 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=None,
         help="speed_factor for the startup / return move_to_q calls (0,0.5]; None = config default.",
+    )
+    p.add_argument(
+        "--tag",
+        type=str,
+        default="",
+        help="Free-form label for this run's hardware/payload setup (e.g. 'withcam', "
+        "'nocam'). Recorded in the <run>.json sidecar so a run is self-describing for "
+        "the downstream diff tool; also put it in --log so it shows in the filename.",
     )
     return p.parse_args()
 
@@ -205,22 +237,26 @@ def main() -> int:
     kd_ori = 2.0 * math.sqrt(kp_ori)
 
     dt = 1.0 / float(args.rate)
-    total_duration = sum(p[1] for p in PHASES)
-    n_total = int(round(total_duration * float(args.rate)))
+    phases = _with_settle(ACTIVE_PHASES, float(args.settle))
+    total_duration = sum(p[1] for p in phases)
+    # Size buffers from the exact per-phase tick sum (matches the loop), so
+    # global_tick can never overrun the buffers when settle is interleaved.
+    n_total = sum(int(round(dur * float(args.rate))) for (_, dur, _, _) in phases)
 
     log_path = Path(args.log).expanduser().resolve() if args.log else None
     if log_path is None:
         print("[six_dof] (no --log given, trajectory will not be saved)", file=sys.stderr)
 
+    settle_desc = f"{args.settle:.2f}s" if args.settle > 0.0 else "OFF (sim parity)"
     print(
-        f"[six_dof] {len(PHASES)} phases, total {total_duration:.1f} s @ "
-        f"{args.rate:.1f} Hz ({n_total} ticks)"
+        f"[six_dof] {len(phases)} phases, total {total_duration:.1f} s @ "
+        f"{args.rate:.1f} Hz ({n_total} ticks), settle={settle_desc}"
     )
     print(
         f"[six_dof] gains: kp_pos={kp_pos:.1f}, kp_ori={kp_ori:.1f}  "
         f"(daemon kd ≈ kd_pos={kd_pos:.2f}, kd_ori={kd_ori:.2f})."
     )
-    for name, dur, pos_d, rot_d in PHASES:
+    for name, dur, pos_d, rot_d in phases:
         print(f"          {name:12s}  dur={dur:.2f}s  δ_pos={pos_d}  δ_rot={rot_d}")
 
     cfg = load_config(args.config)
@@ -278,6 +314,9 @@ def main() -> int:
         log_quat = np.zeros((n_total + 1, 4), dtype=np.float64)
         log_rotdev = np.zeros(n_total + 1, dtype=np.float64)
         log_speed = np.zeros(n_total + 1, dtype=np.float64)
+        log_seq = np.zeros(n_total + 1, dtype=np.int64)
+        log_q = np.full((n_total + 1, 7), np.nan, dtype=np.float64)
+        log_dq = np.full((n_total + 1, 7), np.nan, dtype=np.float64)
 
         # Row 0: t=0, init pose.
         log_t[0] = 0.0
@@ -287,13 +326,32 @@ def main() -> int:
         log_quat[0] = init_quat
         log_rotdev[0] = 0.0
         log_speed[0] = 0.0
+        log_seq[0] = int(state.seq)
+        log_q[0] = np.asarray(state.q, dtype=np.float64)
+        log_dq[0] = np.asarray(state.dq, dtype=np.float64)
+
+        # State-stream staleness watchdog.  The chase needs a fresh frame each
+        # tick; fresh=True avoids SUB-cache lag but does NOT protect against
+        # osc_shm DYING mid-run -- a dead controller freezes the shm state, so
+        # seq stops advancing and every get_state returns the same frozen pose.
+        # Without this, the loop silently logs frozen data for the rest of the
+        # run (exactly the bug that invalidated the pre-2026-05-31 CSVs).  Break
+        # loudly and record where it died.
+        stale_limit = max(5, int(round(0.4 * float(args.rate))))  # ~0.4 s
+        last_seq = int(state.seq)
+        last_fresh_tick = 0
+        last_fresh_t = 0.0
+        stale_count = 0
+        froze = False
 
         prev_pos = init_pos.copy()
         prev_t = 0.0
         t0 = time.monotonic()
         global_tick = 0
         try:
-            for phase_idx, (phase_name, dur, pos_d, rot_d) in enumerate(PHASES, start=1):
+            for phase_idx, (phase_name, dur, pos_d, rot_d) in enumerate(phases, start=1):
+                if froze:
+                    break
                 n_phase = int(round(dur * float(args.rate)))
                 pos_d_arr = np.asarray(pos_d, dtype=np.float64)
                 rot_d_arr = np.asarray(rot_d, dtype=np.float64)
@@ -305,9 +363,11 @@ def main() -> int:
                     if fresh is not None:
                         cur_pos = np.asarray(fresh.ee_pos, dtype=np.float64)
                         cur_quat = _normalize_quat(np.asarray(fresh.ee_quat, dtype=np.float64))
+                        cur_seq = int(fresh.seq)
                     else:
                         cur_pos = prev_pos
                         cur_quat = init_quat
+                        cur_seq = last_seq
 
                     # Pure chase semantics for both position and orientation
                     # (symmetric, matches sim).  Validity depends on
@@ -329,8 +389,32 @@ def main() -> int:
                     log_rotdev[global_tick] = _rot_dev_rad(cur_quat, init_quat)
                     seg_dt = max(now - prev_t, 1e-6)
                     log_speed[global_tick] = float(np.linalg.norm(cur_pos - prev_pos) / seg_dt)
+                    log_seq[global_tick] = cur_seq
+                    if fresh is not None:
+                        log_q[global_tick] = np.asarray(fresh.q, dtype=np.float64)
+                        log_dq[global_tick] = np.asarray(fresh.dq, dtype=np.float64)
                     prev_pos = cur_pos.copy()
                     prev_t = now
+
+                    # Watchdog: has the state stream advanced?
+                    if cur_seq != last_seq:
+                        last_seq = cur_seq
+                        last_fresh_tick = global_tick
+                        last_fresh_t = now
+                        stale_count = 0
+                    else:
+                        stale_count += 1
+                        if stale_count >= stale_limit:
+                            froze = True
+                            print(
+                                f"[six_dof] !! STATE STREAM FROZE: seq stuck at {last_seq} "
+                                f"for {stale_count} ticks. Last fresh frame at tick "
+                                f"{last_fresh_tick} (t={last_fresh_t:.3f}s, phase "
+                                f"'{log_phase_name[last_fresh_tick]}'). osc_shm likely "
+                                f"died here (reflex). Aborting chase.",
+                                file=sys.stderr,
+                            )
+                            break
 
                     sleep_for = (t0 + global_tick * dt) - time.monotonic()
                     if sleep_for > 0:
@@ -347,6 +431,9 @@ def main() -> int:
         log_quat = log_quat[:n_actual]
         log_rotdev = log_rotdev[:n_actual]
         log_speed = log_speed[:n_actual]
+        log_seq = log_seq[:n_actual]
+        log_q = log_q[:n_actual]
+        log_dq = log_dq[:n_actual]
 
         elapsed = time.monotonic() - t0
         final = robot.get_state() if sub_cache_alive else robot.get_state(fresh=True)
@@ -362,18 +449,22 @@ def main() -> int:
               f"({log_rotdev[-1] * 57.2958:.2f}°).")
         print(f"[six_dof] achieved loop rate ≈ {global_tick / max(elapsed, 1e-6):.1f} Hz.")
 
-        # Safe return to home via move_to_q (raw set_ee_target jump could trip the
-        # daemon per-tick clamp because the 7-phase test ends at a non-trivial pose).
-        if not args.no_return:
-            q_home = np.asarray(cfg.robot.init_q, dtype=np.float64).reshape(-1)
-            print(f"[six_dof] returning to home via move_to_q(init_q) ...")
-            robot.move_to_q(q_home, speed_factor=args.reset_speed)
-            print("[six_dof] return done.")
+        if froze:
+            print(
+                f"[six_dof] !! run aborted by watchdog: controller froze near tick "
+                f"{last_fresh_tick} (t={last_fresh_t:.3f}s, phase "
+                f"'{log_phase_name[last_fresh_tick]}'). See seq column in the CSV. "
+                f"This run is INVALID for sim2real -- do not use it.",
+                file=sys.stderr,
+            )
 
+        # Write the log FIRST -- the return-to-home below can fail (e.g. the arm
+        # latched into REFLEX mid-run) and we must not lose the trajectory.
         if log_path is not None:
             _write_csv(
                 log_path, log_t, log_phase_idx, log_phase_name,
-                log_pos, init_pos, log_quat, log_rotdev, log_speed,
+                log_pos, init_pos, log_quat, log_rotdev, log_speed, log_seq,
+                log_q, log_dq,
             )
             _write_meta_json(
                 log_path,
@@ -381,7 +472,9 @@ def main() -> int:
                 kp_ori=kp_ori,
                 kd_pos_critical=kd_pos,
                 kd_ori_critical=kd_ori,
-                phases=PHASES,
+                tag=str(args.tag),
+                settle_s=float(args.settle),
+                phases=phases,
                 duration_s=float(total_duration),
                 refresh_rate_hz_target=float(args.rate),
                 refresh_rate_hz_achieved=float(global_tick / max(elapsed, 1e-6)),
@@ -390,7 +483,27 @@ def main() -> int:
                 start_ee_quat_wxyz=init_quat,
                 final_disp=disp,
                 final_rot_dev_rad=float(log_rotdev[-1]),
+                froze=bool(froze),
+                froze_at_tick=int(last_fresh_tick) if froze else None,
+                froze_at_t_s=float(last_fresh_t) if froze else None,
             )
+
+        # Safe return to home via move_to_q (raw set_ee_target jump could trip the
+        # daemon per-tick clamp because the 7-phase test ends at a non-trivial pose).
+        # Non-fatal: a failure here must not discard the run we just logged.
+        if not args.no_return:
+            q_home = np.asarray(cfg.robot.init_q, dtype=np.float64).reshape(-1)
+            print(f"[six_dof] returning to home via move_to_q(init_q) ...")
+            try:
+                robot.move_to_q(q_home, speed_factor=args.reset_speed)
+                print("[six_dof] return done.")
+            except Exception as e:
+                print(
+                    f"[six_dof] !! return-to-home FAILED: {e}\n"
+                    f"[six_dof]    (arm is likely latched in REFLEX; clear it via "
+                    f"Franka Desk before the next run.)",
+                    file=sys.stderr,
+                )
     return 0
 
 
@@ -404,6 +517,9 @@ def _write_csv(
     quat_wxyz: np.ndarray,
     rotdev: np.ndarray,
     speed: np.ndarray,
+    seq: np.ndarray,
+    q: np.ndarray,
+    dq: np.ndarray,
 ) -> None:
     disp = pos - init_pos[None, :]
     columns = [
@@ -411,19 +527,23 @@ def _write_csv(
         "x", "y", "z",
         "disp_x", "disp_y", "disp_z",
         "qw", "qx", "qy", "qz",
-        "rot_dev_rad", "speed_mps",
+        "rot_dev_rad", "speed_mps", "seq",
     ]
+    columns += [f"q{j}" for j in range(7)] + [f"dq{j}" for j in range(7)]
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
         f.write(",".join(columns) + "\n")
         for i in range(len(t)):
+            q_str = ",".join(f"{q[i, j]:.9f}" for j in range(7))
+            dq_str = ",".join(f"{dq[i, j]:.9f}" for j in range(7))
             f.write(
                 f"{t[i]:.9f},{phase_idx[i]},{phase_name[i]},"
                 f"{pos[i, 0]:.9f},{pos[i, 1]:.9f},{pos[i, 2]:.9f},"
                 f"{disp[i, 0]:.9f},{disp[i, 1]:.9f},{disp[i, 2]:.9f},"
                 f"{quat_wxyz[i, 0]:.9f},{quat_wxyz[i, 1]:.9f},"
                 f"{quat_wxyz[i, 2]:.9f},{quat_wxyz[i, 3]:.9f},"
-                f"{rotdev[i]:.9f},{speed[i]:.9f}\n"
+                f"{rotdev[i]:.9f},{speed[i]:.9f},{int(seq[i])},"
+                f"{q_str},{dq_str}\n"
             )
     print(f"[six_dof] wrote CSV: {path}")
 
@@ -435,6 +555,8 @@ def _write_meta_json(
     kp_ori: float,
     kd_pos_critical: float,
     kd_ori_critical: float,
+    tag: str,
+    settle_s: float,
     phases: list,
     duration_s: float,
     refresh_rate_hz_target: float,
@@ -444,9 +566,13 @@ def _write_meta_json(
     start_ee_quat_wxyz: np.ndarray,
     final_disp: np.ndarray,
     final_rot_dev_rad: float,
+    froze: bool = False,
+    froze_at_tick: int | None = None,
+    froze_at_t_s: float | None = None,
 ) -> None:
     json_path = csv_path.with_suffix(".json")
     meta = {
+        "setup": {"tag": tag},
         "control": {
             "kp_pos": float(kp_pos),
             "kp_ori": float(kp_ori),
@@ -455,6 +581,7 @@ def _write_meta_json(
             "note": "kd is derived by the daemon as 2*sqrt(kp); values here are the analytic critical-damping reference only.",
         },
         "command": {
+            "settle_s": float(settle_s),
             "phases": [
                 {
                     "name": name,
@@ -478,6 +605,9 @@ def _write_meta_json(
             "final_disp_norm_m": float(np.linalg.norm(final_disp)),
             "final_rot_dev_rad": float(final_rot_dev_rad),
             "final_rot_dev_deg": float(final_rot_dev_rad * 180.0 / math.pi),
+            "froze": bool(froze),
+            "froze_at_tick": froze_at_tick,
+            "froze_at_t_s": froze_at_t_s,
         },
         "source": {
             "script": "panda_control/examples/six_dof_pose_test.py",
