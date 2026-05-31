@@ -49,7 +49,6 @@
 #include <fcntl.h>
 #include <pthread.h>
 #include <sched.h>
-#include <signal.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <time.h>
@@ -60,6 +59,7 @@
 #include <cerrno>
 #include <chrono>
 #include <cmath>
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
