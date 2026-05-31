@@ -328,10 +328,22 @@ int main(int argc, char** argv) {
     // Must be called before robot.control(). mass<=0 -> leave the Desk-configured
     // load untouched (default).
     if (args.load_mass > 0.0) {
-      robot.setLoad(args.load_mass, args.load_com, args.load_inertia);
-      std::cout << "[osc_shm] load     = " << args.load_mass << " kg, com=["
-                << args.load_com[0] << ", " << args.load_com[1] << ", "
-                << args.load_com[2] << "] m (gravity-compensated)" << std::endl;
+      // Non-fatal: a rejected load (e.g. an invalid inertia tensor) must not
+      // brick the whole daemon.  Warn loudly and continue with whatever load
+      // the robot already has (Desk-configured) so the operator notices the
+      // camera is NOT compensated rather than losing the controller entirely.
+      try {
+        robot.setLoad(args.load_mass, args.load_com, args.load_inertia);
+        std::cout << "[osc_shm] load     = " << args.load_mass << " kg, com=["
+                  << args.load_com[0] << ", " << args.load_com[1] << ", "
+                  << args.load_com[2] << "] m (gravity-compensated)" << std::endl;
+      } catch (const franka::Exception& e) {
+        std::cerr << "[osc_shm] WARN: setLoad FAILED (" << e.what()
+                  << "). Continuing with the Desk-configured load -- the "
+                     "payload is NOT compensated. Check load.mass/com/inertia "
+                     "(inertia must be a valid positive-definite tensor)."
+                  << std::endl;
+      }
     } else {
       std::cout << "[osc_shm] load     = none (using Desk-configured load)"
                 << std::endl;
