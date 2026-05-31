@@ -112,6 +112,22 @@ endif()
 target_compile_options(read_current_pose PRIVATE -O2)
 
 # ----------------------------------------------------------------------------
+# Utility: print configured EE/load dynamic params (m_ee / m_load / m_total)
+# ----------------------------------------------------------------------------
+# Single readOnce(); reports what Desk + setLoad already make the controller
+# gravity-compensate, so you know what to put in robot.yaml `load.mass`.
+add_executable(read_load src/read_load.cpp)
+target_link_libraries(read_load
+    PRIVATE
+        Franka::Franka
+        Threads::Threads)
+if(CONDA_BOOST_FILESYSTEM)
+    target_link_options(read_load PRIVATE -Wl,--no-as-needed)
+    target_link_libraries(read_load PRIVATE ${CONDA_BOOST_FILESYSTEM})
+endif()
+target_compile_options(read_load PRIVATE -O2)
+
+# ----------------------------------------------------------------------------
 # Step 10: POSIX shm + Python API
 # ----------------------------------------------------------------------------
 #
