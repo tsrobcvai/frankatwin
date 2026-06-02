@@ -340,6 +340,13 @@ int main(int argc, char** argv) {
   try {
     franka::Robot robot(args.robot_ip);
 
+    // Clear any latched reflex/error from a prior run (e.g. a collision reflex)
+    // so Move commands aren't rejected with "command not possible in the current
+    // mode (Reflex)". Without this, one reflex bricks every subsequent osc_shm /
+    // move_to until the daemon is restarted. Mirrors deoxys
+    // franka_control_node.cpp; a no-op when the robot has no active error.
+    robot.automaticErrorRecovery();
+
     // Register an end-effector payload (e.g. a mounted camera) so libfranka's
     // gravity/inertia compensation accounts for it.  Without this, the extra
     // weight is uncompensated and the impedance controller sags (notably in z).
