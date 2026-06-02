@@ -103,6 +103,21 @@ class LoadConfig:
 
 
 @dataclass
+class CollisionConfig:
+    """libfranka collision-reflex thresholds passed to setCollisionBehavior.
+
+    Each scalar fills ALL entries of the torque (7) / Cartesian (6) lower &
+    upper, nominal & acceleration arrays. The task-impedance controller's own
+    push is bounded by kp*error_delta (~25 N / ~9 Nm at kp_pos=500/kp_ori=30),
+    so thresholds below that range trip "cartesian_reflex" on insertion contact.
+    Defaults match the deoxys stack (100), which never reflexed during insertion.
+    """
+
+    torque_threshold: float = 100.0      # Nm, per joint
+    cartesian_threshold: float = 100.0   # N / Nm, per Cartesian axis
+
+
+@dataclass
 class RobotConfig:
     """Top-level config bundle. Pass-through for clients/daemon/local."""
 
@@ -113,6 +128,7 @@ class RobotConfig:
     reset: ResetConfig = field(default_factory=ResetConfig)
     gripper: GripperConfig = field(default_factory=GripperConfig)
     load: LoadConfig = field(default_factory=LoadConfig)
+    collision: CollisionConfig = field(default_factory=CollisionConfig)
     source_path: Optional[pathlib.Path] = None
 
 
@@ -229,6 +245,15 @@ def load_config(path: Optional[os.PathLike] = None) -> RobotConfig:
         if len(load_cfg.inertia) != 9:
             raise ValueError(f"load.inertia must have 9 elements, got {load_cfg.inertia!r}")
 
+        coll = raw.get("collision", {}) or {}
+        collision_cfg = CollisionConfig(
+            torque_threshold=float(coll.get("torque_threshold", 100.0)),
+            cartesian_threshold=float(coll.get("cartesian_threshold", 100.0)),
+        )
+        for fld in ("torque_threshold", "cartesian_threshold"):
+            if getattr(collision_cfg, fld) <= 0.0:
+                raise ValueError(f"collision.{fld} must be > 0, got {getattr(collision_cfg, fld)}")
+
     except KeyError as e:
         raise KeyError(f"missing required config key: {e}") from e
 
@@ -240,5 +265,6 @@ def load_config(path: Optional[os.PathLike] = None) -> RobotConfig:
         reset=reset_cfg,
         gripper=grip_cfg,
         load=load_cfg,
+        collision=collision_cfg,
         source_path=chosen,
     )
