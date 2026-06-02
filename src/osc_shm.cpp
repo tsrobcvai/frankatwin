@@ -91,6 +91,17 @@ constexpr double DEFAULT_KP_ORI = 20.0;
 // instead of stepping.  Set to <= 0 to disable the limiter.
 constexpr double DEFAULT_MAX_TORQUE_RATE = 800.0;
 
+// Controlled-stop settle thresholds.  When a stop is requested (SIGINT/SIGTERM,
+// duration elapsed, or a safety abort) we do NOT hard-return MotionFinished with
+// a zero-torque STEP -- that step trips libfranka's controller_torque_discontinuity
+// reflex and, if the arm is still moving, also throws "robot is still moving".
+// Instead the slew limiter ramps the command torque to zero and we only declare
+// the motion finished once BOTH the command torque and the joint velocity have
+// settled below these thresholds (or STOP_MAX_TICKS elapses as a hard cap).
+constexpr double TAU_SETTLE_EPS = 0.05;   // Nm,   |tau_cmd|_inf considered ~0
+constexpr double DQ_SETTLE_EPS = 0.05;    // rad/s, |dq|_inf considered at rest
+constexpr int STOP_MAX_TICKS = 1000;      // ~1 s hard cap on the ramp-down
+
 std::atomic<bool> g_stop_flag{false};
 void signal_handler(int /*signo*/) { g_stop_flag.store(true); }
 
@@ -440,6 +451,11 @@ int main(int argc, char** argv) {
     // (anchor == current pose) yields ~zero torque, so ramping up from 0 is
     // both correct and smoother than the (unlimited) original first command.
     Eigen::Matrix<double, 7, 1> tau_prev = Eigen::Matrix<double, 7, 1>::Zero();
+    // Controlled-stop state.  Once a stop is requested, `stopping` latches true:
+    // subsequent ticks zero the pre-slew torque target so the slew limiter walks
+    // tau_cmd down to zero, and `stop_ticks` bounds how long we wait to settle.
+    bool stopping = false;
+    size_t stop_ticks = 0;
 
     auto callback = [&](const franka::RobotState& s,
                         franka::Duration period) -> franka::Torques {
@@ -502,8 +518,10 @@ int main(int argc, char** argv) {
 
       Eigen::Matrix<double, 7, 1> tau_pd =
           jac6x7.transpose() * f_task + c_vec;
-      if (cmd_snap.enabled == 0u) {
-        // Hold mode: zero command torque (libfranka still adds gravity + friction).
+      if (cmd_snap.enabled == 0u || stopping) {
+        // Hold mode (enabled==0) or controlled stop (stopping): zero the pre-slew
+        // command torque.  The slew limiter below then RAMPS tau_cmd toward 0
+        // instead of stepping.  libfranka still adds gravity + friction comp.
         tau_pd.setZero();
       }
       Eigen::Matrix<double, 7, 1> tau_cmd =
@@ -590,13 +608,32 @@ int main(int argc, char** argv) {
       const bool time_up = (args.duration > 0.0 && elapsed >= args.duration);
       ++tick;
 
+      // Latch into the controlled-stop ramp on any stop cause.  We do NOT return
+      // MotionFinished here: `stopping` makes the NEXT tick zero the pre-slew
+      // torque target (above) so the slew limiter walks tau_cmd to 0 over a few
+      // ms.  Hard-returning zero now would be an un-slewed STEP from the last
+      // commanded torque -> controller_torque_discontinuity reflex, and declaring
+      // the motion finished while the arm still moves -> "robot is still moving".
       if (g_stop_flag.load() || time_up || abort_code != 0) {
-        std::array<double, 7> zero{};
-        return franka::MotionFinished(franka::Torques(zero));
+        stopping = true;
       }
 
       std::array<double, 7> tau_out{};
       Eigen::Map<Eigen::Matrix<double, 7, 1>>(tau_out.data()) = tau_cmd;
+
+      if (stopping) {
+        ++stop_ticks;
+        const bool tau_settled = tau_cmd.cwiseAbs().maxCoeff() <= TAU_SETTLE_EPS;
+        const bool vel_settled = dq.cwiseAbs().maxCoeff() <= DQ_SETTLE_EPS;
+        // Finish only once the command torque has ramped to ~0 AND the arm is at
+        // rest, so neither the torque-rate reflex nor the still-moving check
+        // fires.  STOP_MAX_TICKS is a hard cap: by then the slew has long driven
+        // tau to ~0, so finishing is discontinuity-safe even if velocity lingers.
+        if ((tau_settled && vel_settled) || stop_ticks >= STOP_MAX_TICKS) {
+          return franka::MotionFinished(franka::Torques(tau_out));
+        }
+      }
+
       return franka::Torques(tau_out);
     };
 
