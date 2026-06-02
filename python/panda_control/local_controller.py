@@ -142,6 +142,12 @@ class LocalPandaController:
                 args += ["--load-mass", f"{load.mass:.6f}"]
                 args += ["--load-com", *[f"{v:.6f}" for v in load.com]]
                 args += ["--load-inertia", *[f"{v:.9f}" for v in load.inertia]]
+            # Collision-reflex thresholds (raised above the controller's max push
+            # so insertion contact doesn't trip cartesian_reflex). See robot.yaml.
+            collision = getattr(self.cfg, "collision", None)
+            if collision is not None:
+                args += ["--collision-torque", f"{collision.torque_threshold:.6f}"]
+                args += ["--collision-cartesian", f"{collision.cartesian_threshold:.6f}"]
             if self.verbose:
                 logger.info("starting osc_shm: %s", " ".join(args))
             self._proc = subprocess.Popen(

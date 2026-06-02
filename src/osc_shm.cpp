@@ -106,6 +106,15 @@ struct Args {
   double load_mass{0.0};
   std::array<double, 3> load_com{{0.0, 0.0, 0.0}};       // flange->load COM [m]
   std::array<double, 9> load_inertia{{0, 0, 0, 0, 0, 0, 0, 0, 0}};  // about COM [kg m^2]
+  // libfranka collision-reflex thresholds. Each scalar fills ALL entries of
+  // setCollisionBehavior's torque (7) / Cartesian (6) lower & upper, nominal &
+  // acceleration arrays. The task-impedance controller's own push is bounded by
+  // kp*error_delta (~25 N / ~9 Nm at kp_pos=500/kp_ori=30), so the legacy
+  // default 20 trips "cartesian_reflex" during insertion contact. robot.yaml
+  // raises these (see its collision: block); the 20 default here only applies
+  // to a bare `osc_shm <ip>` call with no flag.
+  double collision_torque{20.0};      // Nm, per joint
+  double collision_cartesian{20.0};   // N / Nm, per Cartesian axis
 };
 
 void print_usage(const char* prog) {
@@ -114,7 +123,8 @@ void print_usage(const char* prog) {
             << " [--print-every N] [--duration sec]"
             << " [--max-torque-rate Nm_per_s]"
             << " [--load-mass kg] [--load-com x y z]"
-            << " [--load-inertia i0 .. i8]" << std::endl;
+            << " [--load-inertia i0 .. i8]"
+            << " [--collision-torque Nm] [--collision-cartesian N]" << std::endl;
 }
 
 bool parse_args(int argc, char** argv, Args& out) {
@@ -165,6 +175,14 @@ bool parse_args(int argc, char** argv, Args& out) {
       if (i + 9 >= argc) return false;
       for (int k = 0; k < 9; ++k) out.load_inertia[k] = std::atof(argv[i + 1 + k]);
       i += 10;
+    } else if (key == "--collision-torque") {
+      if (i + 1 >= argc) return false;
+      out.collision_torque = std::atof(argv[i + 1]);
+      i += 2;
+    } else if (key == "--collision-cartesian") {
+      if (i + 1 >= argc) return false;
+      out.collision_cartesian = std::atof(argv[i + 1]);
+      i += 2;
     } else if (key == "-h" || key == "--help") {
       print_usage(argv[0]);
       return false;
@@ -349,15 +367,19 @@ int main(int argc, char** argv) {
                 << std::endl;
     }
 
+    const double ct = args.collision_torque;
+    const double cc = args.collision_cartesian;
     robot.setCollisionBehavior(
-        {{20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0}},
-        {{20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0}},
-        {{20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0}},
-        {{20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0}},
-        {{20.0, 20.0, 20.0, 20.0, 20.0, 20.0}},
-        {{20.0, 20.0, 20.0, 20.0, 20.0, 20.0}},
-        {{20.0, 20.0, 20.0, 20.0, 20.0, 20.0}},
-        {{20.0, 20.0, 20.0, 20.0, 20.0, 20.0}});
+        {{ct, ct, ct, ct, ct, ct, ct}},
+        {{ct, ct, ct, ct, ct, ct, ct}},
+        {{ct, ct, ct, ct, ct, ct, ct}},
+        {{ct, ct, ct, ct, ct, ct, ct}},
+        {{cc, cc, cc, cc, cc, cc}},
+        {{cc, cc, cc, cc, cc, cc}},
+        {{cc, cc, cc, cc, cc, cc}},
+        {{cc, cc, cc, cc, cc, cc}});
+    std::cout << "[osc_shm] collision = torque " << ct << " Nm, cartesian " << cc
+              << " N/Nm (reflex thresholds)" << std::endl;
 
     franka::Model model = robot.loadModel();
     franka::RobotState initial_state = robot.readOnce();

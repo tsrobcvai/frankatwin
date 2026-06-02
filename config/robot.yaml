@@ -37,6 +37,23 @@ control:
   error_delta_pos: 0.05    # m
   error_delta_rot: 0.30    # rad
 
+# libfranka collision-reflex thresholds (passed to setCollisionBehavior at
+# osc_shm startup; daemon restart applies a change, no rebuild needed once the
+# osc_shm binary supports --collision-torque/--collision-cartesian).
+#
+# Why 100 (not libfranka's low defaults): the task-impedance controller's OWN
+# push is bounded by kp * error_delta = kp_pos*0.05 (~25 N at kp_pos=500) and
+# kp_ori*0.30 (~9 Nm at kp_ori=30). The contact reaction during peg-hole
+# insertion therefore reaches ~25 N -- above a 20 N threshold -- which fires
+# "cartesian_reflex" (red light, controller aborts). 100 mirrors the deoxys
+# stack, which never reflexed during insertion. Lower these (e.g. 40 / 50) if
+# you want a tighter crash guard with some margin over the ~25 N working force;
+# raising them trades collision safety for letting the controller push freely
+# (its force is still capped by error_delta_pos above).
+collision:
+  torque_threshold: 100.0      # Nm,    per joint  (fills setCollisionBehavior torque arrays)
+  cartesian_threshold: 100.0   # N/Nm,  per axis   (fills the Cartesian force arrays)
+
 paths:
   # Path to the panda_control build directory (where osc_shm and move_to live).
   # Resolved relative to the repo root unless absolute.
@@ -78,7 +95,17 @@ gripper:
 #     ~0.3 kg ZED Mini+bracket the diagonal is O(1e-4) kg m^2.
 # After setting, re-run six_dof and check the with-cam z sag is largely gone.
 load:
-  mass: 0.3                 # set to measured camera+bracket mass, e.g. 0.20
+  # Calibrated 2026-05-31 (ZED Mini + bracket). Bracketed the true effective
+  # payload from the symmetric z signature: m_comp=0 sagged -27mm vs nocam,
+  # m_comp=0.3 lifted +27mm -> linear zero-crossing ~0.15kg (7-phase estimates
+  # 0.147-0.158, very consistent). 0.3 was ~2x too large (over-compensating).
+  mass: 0.15
+  # Simplified to [0, 0, z]: camera assumed roughly on the tool axis, so only the
+  # along-axis offset is kept (flange +Z points out along the tool axis). A wrong
+  # LATERAL (x/y) com injects a bogus moment arm -- worse than zero -- so refine
+  # x/y only if the rotation phases (4-6) show a directional residual. mass=0.15
+  # is com-independent (gravity force depends on mass only), so this does NOT
+  # affect the z calibration -- only the rotation-phase joint-torque split.
   com: [0.0, 0.0, 0.05]
   # Small positive diagonal (must NOT be all-zero). Refine from box dims if desired.
   inertia: [3.0e-4, 0.0, 0.0, 0.0, 3.0e-4, 0.0, 0.0, 0.0, 3.0e-4]
