@@ -210,6 +210,10 @@ int main(int argc, char** argv) {
 
   try {
     franka::Robot robot(args.robot_ip);
+    // Clear any latched reflex/error before commanding motion, else libfranka
+    // rejects the Move with "command not possible in the current mode (Reflex)"
+    // (see osc_shm.cpp / deoxys franka_control_node.cpp). No-op if no error.
+    robot.automaticErrorRecovery();
     setDefaultBehavior(robot);
 
     franka::RobotState initial_state = robot.readOnce();
