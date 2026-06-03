@@ -38,6 +38,15 @@ logger = logging.getLogger(__name__)
 _OSC_STARTUP_TIMEOUT_S = 10.0
 _OSC_SHUTDOWN_TIMEOUT_S = 3.0
 _MOVE_TO_TIMEOUT_S = 30.0
+# osc_shm's first robot.control() can be rejected with libfranka
+# "Move command aborted!" (Move::Status::kAborted) when it is relaunched right
+# after move_to -- a transient FCI session / controller-mode transition race as
+# the previous (move_to) session winds down. A fresh connection a moment later
+# succeeds, so we relaunch a few times before giving up. Without this, one such
+# abort leaves the controller dead and bricks the daemon (state frames stop ->
+# every client command times out) until a manual daemon restart.
+_OSC_START_MAX_ATTEMPTS = 3
+_OSC_START_RETRY_DELAY_S = 0.5
 # After osc_shm's PID is alive, require state_head to advance this many frames
 # before considering it "ready".  state_head ticks at 1 kHz so 5 frames = 5 ms;
 # the meaningful wait is the libfranka session setup + first control tick
@@ -130,33 +139,83 @@ class LocalPandaController:
         with self._proc_lock:
             if self._proc is not None and self._proc.poll() is None:
                 return
-            args = [
-                str(self._osc_shm_bin),
-                self.cfg.robot.ip,
-                "--shm-name",
-                self.cfg.paths.shm_name,
-            ]
-            # Register an EE payload (e.g. mounted camera) for gravity comp.
-            load = getattr(self.cfg, "load", None)
-            if load is not None and load.mass > 0.0:
-                args += ["--load-mass", f"{load.mass:.6f}"]
-                args += ["--load-com", *[f"{v:.6f}" for v in load.com]]
-                args += ["--load-inertia", *[f"{v:.9f}" for v in load.inertia]]
-            # Collision-reflex thresholds (raised above the controller's max push
-            # so insertion contact doesn't trip cartesian_reflex). See robot.yaml.
-            collision = getattr(self.cfg, "collision", None)
-            if collision is not None:
-                args += ["--collision-torque", f"{collision.torque_threshold:.6f}"]
-                args += ["--collision-cartesian", f"{collision.cartesian_threshold:.6f}"]
-            if self.verbose:
-                logger.info("starting osc_shm: %s", " ".join(args))
-            self._proc = subprocess.Popen(
-                args,
-                stdout=subprocess.PIPE if not self.verbose else None,
-                stderr=subprocess.PIPE if not self.verbose else None,
-                start_new_session=True,
-            )
-        self._wait_until_running(_OSC_STARTUP_TIMEOUT_S)
+        args = [
+            str(self._osc_shm_bin),
+            self.cfg.robot.ip,
+            "--shm-name",
+            self.cfg.paths.shm_name,
+        ]
+        # Register an EE payload (e.g. mounted camera) for gravity comp.
+        load = getattr(self.cfg, "load", None)
+        if load is not None and load.mass > 0.0:
+            args += ["--load-mass", f"{load.mass:.6f}"]
+            args += ["--load-com", *[f"{v:.6f}" for v in load.com]]
+            args += ["--load-inertia", *[f"{v:.9f}" for v in load.inertia]]
+        # Collision-reflex thresholds (raised above the controller's max push
+        # so insertion contact doesn't trip cartesian_reflex). See robot.yaml.
+        collision = getattr(self.cfg, "collision", None)
+        if collision is not None:
+            args += ["--collision-torque", f"{collision.torque_threshold:.6f}"]
+            args += ["--collision-cartesian", f"{collision.cartesian_threshold:.6f}"]
+
+        # Relaunch on a failed startup (see _OSC_START_MAX_ATTEMPTS): the common
+        # case is a transient "Move command aborted!" right after move_to, which
+        # a fresh connection a moment later clears.
+        last_err: Optional[BaseException] = None
+        for attempt in range(1, _OSC_START_MAX_ATTEMPTS + 1):
+            with self._proc_lock:
+                if self._proc is not None and self._proc.poll() is None:
+                    return
+                if self.verbose:
+                    logger.info(
+                        "starting osc_shm (attempt %d/%d): %s",
+                        attempt,
+                        _OSC_START_MAX_ATTEMPTS,
+                        " ".join(args),
+                    )
+                self._proc = subprocess.Popen(
+                    args,
+                    stdout=subprocess.PIPE if not self.verbose else None,
+                    stderr=subprocess.PIPE if not self.verbose else None,
+                    start_new_session=True,
+                )
+            try:
+                self._wait_until_running(_OSC_STARTUP_TIMEOUT_S)
+                return
+            except (RuntimeError, TimeoutError) as e:
+                last_err = e
+                logger.warning(
+                    "osc_shm start attempt %d/%d failed: %s",
+                    attempt,
+                    _OSC_START_MAX_ATTEMPTS,
+                    e,
+                )
+                self._kill_proc()
+                if attempt < _OSC_START_MAX_ATTEMPTS:
+                    time.sleep(_OSC_START_RETRY_DELAY_S)
+        raise RuntimeError(
+            f"osc_shm failed to start after {_OSC_START_MAX_ATTEMPTS} attempts: "
+            f"{last_err}"
+        )
+
+    def _kill_proc(self) -> None:
+        """Reap the controller subprocess (used between failed start attempts).
+
+        Clears ``_proc`` and zeroes the shm controller pid. A process that exited
+        on its own (the usual case here -- osc_shm crashed) is already reaped by
+        the poll() in ``_wait_until_running``; one still alive (e.g. a stuck
+        startup that timed out) is killed.
+        """
+        with self._proc_lock:
+            proc = self._proc
+            self._proc = None
+        if proc is not None and proc.poll() is None:
+            proc.kill()
+            try:
+                proc.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                pass
+        self._mark_pid_inactive()
 
     def stop_controller(self) -> None:
         with self._proc_lock:
