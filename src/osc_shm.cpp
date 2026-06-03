@@ -567,6 +567,14 @@ int main(int argc, char** argv) {
       frame.ee_quat[1] = q_cur.x();
       frame.ee_quat[2] = q_cur.y();
       frame.ee_quat[3] = q_cur.z();
+      // Measured EE Cartesian velocity (base frame) = zeroJacobian @ dq, already
+      // computed above for the damping term. v = linear (m/s), w = angular (rad/s).
+      frame.ee_linvel[0] = v.x();
+      frame.ee_linvel[1] = v.y();
+      frame.ee_linvel[2] = v.z();
+      frame.ee_angvel[0] = w.x();
+      frame.ee_angvel[1] = w.y();
+      frame.ee_angvel[2] = w.z();
       panda_shm::state_publish(&shm->header, shm->states, frame,
                                PANDA_SHM_STATE_FRAMES);
 

@@ -48,6 +48,8 @@ def _state_to_dict(state: RobotState) -> Dict[str, Any]:
         "ee_pos": state.ee_pos.tolist(),
         "ee_quat": state.ee_quat.tolist(),
         "tau": state.tau.tolist(),
+        "ee_linvel": state.ee_linvel.tolist(),  # base frame m/s (shm v2+)
+        "ee_angvel": state.ee_angvel.tolist(),  # base frame rad/s (shm v2+)
         "seq": state.seq,
     }
 

@@ -41,7 +41,7 @@ extern "C" {
 #endif
 
 #define PANDA_SHM_MAGIC          0x50414e44u  // 'PAND' little-endian
-#define PANDA_SHM_VERSION        1u
+#define PANDA_SHM_VERSION        2u           // v2: added state ee_linvel/ee_angvel
 #define PANDA_SHM_STATE_FRAMES   1024u        // ring buffer depth
 #define PANDA_SHM_DEFAULT_NAME   "/panda_osc" // POSIX shm name (must start with '/')
 
@@ -89,7 +89,7 @@ struct PandaShmCommand {
 };
 
 // ---------------------------------------------------------------------------
-// State frame (C++ -> Python). Size: 256 B (240 payload + 16 pad).
+// State frame (C++ -> Python). Size: 320 B (288 payload + 32 pad).
 // ---------------------------------------------------------------------------
 struct PandaShmStateFrame {
   uint64_t seq;                 // matches the write index (== state_head value when written)
@@ -99,12 +99,16 @@ struct PandaShmStateFrame {
   double   ee_pos[3];           // EE position in base frame (m)
   double   ee_quat[4];          // EE orientation, wxyz, unit norm
   double   tau[7];              // joint command torques (Nm), post-clamp
-  uint64_t reserved0;           // pad to 256 B
-  uint64_t reserved1;           // pad to 256 B
+  double   ee_linvel[3];        // EE linear velocity, base frame (m/s) = zeroJacobian_v @ dq
+  double   ee_angvel[3];        // EE angular velocity, base frame (rad/s) = zeroJacobian_w @ dq
+  uint64_t reserved0;           // pad to 320 B (cache-line multiple)
+  uint64_t reserved1;
+  uint64_t reserved2;
+  uint64_t reserved3;
 };
 
 // ---------------------------------------------------------------------------
-// Top-level layout. Size: 32 + 80 + 1024 * 256 = 262256 B (256.11 KiB).
+// Top-level layout. Size: 32 + 120 + 1024 * 320 = 327832 B (320.15 KiB).
 // ---------------------------------------------------------------------------
 struct PandaShm {
   PandaShmHeader     header;
@@ -119,8 +123,8 @@ struct PandaShm {
 #ifdef __cplusplus
 static_assert(sizeof(PandaShmHeader) == 32, "PandaShmHeader size drift");
 static_assert(sizeof(PandaShmCommand) == 120, "PandaShmCommand size drift");
-static_assert(sizeof(PandaShmStateFrame) == 256, "PandaShmStateFrame size drift");
-static_assert(sizeof(PandaShm) == 32 + 120 + 1024 * 256, "PandaShm size drift");
+static_assert(sizeof(PandaShmStateFrame) == 320, "PandaShmStateFrame size drift");
+static_assert(sizeof(PandaShm) == 32 + 120 + 1024 * 320, "PandaShm size drift");
 static_assert(offsetof(PandaShmHeader, controller_pid) == 16, "header.controller_pid offset drift");
 static_assert(offsetof(PandaShmHeader, state_head) == 24, "header.state_head offset drift");
 static_assert(offsetof(PandaShmCommand, target_pos) == 8, "command.target_pos offset drift");
@@ -137,6 +141,8 @@ static_assert(offsetof(PandaShmStateFrame, dq) == 72, "state.dq offset drift");
 static_assert(offsetof(PandaShmStateFrame, ee_pos) == 128, "state.ee_pos offset drift");
 static_assert(offsetof(PandaShmStateFrame, ee_quat) == 152, "state.ee_quat offset drift");
 static_assert(offsetof(PandaShmStateFrame, tau) == 184, "state.tau offset drift");
+static_assert(offsetof(PandaShmStateFrame, ee_linvel) == 240, "state.ee_linvel offset drift");
+static_assert(offsetof(PandaShmStateFrame, ee_angvel) == 264, "state.ee_angvel offset drift");
 #endif
 
 #ifdef __cplusplus

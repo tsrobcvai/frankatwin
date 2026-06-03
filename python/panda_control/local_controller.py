@@ -21,7 +21,7 @@ import signal
 import subprocess
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional
 
 import numpy as np
@@ -76,9 +76,15 @@ class RobotState:
     ee_quat: np.ndarray   # (4,) wxyz
     tau: np.ndarray       # (7,)
     seq: int
+    # EE Cartesian velocity in base frame (shm v2+): linear (m/s), angular (rad/s),
+    # = zeroJacobian @ dq from libfranka. Defaulted so older construction sites and
+    # pre-v2 frames still work (zeros).
+    ee_linvel: np.ndarray = field(default_factory=lambda: np.zeros(3))
+    ee_angvel: np.ndarray = field(default_factory=lambda: np.zeros(3))
 
     @classmethod
     def from_frame(cls, frame: np.ndarray) -> "RobotState":
+        names = frame.dtype.names if hasattr(frame, "dtype") else ()
         return cls(
             timestamp_s=float(frame["timestamp_s"]),
             q=np.array(frame["q"], dtype=np.float64),
@@ -87,6 +93,10 @@ class RobotState:
             ee_quat=np.array(frame["ee_quat"], dtype=np.float64),
             tau=np.array(frame["tau"], dtype=np.float64),
             seq=int(frame["seq"]),
+            ee_linvel=(np.array(frame["ee_linvel"], dtype=np.float64)
+                       if names and "ee_linvel" in names else np.zeros(3)),
+            ee_angvel=(np.array(frame["ee_angvel"], dtype=np.float64)
+                       if names and "ee_angvel" in names else np.zeros(3)),
         )
 
 

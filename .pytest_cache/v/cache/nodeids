@@ -1,0 +1,6 @@
+[
+  "tests/test_shm_layout.py::test_command_offsets",
+  "tests/test_shm_layout.py::test_header_offsets",
+  "tests/test_shm_layout.py::test_sizes",
+  "tests/test_shm_layout.py::test_state_offsets"
+]
