@@ -268,6 +268,8 @@ class RemotePandaClient:
 
 
 def _state_from_dict(d: Dict[str, Any]) -> RobotState:
+    # ee_linvel/ee_angvel arrive from daemons running shm v2+. Fall back to zeros
+    # if talking to an older daemon so a partial deploy degrades instead of crashing.
     return RobotState(
         timestamp_s=float(d["timestamp_s"]),
         q=np.asarray(d["q"], dtype=np.float64),
@@ -276,4 +278,6 @@ def _state_from_dict(d: Dict[str, Any]) -> RobotState:
         ee_quat=np.asarray(d["ee_quat"], dtype=np.float64),
         tau=np.asarray(d["tau"], dtype=np.float64),
         seq=int(d["seq"]),
+        ee_linvel=np.asarray(d.get("ee_linvel", [0.0, 0.0, 0.0]), dtype=np.float64),
+        ee_angvel=np.asarray(d.get("ee_angvel", [0.0, 0.0, 0.0]), dtype=np.float64),
     )
