@@ -20,7 +20,7 @@ Key differences vs v3 (step5d):
     into J2/J3 gravity terms, so giving Z more energy improves identification
     of shoulder/elbow dynamics.
 
-  * Asymmetric linear ramp (1.5s up / 2.5s down) matching UR5e's convention.
+  * Asymmetric linear ramp (2 s up / 3 s down) matching UR5e's convention.
 
 The sidecar JSON written by this script is compatible with apply_sysid_params
 (``--invoke-replay``) and replay_real_step5b_sim.py for downstream sim/real

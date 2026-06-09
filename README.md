@@ -156,17 +156,19 @@ Both drive the same `cart_impedance.py` loop; only the reference differs.
 
 |             | **v3** (`gen_excitation_traj.py`)                        | **v4** (`gen_chirp_traj.py`)                                                                          |
 | ----------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Spectrum    | two-band sinusoid per axis (≈ 0.15-0.30 Hz + 0.7-1.1 Hz) | linear chirp f0→f1, 0.1→1.5 Hz                                                                        |
-| Active DOFs | x, y, z + optional yaw / roll                            | x, y, z, rx, ry, rz (always-on, π/3 phase-staggered)                                                  |
-| Amplitudes  | 4 / 4 / 3 cm + 0.05 rad yaw/roll                         | 10 / 10 / 15 cm + 0.50 / 0.25 / 0.50 rad                                                              |
+| Spectrum    | two-band sinusoid per axis (≈ 0.15-0.30 Hz + 0.7-1.1 Hz, high-band 0.2×) | linear chirp f0→f1, 0.1→0.7 Hz                                                                        |
+| Active DOFs | x, y, z + yaw / roll (on by default)                     | x, y, z, rx, ry, rz (always-on, π/3 phase-staggered)                                                  |
+| Amplitudes  | 10 / 10 / 8 cm + 0.25 / 0.20 rad yaw / roll             | 10 / 10 / 15 cm + 0.50 / 0.25 / 0.50 rad                                                              |
 | Envelope    | symmetric 2 s half-cosine                                | asymmetric 2 s up / 3 s down (linear)                                                                 |
 | Duration    | 12 s                                                     | 8 s                                                                                                   |
 | Origin      | in-house                                                 | UR5e `[diffusion_policy/scripts/sim2real/collect_sysid_data.py](https://github.com/uw-lab/omnireset)` |
 
 
+v3's defaults reproduce `step5d_20260525_143929` — the highest-weighted (1.5) trajectory in the `logs/sysid_franka/20260525_145807` fit. Amplitudes / ratio are baked into the script defaults; pass `--base-sidecar` to pick up that run's anchor pose. Use `--amp-yaw 0 --amp-roll 0` to recover the old position-only step5c behaviour.
+
 v4 follows the UR5e chirp shape with three Franka-specific deltas:
 
-1. **f1 halved 3.0 → 1.5 Hz** (0.7 Hz in production). J5–J7 effort limit (12 N·m) saturates at UR5e's 3 Hz top frequency and trips `osc_shm`'s abort clamp.
+1. **f1 lowered 3.0 → 0.7 Hz** (now the Franka default; 1.5 Hz was an interim value). J5–J7 effort limit (12 N·m) saturates at UR5e's 3 Hz top frequency and trips `osc_shm`'s abort clamp; 0.7 Hz keeps peak |dx| ≈ 0.46 m/s.
 2. **kp lowered 1000 → 500, kpori 50 → 30** for parity with the downstream policy controller.
 3. **Safety clamps relaxed** (`error_delta_pos`: 0.05 → 0.15 m, `error_delta_rot`: 0.30 → 0.80 rad) — lower kp tolerates larger steady-state error. Set via `cart_impedance.py --err-delta-pos / --err-delta-rot`.
 
