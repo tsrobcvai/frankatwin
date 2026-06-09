@@ -8,9 +8,13 @@ History:
     because the task wrench had no torque component.
   * step5d (sysid v3, this file): adds two extra multi-band rotation sweeps,
     one about base-z (drives j1 directly) and one about EE-z (drives j5/j7).
-    Position amplitudes are also bumped (default 10 cm / 8 cm).  Both
-    rotations are off by default (``--amp-yaw 0 --amp-roll 0``), so existing
-    step5c command lines are still bit-identical.
+    Position amplitudes are also bumped (default 10 / 10 / 8 cm).
+
+    Defaults now reproduce the ``step5d_20260525_143929`` collection that the
+    sysid fit ``logs/sysid_franka/20260525_145807`` was trained on:
+    amp 0.10 / 0.10 / 0.08 m, yaw 0.25 rad, roll 0.20 rad, high_band_ratio 0.20,
+    amp_ramp 2.0 s, duration 12 s.  Set ``--amp-yaw 0 --amp-roll 0`` to recover
+    the old position-only step5c behaviour.
 """
 
 from __future__ import annotations
@@ -45,25 +49,25 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--duration", type=float, default=12.0, help="Trajectory duration in seconds.")
     parser.add_argument("--hz", type=int, default=1000, help="Sampling frequency.")
-    parser.add_argument("--amp-x", type=float, default=0.04, help="X amplitude [m] (low-band).")
-    parser.add_argument("--amp-y", type=float, default=0.04, help="Y amplitude [m] (low-band).")
-    parser.add_argument("--amp-z", type=float, default=0.03, help="Z amplitude [m] (low-band).")
+    parser.add_argument("--amp-x", type=float, default=0.10, help="X amplitude [m] (low-band).")
+    parser.add_argument("--amp-y", type=float, default=0.10, help="Y amplitude [m] (low-band).")
+    parser.add_argument("--amp-z", type=float, default=0.08, help="Z amplitude [m] (low-band).")
     parser.add_argument(
         "--amp-yaw",
         type=float,
-        default=0.0,
+        default=0.25,
         help="Yaw (rotation about world z, drives j1) amplitude [rad]. 0 = orientation held (step5c behavior).",
     )
     parser.add_argument(
         "--amp-roll",
         type=float,
-        default=0.0,
+        default=0.20,
         help="Roll (rotation about EE z, drives j5/j7) amplitude [rad]. 0 = orientation held.",
     )
     parser.add_argument(
         "--high-band-ratio",
         type=float,
-        default=0.4,
+        default=0.20,
         help="High-band amplitude as a fraction of low-band amplitude. Lower this if peak speeds approach safety limits.",
     )
     parser.add_argument(
@@ -217,12 +221,12 @@ def build_step5d_trajectory(
     t_s: np.ndarray,
     x_anchor: np.ndarray,
     q_anchor_xyzw: np.ndarray,
-    amp_x: float = 0.04,
-    amp_y: float = 0.04,
-    amp_z: float = 0.03,
-    amp_yaw: float = 0.0,
-    amp_roll: float = 0.0,
-    high_band_ratio: float = 0.4,
+    amp_x: float = 0.10,
+    amp_y: float = 0.10,
+    amp_z: float = 0.08,
+    amp_yaw: float = 0.25,
+    amp_roll: float = 0.20,
+    high_band_ratio: float = 0.20,
     amp_ramp_s: float = 2.0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Build the step5d multi-band excitation trajectory on an arbitrary time grid.
@@ -236,7 +240,9 @@ def build_step5d_trajectory(
     roll : (N,) roll angle (about EE local-z) applied to the anchor.
 
     Setting both ``amp_yaw`` and ``amp_roll`` to 0 reproduces step5c (orientation
-    held at ``q_anchor_xyzw``). Default amplitudes match step5c's command line.
+    held at ``q_anchor_xyzw``). Default amplitudes match the
+    ``step5d_20260525_143929`` collection (0.10/0.10/0.08 m, yaw 0.25, roll 0.20,
+    high_band_ratio 0.20).
     """
     rho, rho_dot = _half_cosine_envelope(t_s, amp_ramp_s)
     x_des, dx_des = _build_pos_traj(t_s, x_anchor, amp_x, amp_y, amp_z, rho, rho_dot, high_band_ratio)

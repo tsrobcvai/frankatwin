@@ -46,11 +46,12 @@ import numpy as np
 
 # Defaults follow UR5e's collect_sysid_data.py *shape* exactly (amplitudes,
 # Z=1.5xXY ratio, asymmetric 2s/3s ramp, pi/3 phase offsets, 8 s duration)
-# but with f1 halved from 3.0 -> 1.5 Hz to keep peak |dx| ~ 1 m/s instead of
-# ~2 m/s.  Halving f1 keeps the per-axis spectral *shape* (linear chirp from
-# 0.1 Hz to f1) but compresses the band to where Franka's task-impedance
-# loop can actually track and the 50 Hz cart_impedance.py logger is well
-# above Nyquist.
+# but with f1 lowered from UR5e's 3.0 Hz to the Franka production value of
+# 0.7 Hz.  This keeps peak |dx| well under 0.5 m/s (vs ~2 m/s at 3.0 Hz / ~1
+# m/s at the earlier 1.5 Hz interim value) so the Franka task-impedance loop
+# can actually track it, J5-J7 effort stays clear of the 12 N*m saturation
+# clamp, and the 50 Hz cart_impedance.py logger is well above Nyquist.  The
+# per-axis spectral *shape* (linear chirp from 0.1 Hz to f1) is preserved.
 #
 # IMPORTANT: With UR5e-amp rotations (0.50 + 0.25 + 0.50 rad), the reference
 # itself reaches max|rot_offset| ~= 0.61 rad.  This is *above* the 0.40 rad
@@ -59,7 +60,7 @@ import numpy as np
 # Python cart_impedance.py path does not enforce that abort (only prints
 # warnings), so it is unaffected.
 CHIRP_F0_DEFAULT = 0.1
-CHIRP_F1_DEFAULT = 1.5
+CHIRP_F1_DEFAULT = 0.7
 # Per-axis phase offsets (6 axes, 6 evenly spaced offsets k * pi/3).
 PHASE_OFFSETS = np.array([0.0, np.pi / 3.0, 2.0 * np.pi / 3.0,
                           np.pi, 4.0 * np.pi / 3.0, 5.0 * np.pi / 3.0])
@@ -89,7 +90,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hz", type=int, default=1000, help="CSV sample rate (1000 matches the C++ collector schema).")
     # Frequency sweep
     parser.add_argument("--f0", type=float, default=CHIRP_F0_DEFAULT, help="Chirp start frequency [Hz].")
-    parser.add_argument("--f1", type=float, default=CHIRP_F1_DEFAULT, help="Chirp end frequency [Hz] (UR5e=3.0, we halve to 1.5 for Franka).")
+    parser.add_argument("--f1", type=float, default=CHIRP_F1_DEFAULT, help="Chirp end frequency [Hz] (UR5e=3.0; Franka production default=0.7).")
     # Cartesian amplitudes (m) -- match UR5e collect_sysid_data exactly.
     # UR5e per-axis = [pos_amp, pos_amp, pos_amp * 1.5] with pos_amp=0.10.
     parser.add_argument("--amp-x", type=float, default=0.10, help="X amplitude [m] (UR5e default).")
