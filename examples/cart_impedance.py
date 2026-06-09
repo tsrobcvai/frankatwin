@@ -109,25 +109,26 @@ def parse_args() -> argparse.Namespace:
                    help="[sine] sinusoid frequency [Hz] (default: 0.5).")
 
     # step5d / chirp shared position amplitudes.  Defaults resolve in main()
-    # based on --mode: step5d gets (0.04, 0.04, 0.03), chirp gets (0.05, 0.05, 0.07).
+    # based on --mode: step5d gets (0.10, 0.10, 0.08), chirp gets (0.10, 0.10, 0.15).
     p.add_argument("--amp-x", type=float, default=None, help="X amplitude [m] (mode-dependent default).")
     p.add_argument("--amp-y", type=float, default=None, help="Y amplitude [m] (mode-dependent default).")
     p.add_argument("--amp-z", type=float, default=None, help="Z amplitude [m] (mode-dependent default).")
-    p.add_argument("--amp-yaw", type=float, default=0.0,
-                   help="[step5d] yaw (about world-z, drives j1) amplitude [rad].")
-    p.add_argument("--amp-roll", type=float, default=0.0,
-                   help="[step5d] roll (about EE-z, drives j5/j7) amplitude [rad].")
-    p.add_argument("--high-band-ratio", type=float, default=0.4,
-                   help="[step5d] high-band amplitude as fraction of low-band.")
+    p.add_argument("--amp-yaw", type=float, default=0.25,
+                   help="[step5d] yaw (about world-z, drives j1) amplitude [rad] (default: 0.25).")
+    p.add_argument("--amp-roll", type=float, default=0.20,
+                   help="[step5d] roll (about EE-z, drives j5/j7) amplitude [rad] (default: 0.20).")
+    p.add_argument("--high-band-ratio", type=float, default=0.20,
+                   help="[step5d] high-band amplitude as fraction of low-band (default: 0.20).")
     p.add_argument("--amp-ramp", type=float, default=2.0,
                    help="[step5d] half-cosine envelope ramp length [s].")
 
     # chirp-mode parameters (v4) -- match UR5e collect_sysid_data shape exactly,
-    # with f1 halved (UR5e=3.0) so |dx|_peak stays ~1 m/s on Franka.
+    # with f1 lowered (UR5e=3.0) to the Franka production default so |dx|_peak
+    # stays ~0.46 m/s.
     p.add_argument("--f0", type=float, default=CHIRP_F0_DEFAULT,
                    help="[chirp] start frequency [Hz] (default: 0.1, UR5e).")
     p.add_argument("--f1", type=float, default=CHIRP_F1_DEFAULT,
-                   help="[chirp] end frequency [Hz] (default: 1.5, halved from UR5e 3.0).")
+                   help="[chirp] end frequency [Hz] (default: 0.7, lowered from UR5e 3.0).")
     p.add_argument("--amp-rx", type=float, default=0.50,
                    help="[chirp] world-x rotation amplitude [rad] (default: 0.50, UR5e).")
     p.add_argument("--amp-ry", type=float, default=0.25,
@@ -464,16 +465,16 @@ def main() -> int:
         # UR5e chirp default is 8.0 s; step5d historically uses 12.0 s.
         args.duration = 8.0 if args.mode == "chirp" else (12.0 if args.mode == "step5d" else 4.0)
     # Resolve mode-dependent amplitude defaults.
-    # step5d: small XY > Z (0.04/0.04/0.03).
+    # step5d v3: 0.10/0.10/0.08 (= the step5d_20260525_143929 collection).
     # chirp v4: UR5e-exact magnitudes (0.10/0.10/0.15, Z = 1.5x XY).
     if args.mode == "chirp":
         if args.amp_x is None: args.amp_x = 0.10
         if args.amp_y is None: args.amp_y = 0.10
         if args.amp_z is None: args.amp_z = 0.15
     else:
-        if args.amp_x is None: args.amp_x = 0.04
-        if args.amp_y is None: args.amp_y = 0.04
-        if args.amp_z is None: args.amp_z = 0.03
+        if args.amp_x is None: args.amp_x = 0.10
+        if args.amp_y is None: args.amp_y = 0.10
+        if args.amp_z is None: args.amp_z = 0.08
     if args.log is None and not args.dry_run:
         print("[cart_impedance] (no --log given, state will not be saved to disk)", file=sys.stderr)
 
