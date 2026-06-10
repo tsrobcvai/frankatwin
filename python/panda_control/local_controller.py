@@ -81,6 +81,11 @@ class RobotState:
     # pre-v2 frames still work (zeros).
     ee_linvel: np.ndarray = field(default_factory=lambda: np.zeros(3))
     ee_angvel: np.ndarray = field(default_factory=lambda: np.zeros(3))
+    # Measured link-side joint torque (Nm), gravity INCLUDED (shm v3+). This is
+    # the value to compare against the 87/87/87/87/12/12/12 Nm joint limits;
+    # `tau` above is the commanded impedance torque (gravity excluded). NaN when
+    # talking to a pre-v3 producer, so stale data can't masquerade as "0 Nm".
+    tau_J: np.ndarray = field(default_factory=lambda: np.full(7, np.nan))
 
     @classmethod
     def from_frame(cls, frame: np.ndarray) -> "RobotState":
@@ -97,6 +102,8 @@ class RobotState:
                        if names and "ee_linvel" in names else np.zeros(3)),
             ee_angvel=(np.array(frame["ee_angvel"], dtype=np.float64)
                        if names and "ee_angvel" in names else np.zeros(3)),
+            tau_J=(np.array(frame["tau_J"], dtype=np.float64)
+                   if names and "tau_J" in names else np.full(7, np.nan)),
         )
 
 

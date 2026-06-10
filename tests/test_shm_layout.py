@@ -83,9 +83,9 @@ def test_sizes(cpp_offsets):
     sizes, _ = cpp_offsets
     assert sizes["PandaShmHeader"] == HEADER_DTYPE.itemsize == 32
     assert sizes["PandaShmCommand"] == COMMAND_DTYPE.itemsize == 120
-    assert sizes["PandaShmStateFrame"] == STATE_FRAME_DTYPE.itemsize == 320
+    assert sizes["PandaShmStateFrame"] == STATE_FRAME_DTYPE.itemsize == 384
     assert sizes["PandaShm"] == SHM_TOTAL_BYTES
-    assert SHM_TOTAL_BYTES == 32 + 120 + 1024 * 320
+    assert SHM_TOTAL_BYTES == 32 + 120 + 1024 * 384
     assert PANDA_SHM_STATE_FRAMES == 1024
 
 
@@ -132,6 +132,7 @@ def test_state_offsets(cpp_offsets):
         ("tau", 184),
         ("ee_linvel", 240),
         ("ee_angvel", 264),
+        ("tau_J", 288),
     ]
     for field, expected in pairs:
         cpp = off[f"PandaShmStateFrame.{field}"]

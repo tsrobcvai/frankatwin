@@ -280,4 +280,7 @@ def _state_from_dict(d: Dict[str, Any]) -> RobotState:
         seq=int(d["seq"]),
         ee_linvel=np.asarray(d.get("ee_linvel", [0.0, 0.0, 0.0]), dtype=np.float64),
         ee_angvel=np.asarray(d.get("ee_angvel", [0.0, 0.0, 0.0]), dtype=np.float64),
+        # NaN (not 0) when the daemon predates shm v3 so it can't be mistaken
+        # for a real "0 Nm" measurement.
+        tau_J=np.asarray(d.get("tau_J", [float("nan")] * 7), dtype=np.float64),
     )

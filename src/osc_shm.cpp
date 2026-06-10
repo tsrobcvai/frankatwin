@@ -559,6 +559,9 @@ int main(int argc, char** argv) {
         frame.q[j] = s.q[j];
         frame.dq[j] = s.dq[j];
         frame.tau[j] = tau_cmd(j);
+        // Measured link-side torque (gravity included) -- this is the number
+        // to compare against the 87/87/87/87/12/12/12 Nm joint limits.
+        frame.tau_J[j] = s.tau_J[j];
       }
       frame.ee_pos[0] = x.x();
       frame.ee_pos[1] = x.y();

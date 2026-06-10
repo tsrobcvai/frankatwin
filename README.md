@@ -92,6 +92,27 @@ python -m panda_control.daemon --config config/robot.yaml
 Binds `tcp://*:5555` (REQ/REP) and `tcp://*:5556` (state PUB @ 100 Hz), claims
 shm `/panda_osc`, launches `osc_shm`.
 
+> **Carrying a payload? Set `--load-mass` / `--load-com` on the command line.**
+> The default (`mass: 0` in `robot.yaml`) is the bare arm: no `setLoad` call,
+> the Desk-configured load stays untouched. When the robot carries anything
+> extra, pass the combined mass [kg] and flange→COM vector [m] at startup so
+> gravity compensation stays correct:
+>
+> ```bash
+> # ZED Mini camera only (calibrated 2026-05-31):
+> python -m panda_control.daemon -c config/robot.yaml \
+>     --load-mass 0.15 --load-com 0 0 0.05
+>
+> # camera + 0.68 kg grasped object (object COM ~0.175 m along the tool axis):
+> python -m panda_control.daemon -c config/robot.yaml \
+>     --load-mass 0.83 --load-com 0 0 0.152
+> ```
+>
+> `--load-inertia` (row-major 3×3) is optional: when omitted and the mass is
+> positive, the daemon fills a small positive diagonal (libfranka rejects an
+> all-zero inertia; the exact value barely matters — gravity comp uses
+> mass + com only). See the `load:` block in `config/robot.yaml` for details.
+
 ### 2. Reset to home (joint-space position control) # PC
 
 ```bash
