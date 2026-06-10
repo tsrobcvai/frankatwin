@@ -332,6 +332,8 @@ def _write_csv(
     x_act: np.ndarray,
     quat_act_xyzw: np.ndarray,
     period_ms: np.ndarray,
+    tau_cmd: np.ndarray,
+    tau_J: np.ndarray,
 ) -> None:
     columns = ["t_s", "period_ms"]
     columns += [f"q{i}" for i in range(1, 8)]
@@ -341,9 +343,13 @@ def _write_csv(
     columns += ["x_des_x", "x_des_y", "x_des_z"]
     columns += ["dx_des_x", "dx_des_y", "dx_des_z"]
     columns += ["quat_des_x", "quat_des_y", "quat_des_z", "quat_des_w"]
+    # tau = commanded impedance torque (gravity excluded); tau_J = measured
+    # link-side torque (gravity included, shm v3+; NaN from older daemons).
+    columns += [f"tau{i}" for i in range(1, 8)]
+    columns += [f"tau_J{i}" for i in range(1, 8)]
     data = np.column_stack(
         (t_grid, period_ms, q, dq, x_act, quat_act_xyzw,
-         x_des, dx_des, quat_des_xyzw)
+         x_des, dx_des, quat_des_xyzw, tau_cmd, tau_J)
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savetxt(path, data, delimiter=",", header=",".join(columns), comments="", fmt="%.9f")
@@ -546,6 +552,8 @@ def main() -> int:
         log_dq = np.zeros((n, 7), dtype=np.float64)
         log_x = np.zeros((n, 3), dtype=np.float64)
         log_quat_xyzw = np.zeros((n, 4), dtype=np.float64)
+        log_tau = np.zeros((n, 7), dtype=np.float64)
+        log_tau_J = np.full((n, 7), np.nan, dtype=np.float64)
 
         abort = {"code": 0, "name": "none", "value": 0.0, "time_s": 0.0}
         summary: dict | None = None
@@ -569,6 +577,8 @@ def main() -> int:
                     log_dq[i] = fresh.dq
                     log_x[i] = fresh.ee_pos
                     log_quat_xyzw[i] = _quat_wxyz_to_xyzw(fresh.ee_quat)
+                    log_tau[i] = fresh.tau
+                    log_tau_J[i] = fresh.tau_J
                     last_state_seq = fresh.seq
                 else:
                     # No frame yet — repeat last row (will be zeros only at i=0).
@@ -577,6 +587,8 @@ def main() -> int:
                         log_dq[i] = log_dq[i - 1]
                         log_x[i] = log_x[i - 1]
                         log_quat_xyzw[i] = log_quat_xyzw[i - 1]
+                        log_tau[i] = log_tau[i - 1]
+                        log_tau_J[i] = log_tau_J[i - 1]
                 sleep_for = (t0 + (i + 1) * dt_grid) - time.monotonic()
                 if sleep_for > 0:
                     time.sleep(sleep_for)
@@ -595,6 +607,31 @@ def main() -> int:
                 f"{[round(v * 1000.0, 3) for v in summary['err_pos_rms_xyz']]}, "
                 f"err_ori_rms = {summary['err_ori_rms_rad'] * 1000.0:.3f} mrad"
             )
+            # Joint-torque headroom vs the Panda actuator limits (tau_J is the
+            # measured link-side torque, gravity included).
+            if np.isfinite(log_tau_J).any():
+                tau_limits = np.array([87.0, 87.0, 87.0, 87.0, 12.0, 12.0, 12.0])
+                tau_abs_max = np.nanmax(np.abs(log_tau_J), axis=0)
+                frac = tau_abs_max / tau_limits
+                summary["tau_J_abs_max_nm"] = tau_abs_max.tolist()
+                summary["tau_J_limit_frac"] = frac.tolist()
+                summary["tau_cmd_abs_max_nm"] = np.max(np.abs(log_tau), axis=0).tolist()
+                print(
+                    "[cart_impedance] max |tau_J| [Nm] = "
+                    + ", ".join(f"j{j+1}={tau_abs_max[j]:.2f} ({100.0*frac[j]:.0f}%)"
+                                for j in range(7))
+                    + "  (limits 87/87/87/87/12/12/12)"
+                )
+                if np.any(frac > 0.8):
+                    worst = int(np.argmax(frac))
+                    print(
+                        f"[cart_impedance] WARNING: joint {worst+1} reached "
+                        f"{100.0*frac[worst]:.0f}% of its torque limit",
+                        file=sys.stderr,
+                    )
+            else:
+                print("[cart_impedance] WARNING: no tau_J in state stream "
+                      "(daemon predates shm v3?)", file=sys.stderr)
             if last_state_seq < 0:
                 print("[cart_impedance] WARNING: no state frames received from daemon",
                       file=sys.stderr)
@@ -607,6 +644,7 @@ def main() -> int:
             _write_csv(
                 log_path, t_grid, x_des, dx_des, quat_des_xyzw,
                 log_q, log_dq, log_x, log_quat_xyzw, log_period,
+                log_tau, log_tau_J,
             )
         if sidecar_path is not None:
             _write_sidecar(

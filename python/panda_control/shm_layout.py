@@ -30,7 +30,7 @@ import numpy as np
 # Constants (must match src/shm_layout.h)
 # ---------------------------------------------------------------------------
 PANDA_SHM_MAGIC = 0x50414E44
-PANDA_SHM_VERSION = 2  # v2: added state ee_linvel/ee_angvel
+PANDA_SHM_VERSION = 3  # v3: added state tau_J (measured link-side torque)
 PANDA_SHM_STATE_FRAMES = 1024
 PANDA_SHM_DEFAULT_NAME = "/panda_osc"
 
@@ -81,15 +81,17 @@ STATE_FRAME_DTYPE = np.dtype(
         ("tau", np.float64, (7,)),
         ("ee_linvel", np.float64, (3,)),  # base frame (m/s), v2+
         ("ee_angvel", np.float64, (3,)),  # base frame (rad/s), v2+
+        ("tau_J", np.float64, (7,)),  # measured link-side torque (Nm), incl. gravity, v3+
         ("reserved0", np.uint64),
         ("reserved1", np.uint64),
         ("reserved2", np.uint64),
         ("reserved3", np.uint64),
+        ("reserved4", np.uint64),
     ],
     align=True,
 )
-assert STATE_FRAME_DTYPE.itemsize == 320, (
-    f"STATE_FRAME_DTYPE size {STATE_FRAME_DTYPE.itemsize} != 320"
+assert STATE_FRAME_DTYPE.itemsize == 384, (
+    f"STATE_FRAME_DTYPE size {STATE_FRAME_DTYPE.itemsize} != 384"
 )
 
 SHM_TOTAL_BYTES = (
@@ -97,7 +99,7 @@ SHM_TOTAL_BYTES = (
     + COMMAND_DTYPE.itemsize
     + STATE_FRAME_DTYPE.itemsize * PANDA_SHM_STATE_FRAMES
 )
-assert SHM_TOTAL_BYTES == 32 + 120 + 1024 * 320
+assert SHM_TOTAL_BYTES == 32 + 120 + 1024 * 384
 
 # Offset of each region within the shm buffer.
 OFFSET_HEADER = 0

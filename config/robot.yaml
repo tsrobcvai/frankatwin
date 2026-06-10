@@ -95,17 +95,27 @@ gripper:
 #     ~0.3 kg ZED Mini+bracket the diagonal is O(1e-4) kg m^2.
 # After setting, re-run six_dof and check the with-cam z sag is largely gone.
 load:
-  # Calibrated 2026-05-31 (ZED Mini + bracket). Bracketed the true effective
-  # payload from the symmetric z signature: m_comp=0 sagged -27mm vs nocam,
-  # m_comp=0.3 lifted +27mm -> linear zero-crossing ~0.15kg (7-phase estimates
-  # 0.147-0.158, very consistent). 0.3 was ~2x too large (over-compensating).
-  mass: 0.15
-  # Simplified to [0, 0, z]: camera assumed roughly on the tool axis, so only the
-  # along-axis offset is kept (flange +Z points out along the tool axis). A wrong
-  # LATERAL (x/y) com injects a bogus moment arm -- worse than zero -- so refine
-  # x/y only if the rotation phases (4-6) show a directional residual. mass=0.15
-  # is com-independent (gravity force depends on mass only), so this does NOT
-  # affect the z calibration -- only the rotation-phase joint-torque split.
-  com: [0.0, 0.0, 0.05]
-  # Small positive diagonal (must NOT be all-zero). Refine from box dims if desired.
-  inertia: [3.0e-4, 0.0, 0.0, 0.0, 3.0e-4, 0.0, 0.0, 0.0, 3.0e-4]
+  # Default: BARE ARM. mass 0 disables setLoad entirely (Desk-configured load
+  # untouched). Override per-run on the daemon command line, e.g.:
+  #
+  #   # camera only (0.15 kg, calibrated 2026-05-31 from the symmetric z
+  #   # signature: m_comp=0 sagged -27mm, 0.3 lifted +27mm -> ~0.15 kg):
+  #   python -m panda_control.daemon -c config/robot.yaml \
+  #       --load-mass 0.15 --load-com 0 0 0.05
+  #
+  #   # camera + 0.68 kg grasped object (object com ~0.175 m out along the
+  #   # tool axis, beyond the Franka Hand grasp center z=0.1034):
+  #   # mass = 0.15 + 0.68 = 0.83, com_z = (0.15*0.05 + 0.68*0.175)/0.83 ~= 0.152
+  #   python -m panda_control.daemon -c config/robot.yaml \
+  #       --load-mass 0.83 --load-com 0 0 0.152
+  #
+  # com is simplified to [0, 0, z] (everything assumed roughly on the tool
+  # axis; flange +Z points out along it). A wrong LATERAL (x/y) com injects a
+  # bogus moment arm -- worse than zero -- so refine x/y only if rotation
+  # phases show a directional residual.
+  mass: 0.0
+  com: [0.0, 0.0, 0.0]
+  # libfranka rejects setLoad with an all-zero inertia; the daemon auto-fills
+  # a small positive diagonal (1e-3) whenever mass > 0 and this is left zero.
+  # Exact value barely matters (gravity comp uses mass + com only).
+  inertia: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]

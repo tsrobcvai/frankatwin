@@ -50,6 +50,7 @@ def _state_to_dict(state: RobotState) -> Dict[str, Any]:
         "tau": state.tau.tolist(),
         "ee_linvel": state.ee_linvel.tolist(),  # base frame m/s (shm v2+)
         "ee_angvel": state.ee_angvel.tolist(),  # base frame rad/s (shm v2+)
+        "tau_J": state.tau_J.tolist(),  # measured link-side torque Nm, incl. gravity (shm v3+)
         "seq": state.seq,
     }
 
@@ -226,6 +227,24 @@ def main() -> None:
     parser.add_argument(
         "--verbose", "-v", action="store_true", help="verbose logging"
     )
+    # End-effector payload overrides (forwarded to osc_shm setLoad at startup).
+    # Default: whatever robot.yaml says -- which is mass 0 = bare arm, no
+    # setLoad call, Desk-configured load untouched. Pass these when the robot
+    # carries something extra, e.g. for the 0.68 kg grasped-object runs:
+    #   --load-mass 0.83 --load-com 0 0 0.152
+    parser.add_argument(
+        "--load-mass", type=float, default=None,
+        help="payload mass [kg]; 0 disables setLoad (default: robot.yaml value)",
+    )
+    parser.add_argument(
+        "--load-com", type=float, nargs=3, default=None, metavar=("X", "Y", "Z"),
+        help="flange->payload COM [m] (default: robot.yaml value)",
+    )
+    parser.add_argument(
+        "--load-inertia", type=float, nargs=9, default=None,
+        help="payload inertia about COM, row-major 3x3 [kg m^2] "
+             "(default: robot.yaml value; auto small diagonal if zero)",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -235,6 +254,23 @@ def main() -> None:
 
     cfg = load_config(args.config)
     logger.info("loaded config from %s", cfg.source_path)
+    if args.load_mass is not None:
+        cfg.load.mass = float(args.load_mass)
+    if args.load_com is not None:
+        cfg.load.com = [float(v) for v in args.load_com]
+    if args.load_inertia is not None:
+        cfg.load.inertia = [float(v) for v in args.load_inertia]
+    if cfg.load.mass > 0.0 and not any(cfg.load.inertia):
+        # libfranka rejects setLoad with an all-zero inertia tensor; the exact
+        # value barely matters (gravity comp uses mass + com only).
+        cfg.load.inertia = [1.0e-3, 0.0, 0.0, 0.0, 1.0e-3, 0.0, 0.0, 0.0, 1.0e-3]
+    if cfg.load.mass > 0.0:
+        logger.info(
+            "payload: mass=%.3f kg, com=%s m (setLoad at osc_shm startup)",
+            cfg.load.mass, cfg.load.com,
+        )
+    else:
+        logger.info("payload: none (bare arm, setLoad skipped)")
     daemon = PandaDaemon(cfg, verbose=args.verbose)
 
     def _on_signal(_signo, _frame):

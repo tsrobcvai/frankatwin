@@ -47,6 +47,7 @@ int main() {
   PRINT_OFFSET(PandaShmStateFrame, tau);
   PRINT_OFFSET(PandaShmStateFrame, ee_linvel);
   PRINT_OFFSET(PandaShmStateFrame, ee_angvel);
+  PRINT_OFFSET(PandaShmStateFrame, tau_J);
 
   return 0;
 }
