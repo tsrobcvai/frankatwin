@@ -25,8 +25,8 @@
 // Exit codes:
 //   0  ok
 //   1  bad CLI
-//   2  joint goal out of nominal limits
-//   3  start state outside nominal limits
+//   2  (retired) joint goal out of nominal limits -- now a non-fatal warning
+//   3  (retired) start state outside nominal limits -- now a non-fatal warning
 //  10  franka::Exception
 //  11  std::exception
 
@@ -204,8 +204,13 @@ int main(int argc, char** argv) {
   std::signal(SIGTERM, signal_handler);
 
   if (args.mode == Mode::kJoint && !q_within_limits(args.q_goal)) {
-    std::cerr << "[move_to] goal q out of nominal joint limits" << std::endl;
-    return 2;
+    // Nominal-limit check downgraded from fatal to a warning: proceed anyway.
+    // libfranka still enforces the robot's hard joint limits at 1 kHz and will
+    // reject/fault on a genuinely unreachable goal, so this only removes the
+    // conservative software gate.
+    std::cerr << "[move_to] WARNING: goal q out of nominal joint limits "
+                 "(proceeding; libfranka still enforces hard limits)"
+              << std::endl;
   }
 
   try {
@@ -218,8 +223,12 @@ int main(int argc, char** argv) {
 
     franka::RobotState initial_state = robot.readOnce();
     if (!q_within_limits(initial_state.q)) {
-      std::cerr << "[move_to] start q out of nominal joint limits" << std::endl;
-      return 3;
+      // Downgraded from fatal to a warning: a start config slightly outside the
+      // nominal band (e.g. a hand-guided joint 7 past 2.8973) no longer blocks a
+      // reset that moves back into range.
+      std::cerr << "[move_to] WARNING: start q out of nominal joint limits "
+                   "(proceeding)"
+                << std::endl;
     }
 
     if (args.mode == Mode::kJoint) {
