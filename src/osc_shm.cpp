@@ -18,7 +18,8 @@
 //     robot is held only by libfranka's gravity + friction compensation).
 //
 // Safety semantics preserved:
-//   - Per-tick joint-limit check (Q_MIN / Q_MAX).
+//   - Per-tick joint-limit check (Q_MIN / Q_MAX) is WARN-ONLY: an out-of-nominal
+//     joint logs once but no longer aborts (libfranka hard limits still apply).
 //   - Per-tick |e_pos|_inf > error_delta_pos (if set) and ||e_o|| >
 //     error_delta_rot (if set) raise an abort.
 //   - SIGINT / SIGTERM: clean stop with zero torque.
@@ -404,9 +405,12 @@ int main(int argc, char** argv) {
 
     Eigen::Map<const Eigen::Matrix<double, 7, 1>> q_init(initial_state.q.data());
     if (!q_within_limits(q_init)) {
-      std::cerr << "[osc_shm] q_init exceeds nominal Panda joint limits"
+      // Downgraded from fatal (was: return 4) to a warning so the controller can
+      // start from a config slightly outside the nominal band. libfranka's hard
+      // joint limits still gate any actual motion.
+      std::cerr << "[osc_shm] WARNING: q_init exceeds nominal Panda joint limits "
+                   "(starting anyway)"
                 << std::endl;
-      return 4;
     }
 
     const PoseData anchor =
@@ -592,13 +596,21 @@ int main(int argc, char** argv) {
       }
 
       // Safety checks (preserve step5b semantics).
-      if (abort_code == 0 && !q_within_limits(q)) {
-        abort_code = 2;
-        for (int j = 0; j < 7; ++j) {
-          if (q(j) < Q_MIN(j) || q(j) > Q_MAX(j)) {
-            abort_joint = j;
-            abort_value = q(j);
-            break;
+      // Per-tick nominal joint-limit abort downgraded to a one-shot warning: an
+      // out-of-nominal joint no longer aborts the 1 kHz loop. libfranka still
+      // enforces the robot's hard joint limits, so genuinely dangerous motion is
+      // still stopped at the driver level.
+      if (!q_within_limits(q)) {
+        static bool warned_qlim = false;
+        if (!warned_qlim) {
+          warned_qlim = true;
+          for (int j = 0; j < 7; ++j) {
+            if (q(j) < Q_MIN(j) || q(j) > Q_MAX(j)) {
+              std::cerr << "[osc_shm] WARNING: joint " << (j + 1)
+                        << " out of nominal limits (q=" << q(j)
+                        << "), not aborting" << std::endl;
+              break;
+            }
           }
         }
       }
