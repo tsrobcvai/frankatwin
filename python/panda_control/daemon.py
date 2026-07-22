@@ -35,6 +35,11 @@ logger = logging.getLogger(__name__)
 
 STATE_PUB_HZ = 100.0
 SOCKET_LINGER_MS = 200
+# How often the watchdog checks that osc_shm is still alive and restarts it if
+# not. osc_shm can die mid-run on a libfranka reflex / RT overrun; without a
+# restart the daemon keeps ACKing commands into a dead controller (robot stops
+# moving while the PC still gets ok replies).
+WATCHDOG_POLL_S = 0.5
 
 
 # ---------------------------------------------------------------------------
@@ -81,6 +86,7 @@ class PandaDaemon:
         # cannot let another command land between stop/start.
         self._op_lock = threading.Lock()
         self._pub_thread: Optional[threading.Thread] = None
+        self._watchdog_thread: Optional[threading.Thread] = None
 
     # ---------------------------------------------------------------- run loop
     def run(self) -> None:
@@ -88,6 +94,11 @@ class PandaDaemon:
             target=self._state_pub_loop, name="panda_state_pub", daemon=True
         )
         self._pub_thread.start()
+
+        self._watchdog_thread = threading.Thread(
+            target=self._watchdog_loop, name="panda_watchdog", daemon=True
+        )
+        self._watchdog_thread.start()
 
         # Poll the REP socket so we can react to SIGINT/SIGTERM.
         poller = zmq.Poller()
@@ -106,8 +117,33 @@ class PandaDaemon:
     def request_stop(self) -> None:
         self._stop_evt.set()
 
+    # ---------------------------------------------------------------- watchdog
+    def _watchdog_loop(self) -> None:
+        """Auto-restart osc_shm if it dies unexpectedly.
+
+        Runs under _op_lock so it can never fire during a move_to* (which
+        deliberately stops/restarts the controller and holds the sole FCI
+        session). A restart re-seeds the anchor pose; the client's next
+        set_ee_target then resumes control.
+        """
+        while not self._stop_evt.wait(WATCHDOG_POLL_S):
+            with self._op_lock:
+                if self._stop_evt.is_set():
+                    break
+                try:
+                    if self.controller.ensure_running():
+                        logger.info("watchdog: osc_shm restarted")
+                except Exception:
+                    logger.exception(
+                        "watchdog: osc_shm restart failed; retrying in %.1fs",
+                        WATCHDOG_POLL_S,
+                    )
+
     def _shutdown(self) -> None:
         logger.info("daemon shutting down")
+        if self._watchdog_thread is not None:
+            # Let any in-flight restart settle before we tear down the shm.
+            self._watchdog_thread.join(timeout=2.0)
         try:
             self.controller.close()
         except Exception:

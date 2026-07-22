@@ -252,6 +252,48 @@ class LocalPandaController:
         finally:
             self._mark_pid_inactive()
 
+    def is_controller_alive(self) -> bool:
+        """True iff the osc_shm subprocess exists and has not exited."""
+        with self._proc_lock:
+            return self._proc is not None and self._proc.poll() is None
+
+    def ensure_running(self) -> bool:
+        """Restart osc_shm if it has died unexpectedly.
+
+        Returns True if a restart was performed, False if the controller was
+        already alive. Logs the dead process' exit code + captured stdout/stderr
+        before relaunching so the crash reason (libfranka reflex, RT overrun,
+        etc.) is not lost. Intended to be driven by the daemon watchdog; callers
+        must serialize this against move_to*/lifecycle ops (osc_shm needs the
+        sole FCI session).
+        """
+        with self._proc_lock:
+            proc = self._proc
+            alive = proc is not None and proc.poll() is None
+        if alive:
+            return False
+        if proc is not None:
+            out = err = b""
+            try:
+                if proc.stdout is not None:
+                    out = proc.stdout.read()
+            except Exception:
+                pass
+            try:
+                if proc.stderr is not None:
+                    err = proc.stderr.read()
+            except Exception:
+                pass
+            logger.warning(
+                "osc_shm exited unexpectedly (code=%s); restarting. "
+                "stdout: %s | stderr: %s",
+                proc.returncode,
+                out.decode(errors="replace").strip()[-512:],
+                err.decode(errors="replace").strip()[-512:],
+            )
+        self.start_controller()
+        return True
+
     def close(self) -> None:
         try:
             self.stop_controller()
