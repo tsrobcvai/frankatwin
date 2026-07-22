@@ -432,8 +432,14 @@ int main(int argc, char** argv) {
       cmd->kp_ori = DEFAULT_KP_ORI;
       cmd->kd_pos = 0.0;  // 0 -> auto 2*sqrt(kp)
       cmd->kd_ori = 0.0;
-      cmd->error_delta_pos = 0.05;
-      cmd->error_delta_rot = 0.30;
+      // Pure impedance to match the (unclipped) sim: 0 disables BOTH the
+      // per-tick error clip (see the `err_dp > 0.0` / `err_dr > 0.0` guards
+      // where f_task is built) AND the tracking-error abort further down. The
+      // remaining safety net is the per-joint TAU_LIMIT clamp, the torque slew
+      // limiter, and libfranka's own collision reflex + hard joint limits.
+      // A client may still re-enable clipping at runtime via set_gains.
+      cmd->error_delta_pos = 0.0;
+      cmd->error_delta_rot = 0.0;
       cmd->enabled = 1u;
       panda_shm::cmd_write_end(cmd, s);
     }

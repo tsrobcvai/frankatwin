@@ -56,6 +56,29 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
 # ----------------------------------------------------------------------------
+# Pinocchio (required by libfranka >= 0.14)
+# ----------------------------------------------------------------------------
+#
+# Starting with libfranka 0.14 (server version 8+, FR3 system >= 5.7.0), the
+# robot dynamics (mass matrix, Coriolis, gravity, Jacobians) are computed with
+# the Pinocchio library instead of the old internal model. Linking
+# Franka::Franka then pulls in undefined pinocchio symbols (e.g.
+# computeJointJacobians), so every executable that links libfranka must also
+# link Pinocchio.
+#
+# Point find_package at the same Pinocchio used to build this libfranka, e.g.:
+#   cmake -S . -B build \
+#     -DCMAKE_PREFIX_PATH="/path/to/deoxys;/home/<user>/local/pinocchio-min"
+set(PINOCCHIO_LIBS "")
+if(Franka_VERSION VERSION_GREATER_EQUAL 0.14.0)
+    find_package(pinocchio REQUIRED)
+    set(PINOCCHIO_LIBS pinocchio::pinocchio pinocchio::pinocchio_parsers)
+    message(STATUS "panda_control: libfranka ${Franka_VERSION} (>= 0.14) -> linking Pinocchio for dynamics")
+else()
+    message(STATUS "panda_control: libfranka ${Franka_VERSION} (< 0.14) -> Pinocchio not required")
+endif()
+
+# ----------------------------------------------------------------------------
 # Conda boost workaround for secure-exec binaries (file capabilities)
 # ----------------------------------------------------------------------------
 #
@@ -85,6 +108,7 @@ add_executable(read_current_q src/read_current_q.cpp)
 target_link_libraries(read_current_q
     PRIVATE
         Franka::Franka
+        ${PINOCCHIO_LIBS}
         Threads::Threads)
 if(CONDA_BOOST_FILESYSTEM)
     target_link_options(read_current_q PRIVATE -Wl,--no-as-needed)
@@ -103,6 +127,7 @@ add_executable(read_current_pose src/read_current_pose.cpp)
 target_link_libraries(read_current_pose
     PRIVATE
         Franka::Franka
+        ${PINOCCHIO_LIBS}
         Eigen3::Eigen
         Threads::Threads)
 if(CONDA_BOOST_FILESYSTEM)
@@ -120,6 +145,7 @@ add_executable(read_load src/read_load.cpp)
 target_link_libraries(read_load
     PRIVATE
         Franka::Franka
+        ${PINOCCHIO_LIBS}
         Threads::Threads)
 if(CONDA_BOOST_FILESYSTEM)
     target_link_options(read_load PRIVATE -Wl,--no-as-needed)
@@ -147,6 +173,7 @@ target_include_directories(panda_examples_common PUBLIC src)
 target_link_libraries(panda_examples_common
     PUBLIC
         Franka::Franka
+        ${PINOCCHIO_LIBS}
         Eigen3::Eigen)
 target_compile_options(panda_examples_common PRIVATE -O2)
 
@@ -158,6 +185,7 @@ target_include_directories(osc_shm PRIVATE src)
 target_link_libraries(osc_shm
     PRIVATE
         Franka::Franka
+        ${PINOCCHIO_LIBS}
         Eigen3::Eigen
         Threads::Threads
         rt)
@@ -177,6 +205,7 @@ target_link_libraries(move_to
     PRIVATE
         panda_examples_common
         Franka::Franka
+        ${PINOCCHIO_LIBS}
         Eigen3::Eigen
         Threads::Threads)
 if(CONDA_BOOST_FILESYSTEM)
