@@ -20,6 +20,11 @@ dependencies = [
 test = [
     "pytest>=7",
 ]
+# For scripts/compare_sim_real.py and friends (PC-side analysis).
+analysis = [
+    "pandas>=1.5",
+    "matplotlib>=3.5",
+]
 
 [tool.setuptools]
 package-dir = { "" = "python" }

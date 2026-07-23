@@ -65,7 +65,7 @@ pgrep -a franka-interface && echo "kill franka-interface before continuing"
 ```bash
 git clone <repo> /path/to/panda_control
 cd /path/to/panda_control
-pip install -e .
+pip install -e ".[analysis]"      # analysis extra: pandas/matplotlib for scripts/compare_*.py
 grep nuc_host config/robot.yaml   # default: 172.16.0.1
 ```
 
@@ -192,6 +192,35 @@ v4 follows the UR5e chirp shape with three Franka-specific deltas:
 1. **f1 lowered 3.0 → 0.7 Hz** (now the Franka default; 1.5 Hz was an interim value). J5–J7 effort limit (12 N·m) saturates at UR5e's 3 Hz top frequency and trips `osc_shm`'s abort clamp; 0.7 Hz keeps peak |dx| ≈ 0.46 m/s.
 2. **kp lowered 1000 → 500, kpori 50 → 30** for parity with the downstream policy controller.
 3. **Safety clamps relaxed** (`error_delta_pos`: 0.05 → 0.15 m, `error_delta_rot`: 0.30 → 0.80 rad) — lower kp tolerates larger steady-state error. Set via `cart_impedance.py --err-delta-pos / --err-delta-rot`.
+
+### IsaacLab Setup (one-time)
+
+The optimize / validate steps run inside [IsaacLab](https://github.com/isaac-sim/IsaacLab)
+(tested with **v2.3.0**; requires ≥ 2.3 for the dynamic/viscous joint-friction API),
+but the sysid tasks and scripts are **not part of the official distribution** —
+this repo ships them under `isaaclab_sysid/`. Deploy them into your IsaacLab
+checkout once:
+
+```bash
+# panda_control
+./isaaclab_sysid/install_into_isaaclab.sh /path/to/IsaacLab
+
+# inside the IsaacLab python env
+pip install cmaes
+```
+
+This copies three things into `/path/to/IsaacLab`:
+
+- **Gym tasks** `Isaac-UW-Franka-Sysid-v0` / `Isaac-UW-Franka-Replay-v0`
+  (`source/isaaclab_tasks/isaaclab_tasks/direct/franka_sysid/`) — Franka-only
+  zero-reward envs whose task-impedance controller mirrors `osc_shm`
+  (`src/step5b_cart_pose.cpp`). Auto-registered by `isaaclab_tasks`' package
+  scanner; no IsaacLab source edits needed.
+- **Robot asset** `franka_mimic.usd`
+  (`source/isaaclab_assets/data/Robots/Franka/`) — Franka with a
+  `panda_fingertip_centered` frame. The task configs reference it relative to
+  the IsaacLab root, so always launch the scripts from `/path/to/IsaacLab`.
+- **Scripts** `scripts/tools/{sysid_franka_osc,apply_sysid_params,replay_python_csv_sim}.py`.
 
 ### Workflow
 
