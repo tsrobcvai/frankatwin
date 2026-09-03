@@ -18,12 +18,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Apply Franka sysid params and optionally replay.")
     parser.add_argument("--best", required=True, help="Path to sysid_best_params.json")
     parser.add_argument("--print-snippet", action="store_true", help="Print a config snippet for manual patching.")
-    parser.add_argument("--invoke-replay", action="store_true", help="Invoke replay_real_step5b_sim.py with sysid params.")
+    parser.add_argument("--invoke-replay", action="store_true", help="Invoke the replay script with sysid params applied.")
     parser.add_argument("--python-exe", default=sys.executable, help="Python executable used for --invoke-replay.")
     parser.add_argument(
         "--replay-script",
-        default=str(Path(__file__).resolve().parent / "replay_real_step5b_sim.py"),
-        help="Path to replay_real_step5b_sim.py",
+        default=str(Path(__file__).resolve().parent / "replay_python_csv_sim.py"),
+        help="Path to replay_python_csv_sim.py",
     )
     parser.add_argument("--real-csv", default=None, help="Required with --invoke-replay")
     parser.add_argument("--real-sidecar", default=None, help="Required with --invoke-replay")

@@ -1,6 +1,6 @@
 // shm_layout.h
 //
-// POSIX shared memory layout for frankatwin Step 10.
+// POSIX shared memory layout for frankatwin.
 //
 // Two endpoints:
 //   - Writer of "command" / reader of "state":   Python (daemon or LocalController)

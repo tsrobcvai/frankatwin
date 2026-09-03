@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Generate the SysID v4 chirp excitation trajectory (Franka).
 
-v4 supersedes v3 (step5d, see gen_excitation_traj.py) by switching from a
+v4 supersedes v3 (multiband, see gen_excitation_traj.py) by switching from a
 two-band stationary sinusoid to a linear frequency sweep ("chirp"). The
 design follows UR5e's collect_sysid_data.py (linear chirp, 6-DOF, evenly
 phase-staggered) but with bounds tuned for the Franka task-impedance loop.
 
-Key differences vs v3 (step5d):
+Key differences vs v3 (multiband):
 
   * Frequency profile: linear chirp f0->f1 instead of two fixed bands per axis.
     This sweeps every frequency between f0 and f1 once, giving CMA-ES a much
@@ -23,7 +23,7 @@ Key differences vs v3 (step5d):
   * Asymmetric linear ramp (2 s up / 3 s down) matching UR5e's convention.
 
 The sidecar JSON written by this script is compatible with apply_sysid_params
-(``--invoke-replay``) and replay_real_step5b_sim.py for downstream sim/real
+(``--invoke-replay``) and replay_python_csv_sim.py for downstream sim/real
 comparison.
 """
 
@@ -39,7 +39,7 @@ import numpy as np
 
 # ---------------------------------------------------------------------------
 # Defaults follow the UR5e chirp template (collect_sysid_data.py) but scaled
-# for the Franka task-impedance envelope.  The base step5b sidecar conventions
+# for the Franka task-impedance envelope.  The sidecar peak-rate conventions
 # (peak Cartesian speed <= 0.30 m/s, peak angular rate <= 0.50 rad/s) still
 # apply -- see _print_peak_rates for the runtime warnings.
 # ---------------------------------------------------------------------------
@@ -54,11 +54,10 @@ import numpy as np
 # per-axis spectral *shape* (linear chirp from 0.1 Hz to f1) is preserved.
 #
 # IMPORTANT: With UR5e-amp rotations (0.50 + 0.25 + 0.50 rad), the reference
-# itself reaches max|rot_offset| ~= 0.61 rad.  This is *above* the 0.40 rad
-# ori_track_abort_rad used by the C++ step5d_excite collector -- if you
-# collect with that pipeline you MUST raise the abort to >= 0.80.  The
-# Python cart_impedance.py path does not enforce that abort (only prints
-# warnings), so it is unaffected.
+# itself reaches max|rot_offset| ~= 0.61 rad.  This is *above* robot.yaml's
+# default error_delta_rot (0.30 rad): run cart_impedance.py with
+# --err-delta-rot 0.80 (and --err-delta-pos 0.15, see README) or osc_shm's
+# tracking clamp will abort the run.
 CHIRP_F0_DEFAULT = 0.1
 CHIRP_F1_DEFAULT = 0.7
 # Per-axis phase offsets (6 axes, 6 evenly spaced offsets k * pi/3).
@@ -71,19 +70,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--base-sidecar",
         type=str,
-        default="/home/tao/Projects/frankatwin/data/step5b_20260524_120834.json",
-        help="Reference real sidecar used for q_init / x_anchor / q_anchor and gain hints.",
+        required=True,
+        help="Reference sidecar JSON (from read_current_pose or a previous run) "
+             "providing q_init / x_anchor / q_anchor and gain hints.",
     )
     parser.add_argument(
         "--out-csv",
         type=str,
-        default="/home/tao/Projects/frankatwin/tmp/v4_chirp_target.csv",
+        default="data/chirp_target.csv",
         help="Output target CSV path.",
     )
     parser.add_argument(
         "--out-sidecar",
         type=str,
-        default="/home/tao/Projects/frankatwin/tmp/v4_chirp_target.json",
+        default="data/chirp_target.json",
         help="Output sidecar JSON path.",
     )
     parser.add_argument("--duration", type=float, default=8.0, help="Trajectory duration in seconds (UR5e default).")
@@ -278,7 +278,7 @@ def _peak_rates(t_s: np.ndarray, dx_des: np.ndarray, rot_offsets: np.ndarray) ->
     }
 
 
-# Safety conventions (from step5b/step5d collector pre-flights).
+# Safety conventions (shared with gen_excitation_traj.py).
 CART_DX_PEAK_LIMIT_MPS = 0.30
 ORI_DOT_PEAK_LIMIT_RPS = 0.50
 ORI_TRACK_ABORT_RAD = 0.30

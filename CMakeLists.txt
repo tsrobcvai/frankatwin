@@ -117,12 +117,11 @@ endif()
 target_compile_options(read_current_q PRIVATE -O2)
 
 # ----------------------------------------------------------------------------
-# Utility: Read current EE pose and emit step5b-style sidecar JSON
+# Utility: Read current EE pose and emit a sidecar JSON
 # ----------------------------------------------------------------------------
 # Single readOnce() + model.pose(kEndEffector). Output is consumed by
-# frankatwin/scripts/gen_excitation_traj.py via --base-sidecar, so step5c
-# excitation trajectories can be anchored on the robot's *current* pose
-# instead of step5b's frozen x_anchor.
+# scripts/gen_excitation_traj.py / gen_chirp_traj.py via --base-sidecar, so
+# excitation trajectories are anchored on the robot's *current* pose.
 add_executable(read_current_pose src/read_current_pose.cpp)
 target_link_libraries(read_current_pose
     PRIVATE
@@ -154,11 +153,11 @@ endif()
 target_compile_options(read_load PRIVATE -O2)
 
 # ----------------------------------------------------------------------------
-# Step 10: POSIX shm + Python API
+# POSIX shm + Python API
 # ----------------------------------------------------------------------------
 #
-# `osc_shm` is the long-running 1 kHz controller. It mirrors the step5b
-# Jacobian-transpose 6D pose impedance law but reads setpoint/gains from a
+# `osc_shm` is the long-running 1 kHz controller. It implements a
+# Jacobian-transpose 6D pose impedance law, reads setpoint/gains from a
 # POSIX shm segment and publishes the robot state into the same segment.
 #
 # `move_to` is the one-shot reset utility. It links the vendored libfranka

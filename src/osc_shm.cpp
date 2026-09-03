@@ -3,13 +3,13 @@
 // Long-running 1 kHz Jacobian-transpose Cartesian 6D pose impedance controller
 // that reads its setpoint and gains from POSIX shared memory.
 //
-// Control law (identical to step5b_cart_pose.cpp):
+// Control law:
 //   tau_cmd = J^T * F_task + c(q, dq)
 //   F_task  = [ Kp_pos * (x_des - x) - Kd_pos * v ;
 //               Kp_ori * e_o          - Kd_ori * w ]
 //   e_o     = 2 * vec(q_des * q^{-1}) with shortest-path sign
 //
-// Difference vs step5b:
+// Design:
 //   - x_des / q_des / Kp_pos / Kp_ori / Kd_pos / Kd_ori / enabled come from
 //     ShmCommand each tick (lock-free seqlock read).
 //   - q / dq / ee_pos / ee_quat / tau / timestamp are published to the state
@@ -601,7 +601,7 @@ int main(int argc, char** argv) {
                   << " ||e_o||=" << e_ori.norm() << std::endl;
       }
 
-      // Safety checks (preserve step5b semantics).
+      // Safety checks.
       // Per-tick nominal joint-limit abort downgraded to a one-shot warning: an
       // out-of-nominal joint no longer aborts the 1 kHz loop. libfranka still
       // enforces the robot's hard joint limits, so genuinely dangerous motion is

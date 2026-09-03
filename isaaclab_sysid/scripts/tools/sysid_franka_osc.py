@@ -7,9 +7,9 @@
 
 Supports **multi-trajectory** joint fitting: pass ``--real_csv`` and
 ``--real_sidecar`` multiple times to optimise over a sum of per-trajectory
-losses.  This is how v2 sysid lifts the under-identifiability of v1 (which
-was trained on the slow 0.25 Hz step5b z-sin only) — step5c adds the
-0.7-1.1 Hz acceleration content needed for armature / viscous / delay.
+losses.  A single slow trajectory (e.g. a 0.25 Hz z-sine) leaves armature /
+viscous / delay under-identified; adding a multi-band sweep or a chirp supplies
+the 0.7-1.1 Hz acceleration content needed to pin them down.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ import torch
 
 from isaaclab.app import AppLauncher
 
-parser = argparse.ArgumentParser(description="Franka system ID (CMA-ES) on step5b/step5c replay.")
+parser = argparse.ArgumentParser(description="Franka system ID (CMA-ES) by closed-loop replay of real trajectories.")
 parser.add_argument("--task", type=str, default="Isaac-FrankaTwin-Sysid-v0")
 parser.add_argument("--num_envs", type=int, default=128, help="CMA population size.")
 parser.add_argument(

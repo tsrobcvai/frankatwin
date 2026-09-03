@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
-"""Generate a held-out multi-axis Cartesian + orientation excitation trajectory.
+"""Generate the SysID v3 multi-band excitation trajectory (Franka).
 
-History:
+Two-band stationary sinusoid per Cartesian axis (~0.15-0.30 Hz low band plus a
+0.7-1.1 Hz high band at ``--high-band-ratio`` amplitude), plus two optional
+multi-band rotation sweeps: one about base-z (drives j1 directly) and one
+about EE-z (drives j5/j7).
 
-  * step5c (sysid v1/v2): position-only multi-band sweep, quaternion held at
-    ``q_anchor``.  This left j1 (base yaw) and j5 (wrist roll) under-excited
-    because the task wrench had no torque component.
-  * step5d (sysid v3, this file): adds two extra multi-band rotation sweeps,
-    one about base-z (drives j1 directly) and one about EE-z (drives j5/j7).
-    Position amplitudes are also bumped (default 10 / 10 / 8 cm).
+Position-only excitation (``--amp-yaw 0 --amp-roll 0``, the v1/v2 variant)
+leaves j1 (base yaw) and j5 (wrist roll) under-excited because the task wrench
+has no torque component; v3 adds the rotation sweeps to fix that.
 
-    Defaults now reproduce the ``step5d_20260525_143929`` collection that the
-    sysid fit ``logs/sysid_franka/20260525_145807`` was trained on:
-    amp 0.10 / 0.10 / 0.08 m, yaw 0.25 rad, roll 0.20 rad, high_band_ratio 0.20,
-    amp_ramp 2.0 s, duration 12 s.  Set ``--amp-yaw 0 --amp-roll 0`` to recover
-    the old position-only step5c behaviour.
+Defaults reproduce the v3 collection the published sysid parameters were
+fitted on: amp 0.10 / 0.10 / 0.08 m, yaw 0.25 rad, roll 0.20 rad,
+high_band_ratio 0.20, amp_ramp 2.0 s, duration 12 s.
 """
 
 from __future__ import annotations
@@ -28,23 +26,24 @@ import numpy as np
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate multi-axis excitation target CSV/JSON (step5c/step5d).")
+    parser = argparse.ArgumentParser(description="Generate the SysID v3 multi-band excitation target CSV/JSON.")
     parser.add_argument(
         "--base-sidecar",
         type=str,
-        default="/home/tao/Projects/frankatwin/data/step5b_20260524_120834.json",
-        help="Reference real sidecar used for q_init/x_anchor/q_anchor and gains.",
+        required=True,
+        help="Reference sidecar JSON (from read_current_pose or a previous run) "
+             "providing q_init / x_anchor / q_anchor and gain hints.",
     )
     parser.add_argument(
         "--out-csv",
         type=str,
-        default="/home/tao/Projects/frankatwin/tmp/step5c_excitation_target.csv",
+        default="data/multiband_target.csv",
         help="Output target CSV path.",
     )
     parser.add_argument(
         "--out-sidecar",
         type=str,
-        default="/home/tao/Projects/frankatwin/tmp/step5c_excitation_target.json",
+        default="data/multiband_target.json",
         help="Output sidecar JSON path.",
     )
     parser.add_argument("--duration", type=float, default=12.0, help="Trajectory duration in seconds.")
@@ -56,7 +55,7 @@ def parse_args() -> argparse.Namespace:
         "--amp-yaw",
         type=float,
         default=0.25,
-        help="Yaw (rotation about world z, drives j1) amplitude [rad]. 0 = orientation held (step5c behavior).",
+        help="Yaw (rotation about world z, drives j1) amplitude [rad]. 0 = orientation held (position-only v1/v2 variant).",
     )
     parser.add_argument(
         "--amp-roll",
@@ -193,7 +192,7 @@ def _build_quat_traj(
 
     * yaw : rotation about world (base) z-axis, multi-band, drives j1.
     * roll: rotation about EE local z-axis, multi-band, drives j5/j7.
-    Both default to amp=0, in which case q_des(t) = q_anchor (step5c parity).
+    Both default to amp=0, in which case q_des(t) = q_anchor (position-only variant).
     """
     yaw_freqs = ORI_FREQS["yaw"]
     roll_freqs = ORI_FREQS["roll"]
@@ -217,7 +216,7 @@ def _build_quat_traj(
     return q_des, yaw, roll
 
 
-def build_step5d_trajectory(
+def build_multiband_trajectory(
     t_s: np.ndarray,
     x_anchor: np.ndarray,
     q_anchor_xyzw: np.ndarray,
@@ -229,7 +228,7 @@ def build_step5d_trajectory(
     high_band_ratio: float = 0.20,
     amp_ramp_s: float = 2.0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Build the step5d multi-band excitation trajectory on an arbitrary time grid.
+    """Build the v3 multi-band excitation trajectory on an arbitrary time grid.
 
     Returns
     -------
@@ -239,10 +238,10 @@ def build_step5d_trajectory(
     yaw : (N,) yaw angle (about world-z) applied to the anchor.
     roll : (N,) roll angle (about EE local-z) applied to the anchor.
 
-    Setting both ``amp_yaw`` and ``amp_roll`` to 0 reproduces step5c (orientation
-    held at ``q_anchor_xyzw``). Default amplitudes match the
-    ``step5d_20260525_143929`` collection (0.10/0.10/0.08 m, yaw 0.25, roll 0.20,
-    high_band_ratio 0.20).
+    Setting both ``amp_yaw`` and ``amp_roll`` to 0 gives the position-only
+    variant (orientation held at ``q_anchor_xyzw``). Default amplitudes match
+    the v3 collection (0.10/0.10/0.08 m, yaw 0.25, roll 0.20, high_band_ratio
+    0.20).
     """
     rho, rho_dot = _half_cosine_envelope(t_s, amp_ramp_s)
     x_des, dx_des = _build_pos_traj(t_s, x_anchor, amp_x, amp_y, amp_z, rho, rho_dot, high_band_ratio)
@@ -267,7 +266,7 @@ def main() -> int:
     dt = 1.0 / float(args.hz)
     n = int(round(float(args.duration) * float(args.hz))) + 1
     t_s = np.arange(n, dtype=np.float64) * dt
-    x_des, dx_des, quat_des, yaw_traj, roll_traj = build_step5d_trajectory(
+    x_des, dx_des, quat_des, yaw_traj, roll_traj = build_multiband_trajectory(
         t_s,
         x_anchor,
         q_anchor_xyzw,
@@ -301,9 +300,9 @@ def main() -> int:
 
     args_ref = base.get("args", {})
 
-    # Peak rate diagnostics (for safety thresholds in step5c_excite.cpp:
-    # CART_TRACK_ABORT_M = 0.05 m, ORI_TRACK_ABORT_RAD = 0.30 rad,
-    # plus the hard-coded Cartesian speed limit ~0.3 m/s in step5b_cart_pose).
+    # Peak rate diagnostics against robot.yaml's default per-tick tracking
+    # clamps (error_delta_pos = 0.05 m, error_delta_rot = 0.30 rad) and the
+    # 0.30 m/s Cartesian speed convention.
     peak_dx = float(np.max(np.abs(dx_des[:, 0])))
     peak_dy = float(np.max(np.abs(dx_des[:, 1])))
     peak_dz = float(np.max(np.abs(dx_des[:, 2])))
@@ -318,7 +317,7 @@ def main() -> int:
 
     payload = {
         "schema_version": 2,
-        "controller": "step5d_excitation_target" if (args.amp_yaw > 0 or args.amp_roll > 0) else "step5c_excitation_target",
+        "controller": "multiband_excitation_target" if (args.amp_yaw > 0 or args.amp_roll > 0) else "multiband_pos_only_target",
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "target_csv_path": str(out_csv),
         "base_sidecar_path": str(base_sidecar),
@@ -355,10 +354,10 @@ def main() -> int:
     out_sidecar.parent.mkdir(parents=True, exist_ok=True)
     out_sidecar.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
-    # Convention limits.  step5b_cart_pose.cpp pre-flights both peak speeds at
-    # 0.30 m/s / 0.50 rad/s.  step5c_excite.cpp does NOT runtime-enforce them
-    # (only the tracking-error aborts at 5 cm / 0.30 rad), but staying inside
-    # the step5b envelope is the conservative thing to do.
+    # Convention limits: peak Cartesian speed 0.30 m/s, peak angular rate
+    # 0.50 rad/s.  Nothing enforces them at runtime (osc_shm only clamps the
+    # tracking error), but staying inside the envelope is the conservative
+    # thing to do.
     CART_DX_PEAK_LIMIT_MPS = 0.30
     ORI_DOT_PEAK_LIMIT_RPS = 0.50
     ORI_TRACK_ABORT_RAD = 0.30
@@ -368,12 +367,12 @@ def main() -> int:
     print(f"[gen_excitation_traj] wrote {out_sidecar}")
     print(
         f"[gen_excitation_traj] peak |dx_des| [m/s]: x={peak_dx:.4f}, y={peak_dy:.4f}, z={peak_dz:.4f}  "
-        f"(|dx|_max={peak_speed_cart:.4f} m/s, step5b convention {CART_DX_PEAK_LIMIT_MPS:.2f})"
+        f"(|dx|_max={peak_speed_cart:.4f} m/s, convention {CART_DX_PEAK_LIMIT_MPS:.2f})"
     )
     print(
         "[gen_excitation_traj] peak rotation rates [rad/s]: "
         f"dyaw={peak_dyaw:.4f}, droll={peak_droll:.4f} "
-        f"(step5b convention {ORI_DOT_PEAK_LIMIT_RPS:.2f}). "
+        f"(convention {ORI_DOT_PEAK_LIMIT_RPS:.2f}). "
         f"yaw amp={args.amp_yaw:.3f} rad, roll amp={args.amp_roll:.3f} rad. "
         f"q_des max ang-offset from anchor ~ {peak_ori_combined:.3f} rad "
         f"(runtime abort fires when |q_err| > {ORI_TRACK_ABORT_RAD:.2f} rad)"
@@ -381,12 +380,12 @@ def main() -> int:
     if peak_speed_cart > CART_DX_PEAK_LIMIT_MPS:
         print(
             f"[gen_excitation_traj] WARNING: peak Cartesian speed {peak_speed_cart:.3f} m/s "
-            f"> step5b convention {CART_DX_PEAK_LIMIT_MPS:.2f} m/s.  Reduce --amp-* or --high-band-ratio."
+            f"> convention {CART_DX_PEAK_LIMIT_MPS:.2f} m/s.  Reduce --amp-* or --high-band-ratio."
         )
     if max(peak_dyaw, peak_droll) > ORI_DOT_PEAK_LIMIT_RPS:
         print(
             f"[gen_excitation_traj] WARNING: peak angular rate {max(peak_dyaw, peak_droll):.3f} rad/s "
-            f"> step5b convention {ORI_DOT_PEAK_LIMIT_RPS:.2f} rad/s.  "
+            f"> convention {ORI_DOT_PEAK_LIMIT_RPS:.2f} rad/s.  "
             "Reduce --amp-yaw/--amp-roll or --high-band-ratio."
         )
     if peak_ori_combined > 0.8 * ORI_TRACK_ABORT_RAD:
