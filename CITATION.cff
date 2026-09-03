@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use FrankaTwin in your research, please cite it as below."
+title: "FrankaTwin: a sim-to-real aligned 1 kHz Cartesian impedance controller for the Franka Research 3"
+type: software
+authors:
+  - family-names: Sun
+    given-names: Tao
+    email: tao.sun@mail.mcgill.ca
+version: 0.2.0
+date-released: 2026-09-03
+license: Apache-2.0
+repository-code: https://github.com/tsrobcvai/frankatwin
+keywords:
+  - franka
+  - libfranka
+  - impedance control
+  - system identification
+  - sim-to-real
+  - isaac lab

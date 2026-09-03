@@ -26,14 +26,20 @@ robot:
 control:
   # 1 kHz fixed; documented for clarity.
   frequency_hz: 1000
-  # Default Cartesian impedance gains. These are seeded into shm on osc_shm
-  # startup and can be overridden at runtime via robot.set_gains(...).
+  # Cartesian impedance gains used as the defaults of examples/cart_impedance.py
+  # (--kp-pos / --kp-ori). NOTE: the daemon does NOT push this block into the
+  # controller; osc_shm starts with its own built-ins (kp 200 / 20, kd = 2*sqrt(kp),
+  # error clamps OFF = pure impedance, matching the sim). Call
+  # robot.set_gains(...) from your client to change them at runtime.
   kp_pos: 200.0      # N/m
   kp_ori: 20.0       # Nm/rad
   kd_pos: null       # null -> 2 * sqrt(kp_pos)
   kd_ori: null       # null -> 2 * sqrt(kp_ori)
-  # Per-tick error clamp inside osc_shm. Acts as a hard safety: |e_pos|_inf
-  # larger than this aborts the control loop; same for ||e_o||.
+  # Reference values for osc_shm's per-tick error clamp: when > 0, |e_pos|_inf
+  # is clipped to error_delta_pos (bounding the push to kp * error_delta) and an
+  # error beyond it aborts the loop; same for ||e_o|| / error_delta_rot. Enable
+  # via robot.set_gains(error_delta_pos=..., error_delta_rot=...) or
+  # cart_impedance.py --err-delta-pos / --err-delta-rot.
   error_delta_pos: 0.05    # m
   error_delta_rot: 0.30    # rad
 
@@ -77,29 +83,26 @@ gripper:
 # changing these -- no recompile needed (only osc_shm.cpp needed the one-time
 # rebuild that added setLoad support).
 #
-# Current values = ZED Mini camera + mount estimate.
-#   - Bare ZED Mini: 0.0629 kg (Stereolabs spec).
-#   - The MOUNTED load (camera + bracket + connector) is heavier; the no-cam vs
-#     with-cam run showed ~6 mm static z sag at home -> ~0.3 kg effective
-#     (k_z * sag / g = 500 * 0.006 / 9.81). BEST: weigh the full camera+bracket
-#     assembly and put that here.
+# How to fill this in (worked example: a stereo camera + bracket on the flange):
+#   - mass: weigh the whole assembly. If you can't, bracket it from the static
+#     z sag at home: m ~= k_z * sag / g (0.006 m sag at kp_pos=500 -> ~0.3 kg),
+#     then refine with the symmetric over/under-compensation test described in
+#     docs/troubleshooting.md ("Payload compensation").
 #   - com: vector from the FLANGE frame origin to the load COM [m] (flange z is
-#     the tool axis). Estimate from the bracket; mass dominates the gravity
-#     force, com mainly shifts the joint-torque split.
-#   - inertia: 3x3 about the COM, row-major [kg m^2]. MUST be a physically valid
-#     (positive-definite) tensor -- libfranka REJECTS an all-zero matrix with
-#     "Set Load command rejected: invalid argument!".  Use a small positive
-#     diagonal; the exact value barely affects behaviour (gravity comp uses only
-#     mass + com; inertia just feeds the model's Coriolis/mass terms).  Estimate
-#     as a box: I_ii ~ (1/12)*m*(sum of the other two side-lengths^2).  For a
-#     ~0.3 kg ZED Mini+bracket the diagonal is O(1e-4) kg m^2.
-# After setting, re-run six_dof and check the with-cam z sag is largely gone.
+#     the tool axis). Mass dominates the gravity force; com mainly shifts the
+#     joint-torque split. A wrong LATERAL (x/y) com injects a bogus moment arm,
+#     so keep x/y at 0 unless rotation tests show a directional residual.
+#   - inertia: 3x3 about the COM, row-major [kg m^2]. MUST be positive-definite;
+#     libfranka REJECTS an all-zero matrix ("Set Load command rejected: invalid
+#     argument!"). The exact value barely matters (gravity comp uses mass + com
+#     only); estimate as a box: I_ii ~ (1/12)*m*(sum of the other two side
+#     lengths^2), O(1e-4) kg m^2 for a ~0.3 kg camera.
 load:
   # Default: BARE ARM. mass 0 disables setLoad entirely (Desk-configured load
   # untouched). Override per-run on the daemon command line, e.g.:
   #
-  #   # camera only (0.15 kg, calibrated 2026-05-31 from the symmetric z
-  #   # signature: m_comp=0 sagged -27mm, 0.3 lifted +27mm -> ~0.15 kg):
+  #   # camera only (0.15 kg, calibrated from the symmetric z signature:
+  #   # m_comp=0 sagged -27 mm, 0.3 kg lifted +27 mm -> ~0.15 kg):
   #   python -m frankatwin.daemon -c config/robot.yaml \
   #       --load-mass 0.15 --load-com 0 0 0.05
   #
