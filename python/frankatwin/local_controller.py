@@ -26,7 +26,7 @@ from typing import List, Optional
 
 import numpy as np
 
-from frankatwin.config import RobotConfig
+from frankatwin.config import ControlConfig, RobotConfig
 from frankatwin.shm_layout import (
     FRANKATWIN_SHM_STATE_FRAMES,
     STATE_FRAME_DTYPE,
@@ -52,6 +52,68 @@ _OSC_START_RETRY_DELAY_S = 0.5
 # the meaningful wait is the libfranka session setup + first control tick
 # which can take 0.5-2 s, not the 5 ms.
 _OSC_READY_STATE_HEAD_ADVANCE = 5
+
+
+# ---------------------------------------------------------------------------
+# Gain persistence across osc_shm restarts
+# ---------------------------------------------------------------------------
+# osc_shm re-seeds the whole shm command block every time it starts: the
+# current EE pose as anchor (wanted) AND its compiled-in defaults for
+# kp/kd/error_delta/enabled (not wanted -- it silently discards whatever the
+# client last set via set_gains). Every osc_shm start therefore goes through
+# snapshot_gains() before the launch and restore_gains() once it is running.
+# The first start (zeroed segment) falls back to robot.yaml's `control:` block.
+_GAIN_FIELDS = (
+    "kp_pos", "kp_ori", "kd_pos", "kd_ori",
+    "error_delta_pos", "error_delta_rot", "enabled",
+)
+
+
+def gains_from_config(ctrl: ControlConfig) -> Dict[str, float]:
+    """Initial gain/clamp set from robot.yaml `control:` (kd None -> 0 = auto)."""
+    return {
+        "kp_pos": float(ctrl.kp_pos),
+        "kp_ori": float(ctrl.kp_ori),
+        "kd_pos": 0.0 if ctrl.kd_pos is None else float(ctrl.kd_pos),
+        "kd_ori": 0.0 if ctrl.kd_ori is None else float(ctrl.kd_ori),
+        "error_delta_pos": float(ctrl.error_delta_pos),
+        "error_delta_rot": float(ctrl.error_delta_rot),
+        "enabled": True,
+    }
+
+
+def snapshot_gains(view: ShmView) -> Optional[Dict[str, float]]:
+    """Copy gains/clamps/enabled out of the shm command block.
+
+    Returns None when the block has never been written (kp_pos == 0, i.e. a
+    freshly zeroed segment before the first osc_shm start).
+    """
+    cmd = view.read_command()
+    if float(cmd["kp_pos"][0]) <= 0.0:
+        return None
+    out: Dict[str, float] = {f: float(cmd[f][0]) for f in _GAIN_FIELDS if f != "enabled"}
+    out["enabled"] = bool(cmd["enabled"][0])
+    return out
+
+
+def restore_gains(view: ShmView, gains: Dict[str, float]) -> None:
+    """Write `gains` over the command block, keeping the current target.
+
+    Called right after osc_shm is up, so the target it just seeded (the new
+    anchor pose) is preserved and only the gain fields are overwritten.
+    """
+    cur = view.read_command()
+    view.write_command(
+        target_pos=np.array(cur["target_pos"][0], dtype=np.float64),
+        target_quat=np.array(cur["target_quat"][0], dtype=np.float64),
+        kp_pos=float(gains["kp_pos"]),
+        kp_ori=float(gains["kp_ori"]),
+        kd_pos=float(gains["kd_pos"]),
+        kd_ori=float(gains["kd_ori"]),
+        error_delta_pos=float(gains["error_delta_pos"]),
+        error_delta_rot=float(gains["error_delta_rot"]),
+        enabled=bool(gains["enabled"]),
+    )
 
 
 def _wxyz_from(quat: np.ndarray) -> np.ndarray:
@@ -148,6 +210,11 @@ class LocalController:
         # Create and own the shm segment up front. The C++ child only opens it.
         self._shm = SharedMemoryAccess(name=cfg.paths.shm_name, create=True)
 
+        # Gains/clamps to (re)apply after every osc_shm start. Seeded from
+        # robot.yaml; replaced by a shm snapshot on each restart so runtime
+        # set_gains() calls survive move_to_* and watchdog relaunches.
+        self._gains: Dict[str, float] = gains_from_config(cfg.control)
+
         if autostart:
             self.start_controller()
 
@@ -156,6 +223,11 @@ class LocalController:
         with self._proc_lock:
             if self._proc is not None and self._proc.poll() is None:
                 return
+        # The command block still holds the client's last gains here (osc_shm
+        # only overwrites it once it starts); keep them for restore below.
+        snap = snapshot_gains(self._view)
+        if snap is not None:
+            self._gains = snap
         args = [
             str(self._osc_shm_bin),
             self.cfg.robot.ip,
@@ -198,6 +270,17 @@ class LocalController:
                 )
             try:
                 self._wait_until_running(_OSC_STARTUP_TIMEOUT_S)
+                # osc_shm has re-seeded the block with the new anchor + its
+                # built-in gains; put the client's gains back.
+                restore_gains(self._view, self._gains)
+                if self.verbose:
+                    logger.info(
+                        "osc_shm running; gains restored: kp=%.1f/%.1f "
+                        "err_delta=%.3f/%.3f enabled=%s",
+                        self._gains["kp_pos"], self._gains["kp_ori"],
+                        self._gains["error_delta_pos"], self._gains["error_delta_rot"],
+                        self._gains["enabled"],
+                    )
                 return
             except (RuntimeError, TimeoutError) as e:
                 last_err = e

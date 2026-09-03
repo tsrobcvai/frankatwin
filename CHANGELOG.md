@@ -19,6 +19,13 @@ First public release, renamed from the internal `panda_control` repository.
 - `apply_sysid_params.py`: default `--replay-script` is the shipped
   `replay_python_csv_sim.py`.
 
+### Fixed
+- The daemon now restores gains, error clamps and `enabled` after every
+  `osc_shm` start. Previously each restart (inside `move_to_q`/`move_to_pose`
+  and, since the watchdog landed, any automatic relaunch) silently reset the
+  controller to `osc_shm`'s built-ins (kp 200 / 20, clamps off). Initial
+  values come from `robot.yaml → control:`.
+
 ### Removed
 - Experiment scripts that depended on an unpublished IsaacLab task
   (`six_dof_pose_test`, `fixed_delta_pose_test`, `two_phase_smoke_test` and

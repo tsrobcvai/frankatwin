@@ -26,19 +26,19 @@ robot:
 control:
   # 1 kHz fixed; documented for clarity.
   frequency_hz: 1000
-  # Cartesian impedance gains used as the defaults of examples/cart_impedance.py
-  # (--kp-pos / --kp-ori). NOTE: the daemon does NOT push this block into the
-  # controller; osc_shm starts with its own built-ins (kp 200 / 20, kd = 2*sqrt(kp),
-  # error clamps OFF = pure impedance, matching the sim). Call
-  # robot.set_gains(...) from your client to change them at runtime.
+  # Cartesian impedance gains the daemon writes into the controller at startup.
+  # They persist across osc_shm restarts (move_to_*, watchdog): after every
+  # start the daemon re-applies the last values set via robot.set_gains(...).
+  # Also the defaults of examples/cart_impedance.py --kp-pos / --kp-ori.
   kp_pos: 200.0      # N/m
   kp_ori: 20.0       # Nm/rad
   kd_pos: null       # null -> 2 * sqrt(kp_pos)
   kd_ori: null       # null -> 2 * sqrt(kp_ori)
-  # Reference values for osc_shm's per-tick error clamp: when > 0, |e_pos|_inf
-  # is clipped to error_delta_pos (bounding the push to kp * error_delta) and an
-  # error beyond it aborts the loop; same for ||e_o|| / error_delta_rot. Enable
-  # via robot.set_gains(error_delta_pos=..., error_delta_rot=...) or
+  # Per-tick error clamp in osc_shm: when > 0, |e_pos|_inf is clipped to
+  # error_delta_pos (bounding the push to kp * error_delta) and an error beyond
+  # it aborts the loop; same for ||e_o|| / error_delta_rot. 0 disables both
+  # (pure impedance, matching the sim). Runtime override via
+  # robot.set_gains(error_delta_pos=..., error_delta_rot=...) or
   # cart_impedance.py --err-delta-pos / --err-delta-rot.
   error_delta_pos: 0.05    # m
   error_delta_rot: 0.30    # rad

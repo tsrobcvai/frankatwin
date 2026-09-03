@@ -32,7 +32,7 @@ has the identical method set for in-process use on the NUC.
 | `set_ee_target(pos[3], quat[4] wxyz)` | New impedance setpoint in the base frame. Non-blocking; held until the next call. |
 | `set_gains(kp_pos, kp_ori, kd_pos, kd_ori, error_delta_pos, error_delta_rot)` | Any `None` keeps the current value. `kd_*=0` → auto `2√kp`. `error_delta_*=0` disables clamp + abort. |
 | `enable()` / `disable()` | `disable` zeroes the impedance torque (gravity comp stays); the slew limiter ramps it. |
-| `move_to_q(q[7], speed_factor=None)` | Blocking (≤ 60 s). Stops `osc_shm`, runs `move_to --q`, restarts `osc_shm` anchored at the new pose **with built-in gains** (re-apply `set_gains`). `speed_factor ∈ (0, 0.5]`, default from yaml. |
+| `move_to_q(q[7], speed_factor=None)` | Blocking (≤ 60 s). Stops `osc_shm`, runs `move_to --q`, restarts `osc_shm` anchored at the new pose; gains/clamps are preserved. `speed_factor ∈ (0, 0.5]`, default from yaml. |
 | `move_to_pose(pos, quat wxyz, duration=None)` | Blocking. libfranka `CartesianPose`, `duration ∈ [1.5, 20]` s. |
 | `close()` | Also called by `__exit__`. |
 
@@ -66,11 +66,9 @@ Things that bite:
 
 - Send targets **relative to the pose the controller is anchored at**. After
   `move_to_*` or a watchdog restart the anchor is the current pose.
-- **Every `osc_shm` start re-seeds gains and clamps** to the built-ins
-  (kp 200 / 20, `kd = 2√kp`, clamps off) — that includes the restart inside
-  `move_to_q` / `move_to_pose` and a watchdog relaunch. Call `set_gains` after
-  each reset, not just once at connect. (The minimal loop above does it in
-  the right order.)
+- Gains, clamps and `enabled` persist across controller restarts
+  (`move_to_*`, watchdog relaunch): the daemon restores them after every
+  `osc_shm` start. Initial values come from `robot.yaml → control:`.
 - A large jump in `set_ee_target` is a torque step. The slew limiter keeps it
   from tripping a reflex, but `Kp · Δx` still has to stay under the collision
   threshold and `τ_max` — ramp your targets.
@@ -116,9 +114,9 @@ Things that bite:
 | `network.state_cache` | 256 | Client-side frame cache depth. |
 | `robot.ip` | `172.16.0.2` | FCI address (NUC side). |
 | `robot.init_q` | Franka home | `reset_home.py` target, 7 floats [rad]. |
-| `control.kp_pos` / `kp_ori` | 200 N/m / 20 N·m/rad | Defaults for `cart_impedance.py --kp-pos/--kp-ori`. `osc_shm` itself starts at 200 / 20; the daemon does not push these — call `set_gains` from your client. |
-| `control.kd_pos` / `kd_ori` | `null` | `null` → `2√kp` (also `osc_shm`'s built-in rule). |
-| `control.error_delta_pos` / `error_delta_rot` | 0.05 m / 0.30 rad | Reference values for the per-tick error clamp + abort. **Not applied automatically** — `osc_shm` starts with clamps off (pure impedance); enable via `set_gains(error_delta_*)` or `cart_impedance.py --err-delta-*`. |
+| `control.kp_pos` / `kp_ori` | 200 N/m / 20 N·m/rad | Initial gains the daemon writes at startup; runtime override via `set_gains` (persists across restarts). Also the defaults of `cart_impedance.py --kp-*`. |
+| `control.kd_pos` / `kd_ori` | `null` | `null` → `2√kp` (`osc_shm`'s auto rule). |
+| `control.error_delta_pos` / `error_delta_rot` | 0.05 m / 0.30 rad | Initial per-tick error clamp + abort. `0` → pure impedance (as in sim). Runtime override via `set_gains(error_delta_*)` or `cart_impedance.py --err-delta-*`. |
 | `collision.torque_threshold` / `cartesian_threshold` | 100 N·m / 100 N | `setCollisionBehavior` thresholds (all entries). |
 | `paths.build_dir` | `build` | Where `osc_shm` / `move_to` live (relative to repo root). |
 | `paths.shm_name` | `/frankatwin_osc` | POSIX shm name. |
