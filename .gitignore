@@ -33,3 +33,8 @@ __pycache__/
 *.pyo
 .venv/
 *.egg-info/
+
+# Test / scratch
+.pytest_cache/
+tmp/
+logs/
