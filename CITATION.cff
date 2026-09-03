@@ -6,6 +6,10 @@ authors:
   - family-names: Sun
     given-names: Tao
     email: tao.sun@mail.mcgill.ca
+    affiliation: McGill University
+  - family-names: Yin
+    given-names: Patrick
+    affiliation: University of Washington
 version: 0.2.0
 date-released: 2026-09-03
 license: Apache-2.0
