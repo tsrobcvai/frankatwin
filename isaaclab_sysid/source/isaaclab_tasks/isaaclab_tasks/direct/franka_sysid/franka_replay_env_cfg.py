@@ -41,12 +41,12 @@ class FrankaTwinReplayEnvCfg(DirectRLEnvCfg):
     traj_log_path: str | None = None
 
     # Cartesian controller mode.
-    #   - "task_impedance": tau = J^T @ f_task (matches real step5b)
+    #   - "task_impedance": tau = J^T @ f_task (matches the real osc_shm)
     #   - "osc":            tau = J^T @ Λ @ f_task (classic operational space)
     control_mode: str = "task_impedance"
 
-    # OSC nullspace toggle. Default OFF to match the real-side step5b
-    # controller (`frankatwin/src/step5b_cart_pose.cpp`), which has no
+    # OSC nullspace toggle. Default OFF to match the real-side osc_shm
+    # controller (`frankatwin/src/osc_shm.cpp`), which has no
     # nullspace term.  When enabled, joints are pulled toward `default_dof_pos`.
     use_nullspace: bool = False
     default_dof_pos: list[float] = [

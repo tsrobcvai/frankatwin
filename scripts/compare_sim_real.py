@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
-"""Compare a real step5b log against the IsaacLab sim replay.
+"""Compare a real cart_impedance.py log against its IsaacLab sim replay.
 
 For each subplot we overlay three traces:
 
   * target  - `x_des_*` / `quat_des_*` (identical in both CSVs by construction)
-  * real    - `x_*`     / `quat_*`     from the real-side step5b CSV
+  * real    - `x_*`     / `quat_*`     from the real-side CSV
   * sim     - `x_*`     / `quat_*`     from the sim CSV written by
-              `IsaacLab/scripts/tools/replay_real_step5b_sim.py`
+              `isaaclab_sysid/scripts/tools/replay_python_csv_sim.py`
 
-Both CSVs must follow the schema documented in
-`frankatwin/SIM2REAL_COMPARISON.md` (real §2.1, sim §5.4).
+Both CSVs follow the schema documented in `docs/data_format.md`.
 
 Typical usage:
 
-    python scripts/compare_sim_real_step5b.py \\
-        --real-csv data/step5b_20260524_120834.csv \\
-        --sim-csv  data/step5b_20260524_120834_sim.csv \\
+    python scripts/compare_sim_real.py \\
+        --real-csv data/<run>.csv \\
+        --sim-csv  data/<run>_sim_sysid.csv \\
         --save --show
 """
 
@@ -39,8 +38,8 @@ JOINT_VEL_COLUMNS = [f"dq{i}" for i in range(1, 8)]
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Compare sim vs real step5b EE trajectories.")
-    parser.add_argument("--real-csv", required=True, help="Real step5b CSV path.")
+    parser = argparse.ArgumentParser(description="Compare sim vs real EE trajectories.")
+    parser.add_argument("--real-csv", required=True, help="Real CSV path (cart_impedance.py log).")
     parser.add_argument("--sim-csv", required=True, help="Sim replay CSV path.")
     parser.add_argument("--real-sidecar", default=None, help="Optional real sidecar JSON (for stats header).")
     parser.add_argument("--sim-sidecar", default=None, help="Optional sim sidecar JSON (for stats header).")
@@ -375,7 +374,7 @@ def main() -> int:
     print_summary(t_real, x_des_real, x_real, x_sim, theta_real, theta_sim)
 
     if not (args.save or args.show):
-        # Default: save next to sim csv if neither flag set, to mimic plot_step5.py.
+        # Default: save next to sim csv if neither flag set.
         args.save = True
 
     if args.out_dir is None:

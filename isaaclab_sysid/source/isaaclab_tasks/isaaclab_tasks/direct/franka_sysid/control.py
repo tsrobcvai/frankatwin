@@ -7,9 +7,8 @@
 
 Two task-space modes are supported, selectable via ``control_mode``:
 
-* ``"task_impedance"`` (default) - matches the real step5b controller in
-  `frankatwin/src/step5b_cart_pose.cpp` (see
-  `frankatwin/SIM2REAL_COMPARISON.md` §4) **exactly**::
+* ``"task_impedance"`` (default) - matches the real ``osc_shm`` controller
+  (`frankatwin/src/osc_shm.cpp`) **exactly**::
 
       f_task[0:3] = Kp_pos * (x_des - x) - Kd_pos * v
       f_task[3:6] = Kp_ori * e_o          - Kd_ori * w
@@ -100,7 +99,7 @@ def compute_dof_torque(
         arm_mass_matrix: 7x7 generalized inertia of the arm, shape (N, 7, 7).
         target_pos, target_quat: desired EE pose, shape (N, 3) / (N, 4) wxyz.
         task_prop_gains, task_deriv_gains: (N, 6) PD gains in task space.
-        control_mode: ``"task_impedance"`` (default, matches real step5b) or
+        control_mode: ``"task_impedance"`` (default, matches the real osc_shm) or
             ``"osc"`` (apparent-mass projection).
         use_nullspace: if True, add nullspace torque pulling joints toward
             `default_dof_pos`. Default False (matches real controller).
@@ -137,7 +136,7 @@ def compute_dof_torque(
 
     if control_mode == "task_impedance":
         # Pure task-space PD: `task_wrench = f_task` (no apparent mass).
-        # This is what `frankatwin/src/step5b_cart_pose.cpp` implements.
+        # This is what `frankatwin/src/osc_shm.cpp` implements.
         task_wrench = task_wrench_motion
     elif control_mode == "osc":
         # Apparent-mass projection: ETH eq. 3.86, classic operational-space.

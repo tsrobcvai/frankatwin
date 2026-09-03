@@ -5,10 +5,8 @@
 
 """Replay a Python-driven (low-rate) Cartesian trajectory in IsaacLab.
 
-Counterpart to ``replay_real_step5b_sim.py``. That script consumes a 1 kHz
-real-robot CSV produced by the C++ ``step5b_cart_pose`` binary. This one
-consumes a lower-rate CSV produced by ``examples/cart_impedance.py``
-(typically 50 Hz Python set_ee_target loop) and reproduces the same
+Consumes the lower-rate CSV produced by ``examples/cart_impedance.py``
+(typically a 50 Hz Python set_ee_target loop) and reproduces the same
 zero-order-hold (ZOH) target staircase that the real robot saw.
 
 Per-iteration flow (matches the Python real-side loop in cart_impedance.py):

@@ -185,7 +185,7 @@ Both drive the same `cart_impedance.py` loop; only the reference differs.
 | Origin      | in-house                                                 | UR5e `[diffusion_policy/scripts/sim2real/collect_sysid_data.py](https://github.com/uw-lab/omnireset)` |
 
 
-v3's defaults reproduce `step5d_20260525_143929` — the highest-weighted (1.5) trajectory in the `logs/sysid_franka/20260525_145807` fit. Amplitudes / ratio are baked into the script defaults; pass `--base-sidecar` to pick up that run's anchor pose. Use `--amp-yaw 0 --amp-roll 0` to recover the old position-only step5c behaviour.
+v3's defaults reproduce the 2026-05-25 collection — the highest-weighted (1.5) trajectory in the published fit. Amplitudes / ratio are baked into the script defaults; pass `--base-sidecar` to pick up that run's anchor pose. Use `--amp-yaw 0 --amp-roll 0` to recover the position-only (v1/v2) variant.
 
 v4 follows the UR5e chirp shape with three Franka-specific deltas:
 
@@ -214,7 +214,7 @@ This copies three things into `/path/to/IsaacLab`:
 - **Gym tasks** `Isaac-FrankaTwin-Sysid-v0` / `Isaac-FrankaTwin-Replay-v0`
   (`source/isaaclab_tasks/isaaclab_tasks/direct/franka_sysid/`) — Franka-only
   zero-reward envs whose task-impedance controller mirrors `osc_shm`
-  (`src/step5b_cart_pose.cpp`). Auto-registered by `isaaclab_tasks`' package
+  (`src/osc_shm.cpp`). Auto-registered by `isaaclab_tasks`' package
   scanner; no IsaacLab source edits needed.
 - **Robot asset** `franka_mimic.usd`
   (`source/isaaclab_assets/data/Robots/Franka/`) — Franka with a

@@ -1,4 +1,4 @@
-"""POSIX shared-memory layout for frankatwin Step 10.
+"""POSIX shared-memory layout for frankatwin.
 
 This module is a faithful numpy.dtype mirror of `src/shm_layout.h`. The C++
 side static-asserts the field offsets; this side enforces them via a unit

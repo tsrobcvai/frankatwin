@@ -6,12 +6,11 @@ Three trajectory modes are supported (selected via ``--mode``):
   pose captured at startup. Used as a smoke test for the PC ↔ NUC daemon
   pipeline (README "Verifying the full pipeline").
 
-* ``step5d``: multi-band position excitation + optional base-yaw / EE-roll
-  rotation excitation, reusing :func:`build_step5d_trajectory` from
+* ``multiband``: SysID v3 multi-band position excitation + optional base-yaw /
+  EE-roll rotation excitation, reusing :func:`build_multiband_trajectory` from
   ``scripts/gen_excitation_traj.py`` (the same math that produced the SysID
-  v3 training data). Intended for the Python ↔ sim2real comparison: drives a
-  step5d-shaped target via the 50 Hz Python control loop, optionally logs
-  per-tick state to CSV + sidecar so the IsaacLab replay can be applied.
+  v3 training data). Drives the target via the 50 Hz Python control loop and
+  optionally logs per-tick state to CSV + sidecar for the IsaacLab replay.
 
 * ``chirp``: SysID v4 linear-chirp excitation (see ``scripts/gen_chirp_traj.py``).
   Linear frequency sweep f0->f1 across all 6 Cartesian DOFs (xyz + rx/ry/rz)
@@ -27,14 +26,14 @@ Examples:
   # Smoke test (original sine):
   python examples/cart_impedance.py
 
-  # Step5d-shaped sim2real test, write CSV + sidecar for IsaacLab replay:
-  python examples/cart_impedance.py --mode step5d \\
+  # v3 multiband excitation, write CSV + sidecar for IsaacLab replay:
+  python examples/cart_impedance.py --mode multiband \\
       --amp-yaw 0.05 --amp-roll 0.05 --duration 12 \\
       --kp-pos 200 --kp-ori 20 \\
-      --log data/py_step5d_$(date +%Y%m%d_%H%M%S).csv
+      --log data/multiband_$(date +%Y%m%d_%H%M%S).csv
 
   # Dry run (no robot connection), just inspect peak rates:
-  python examples/cart_impedance.py --mode step5d --amp-yaw 0.05 \\
+  python examples/cart_impedance.py --mode multiband --amp-yaw 0.05 \\
       --amp-roll 0.05 --dry-run
 """
 
@@ -54,14 +53,14 @@ from frankatwin.config import load_config
 from frankatwin.remote_client import FrankaTwinClient
 
 # `gen_excitation_traj` lives under scripts/ which is not a package. Add it to
-# sys.path so we can import `build_step5d_trajectory` without copying code.
+# sys.path so we can import `build_multiband_trajectory` without copying code.
 _SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 from gen_excitation_traj import (  # noqa: E402
     ORI_FREQS,
     POS_FREQS,
-    build_step5d_trajectory,
+    build_multiband_trajectory,
 )
 from gen_chirp_traj import (  # noqa: E402
     CHIRP_F0_DEFAULT,
@@ -70,8 +69,8 @@ from gen_chirp_traj import (  # noqa: E402
     build_chirp_trajectory,
 )
 
-# Safety conventions inherited from step5b/step5d (gen_excitation_traj.py:341-380
-# and step5b_cart_pose.cpp pre-flight). The Python loop runs at lower rate so
+# Safety conventions shared with gen_excitation_traj.py / gen_chirp_traj.py.
+# The Python loop runs at lower rate so
 # tracking-error aborts on the NUC are the actual safety net, but we still
 # pre-flight the *target* rates here so a bad CLI doesn't get sent to a robot.
 CART_DX_PEAK_LIMIT_MPS = 0.30
@@ -81,11 +80,11 @@ ORI_TRACK_ABORT_RAD = 0.30
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    p.add_argument("--mode", choices=["sine", "step5d", "chirp"], default="sine",
+    p.add_argument("--mode", choices=["sine", "multiband", "chirp"], default="sine",
                    help="Trajectory shape (default: sine — README smoke test).")
     p.add_argument("--config", type=str, default=None, help="Path to robot.yaml")
     p.add_argument("--duration", type=float, default=None,
-                   help="Total run time [s]. Default: sine=4.0, step5d=12.0.")
+                   help="Total run time [s]. Default: sine=4.0, multiband=12.0, chirp=8.0.")
     p.add_argument("--rate", type=float, default=50.0,
                    help="Python target update rate [Hz] (default: 50).")
     p.add_argument("--kp-pos", type=float, default=None,
@@ -108,19 +107,19 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--freq", type=float, default=0.5,
                    help="[sine] sinusoid frequency [Hz] (default: 0.5).")
 
-    # step5d / chirp shared position amplitudes.  Defaults resolve in main()
-    # based on --mode: step5d gets (0.10, 0.10, 0.08), chirp gets (0.10, 0.10, 0.15).
+    # multiband / chirp shared position amplitudes.  Defaults resolve in main()
+    # based on --mode: multiband gets (0.10, 0.10, 0.08), chirp gets (0.10, 0.10, 0.15).
     p.add_argument("--amp-x", type=float, default=None, help="X amplitude [m] (mode-dependent default).")
     p.add_argument("--amp-y", type=float, default=None, help="Y amplitude [m] (mode-dependent default).")
     p.add_argument("--amp-z", type=float, default=None, help="Z amplitude [m] (mode-dependent default).")
     p.add_argument("--amp-yaw", type=float, default=0.25,
-                   help="[step5d] yaw (about world-z, drives j1) amplitude [rad] (default: 0.25).")
+                   help="[multiband] yaw (about world-z, drives j1) amplitude [rad] (default: 0.25).")
     p.add_argument("--amp-roll", type=float, default=0.20,
-                   help="[step5d] roll (about EE-z, drives j5/j7) amplitude [rad] (default: 0.20).")
+                   help="[multiband] roll (about EE-z, drives j5/j7) amplitude [rad] (default: 0.20).")
     p.add_argument("--high-band-ratio", type=float, default=0.20,
-                   help="[step5d] high-band amplitude as fraction of low-band (default: 0.20).")
+                   help="[multiband] high-band amplitude as fraction of low-band (default: 0.20).")
     p.add_argument("--amp-ramp", type=float, default=2.0,
-                   help="[step5d] half-cosine envelope ramp length [s].")
+                   help="[multiband] half-cosine envelope ramp length [s].")
 
     # chirp-mode parameters (v4) -- match UR5e collect_sysid_data shape exactly,
     # with f1 lowered (UR5e=3.0) to the Franka production default so |dx|_peak
@@ -171,13 +170,13 @@ def _build_trajectory(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Return (x_des, dx_des, quat_des_xyzw, rot_a, rot_b) for the requested mode.
 
-    For ``step5d``: rot_a = yaw, rot_b = roll (scalar per-tick).
+    For ``multiband``: rot_a = yaw, rot_b = roll (scalar per-tick).
     For ``chirp``:  rot_a = (rx, ry, rz) magnitude per-tick (axis-angle norm),
                     rot_b = zeros (kept for tuple compatibility).
     For ``sine``:   both zeros.
     """
-    if mode == "step5d":
-        x_des, dx_des, quat_des_xyzw, yaw, roll = build_step5d_trajectory(
+    if mode == "multiband":
+        x_des, dx_des, quat_des_xyzw, yaw, roll = build_multiband_trajectory(
             t_grid, x_anchor, q_anchor_xyzw,
             amp_x=args.amp_x, amp_y=args.amp_y, amp_z=args.amp_z,
             amp_yaw=args.amp_yaw, amp_roll=args.amp_roll,
@@ -279,7 +278,7 @@ def _print_peak_rates(
             "max_ori_offset_rad": peak_ori_offset,
         }
 
-    # --- step5d / sine path (legacy interface: rot_a=yaw, rot_b=roll) ----
+    # --- multiband / sine path (legacy interface: rot_a=yaw, rot_b=roll) ----
     yaw, roll = rot_a, rot_b
     peak_dyaw = float(np.max(np.abs(np.gradient(yaw, dt_grid)))) if yaw.size > 1 else 0.0
     peak_droll = float(np.max(np.abs(np.gradient(roll, dt_grid)))) if roll.size > 1 else 0.0
@@ -371,12 +370,12 @@ def _write_sidecar(
     summary: dict | None,
     abort: dict,
 ) -> None:
-    if args.mode == "step5d":
+    if args.mode == "multiband":
         pos_freq_set = {axis: list(POS_FREQS[axis][:2]) for axis in ("x", "y", "z")}
         pos_phase_set = {axis: [POS_FREQS[axis][2], 0.0] for axis in ("x", "y", "z")}
         ori_freq_set = {axis: list(ORI_FREQS[axis][:2]) for axis in ("yaw", "roll")}
         ori_phase_set = {axis: [ORI_FREQS[axis][2], 0.0] for axis in ("yaw", "roll")}
-        controller_name = "python_step5d_excitation"
+        controller_name = "python_multiband_excitation"
     elif args.mode == "chirp":
         # Linear chirp: report (f0, f1) per axis and per-axis phase offsets.
         axes = ["x", "y", "z", "rx", "ry", "rz"]
@@ -392,7 +391,7 @@ def _write_sidecar(
         ori_phase_set = {}
         controller_name = "python_sine"
 
-    if args.mode == "step5d":
+    if args.mode == "multiband":
         amplitude_m = {"x": float(args.amp_x), "y": float(args.amp_y), "z": float(args.amp_z)}
         amplitude_rad = {"yaw": float(args.amp_yaw), "roll": float(args.amp_roll)}
     elif args.mode == "chirp":
@@ -411,8 +410,8 @@ def _write_sidecar(
         "control_rate_hz": float(args.rate),
         "duration_s": float(duration_s),
         "num_samples": int(num_samples),
-        "amp_ramp_s": float(args.amp_ramp) if args.mode == "step5d" else 0.0,
-        "high_band_ratio": float(args.high_band_ratio) if args.mode == "step5d" else 0.0,
+        "amp_ramp_s": float(args.amp_ramp) if args.mode == "multiband" else 0.0,
+        "high_band_ratio": float(args.high_band_ratio) if args.mode == "multiband" else 0.0,
         "amplitude_m": amplitude_m,
         "amplitude_rad": amplitude_rad,
         "freq_set_hz": pos_freq_set,
@@ -468,10 +467,10 @@ def _compute_summary(
 def main() -> int:
     args = parse_args()
     if args.duration is None:
-        # UR5e chirp default is 8.0 s; step5d historically uses 12.0 s.
-        args.duration = 8.0 if args.mode == "chirp" else (12.0 if args.mode == "step5d" else 4.0)
+        # chirp (v4) runs 8.0 s; multiband (v3) runs 12.0 s.
+        args.duration = 8.0 if args.mode == "chirp" else (12.0 if args.mode == "multiband" else 4.0)
     # Resolve mode-dependent amplitude defaults.
-    # step5d v3: 0.10/0.10/0.08 (= the step5d_20260525_143929 collection).
+    # multiband v3: 0.10/0.10/0.08 (the 2026-05-25 v3 collection).
     # chirp v4: UR5e-exact magnitudes (0.10/0.10/0.15, Z = 1.5x XY).
     if args.mode == "chirp":
         if args.amp_x is None: args.amp_x = 0.10
