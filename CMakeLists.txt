@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 
 project(frankatwin
-    VERSION 0.1.0
+    VERSION 0.2.0
     DESCRIPTION "FrankaTwin: 1 kHz Cartesian impedance controller for Franka FR3/Panda (libfranka) with a sim-to-real system-ID pipeline."
     LANGUAGES CXX)
 
@@ -20,7 +20,7 @@ add_compile_options(-Wall -Wextra -Wpedantic)
 # Conda libstdc++ link fix
 # ----------------------------------------------------------------------------
 #
-# When deoxys's libfranka is reused (the usual setup on this NUC), its
+# When a conda-built libfranka is reused (e.g. the one shipped with deoxys), its
 # FrankaConfig.cmake declares `fmt::fmt` as a public link dependency.
 # find_package(Franka) -> find_package(fmt) resolves to conda's libfmt,
 # which was built with GCC 11+ and requires GLIBCXX_3.4.29. The system
@@ -31,7 +31,7 @@ add_compile_options(-Wall -Wextra -Wpedantic)
 # search path, so the implicit -lstdc++ resolves to conda's libstdc++
 # (GLIBCXX_3.4.34) instead of the system one.
 #
-# Reference: isaaclab_rollout/deoxys_control/deoxys/CMakeLists.txt:28-29
+# Same workaround as deoxys's CMakeLists.txt.
 if(DEFINED ENV{CONDA_PREFIX})
     set(CMAKE_EXE_LINKER_FLAGS
         "${CMAKE_EXE_LINKER_FLAGS} -L$ENV{CONDA_PREFIX}/lib -Wl,-rpath,$ENV{CONDA_PREFIX}/lib")
