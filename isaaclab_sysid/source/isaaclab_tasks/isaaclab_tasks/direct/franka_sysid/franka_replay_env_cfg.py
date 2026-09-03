@@ -27,7 +27,7 @@ class ReplayCtrlCfg(CtrlCfg):
 
 
 @configclass
-class UWFrankaReplayEnvCfg(DirectRLEnvCfg):
+class FrankaTwinReplayEnvCfg(DirectRLEnvCfg):
     decimation = 1
     episode_length_s = 8.0
     action_space = 0
@@ -46,7 +46,7 @@ class UWFrankaReplayEnvCfg(DirectRLEnvCfg):
     control_mode: str = "task_impedance"
 
     # OSC nullspace toggle. Default OFF to match the real-side step5b
-    # controller (`panda_control/src/step5b_cart_pose.cpp`), which has no
+    # controller (`frankatwin/src/step5b_cart_pose.cpp`), which has no
     # nullspace term.  When enabled, joints are pulled toward `default_dof_pos`.
     use_nullspace: bool = False
     default_dof_pos: list[float] = [

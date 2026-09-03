@@ -1,14 +1,14 @@
-# panda_control runtime config.
+# frankatwin runtime config.
 #
 # The NUC daemon reads this to know where the robot lives and what to default
 # gains to. The PC client reads the same file to know where the NUC daemon
 # listens.
 #
-# Override path via the PANDA_CONFIG environment variable:
-#   PANDA_CONFIG=/path/to/local.yaml python examples/cart_impedance.py
+# Override path via the FRANKATWIN_CONFIG environment variable:
+#   FRANKATWIN_CONFIG=/path/to/local.yaml python examples/cart_impedance.py
 
 network:
-  # Hostname or IP of the NUC running panda_control.daemon. The PC client
+  # Hostname or IP of the NUC running frankatwin.daemon. The PC client
   # connects to tcp://nuc_host:cmd_port (REQ/REP) and tcp://nuc_host:state_port
   # (SUB).
   nuc_host: "172.16.0.1"
@@ -55,11 +55,11 @@ collision:
   cartesian_threshold: 100.0   # N/Nm,  per axis   (fills the Cartesian force arrays)
 
 paths:
-  # Path to the panda_control build directory (where osc_shm and move_to live).
+  # Path to the frankatwin build directory (where osc_shm and move_to live).
   # Resolved relative to the repo root unless absolute.
   build_dir: "build"
   # POSIX shm name (must start with '/'). Daemon and osc_shm must agree.
-  shm_name: "/panda_osc"
+  shm_name: "/frankatwin_osc"
 
 reset:
   # Default speed factor for move_to --q. Range (0, 0.5].
@@ -100,13 +100,13 @@ load:
   #
   #   # camera only (0.15 kg, calibrated 2026-05-31 from the symmetric z
   #   # signature: m_comp=0 sagged -27mm, 0.3 lifted +27mm -> ~0.15 kg):
-  #   python -m panda_control.daemon -c config/robot.yaml \
+  #   python -m frankatwin.daemon -c config/robot.yaml \
   #       --load-mass 0.15 --load-com 0 0 0.05
   #
   #   # camera + 0.68 kg grasped object (object com ~0.175 m out along the
   #   # tool axis, beyond the Franka Hand grasp center z=0.1034):
   #   # mass = 0.15 + 0.68 = 0.83, com_z = (0.15*0.05 + 0.68*0.175)/0.83 ~= 0.152
-  #   python -m panda_control.daemon -c config/robot.yaml \
+  #   python -m frankatwin.daemon -c config/robot.yaml \
   #       --load-mass 0.83 --load-com 0 0 0.152
   #
   # com is simplified to [0, 0, z] (everything assumed roughly on the tool

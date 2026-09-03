@@ -18,7 +18,7 @@ the robot base frame. The arm is compliant, so the final height tracks the
 target within the impedance stiffness (a light payload sags a few mm).
 
 Prerequisites (see README):
-  * daemon running on the NUC:  python -m panda_control.daemon -c config/robot.yaml
+  * daemon running on the NUC:  python -m frankatwin.daemon -c config/robot.yaml
     (the daemon launches osc_shm, which this script drives).
 """
 
@@ -29,8 +29,8 @@ import time
 
 import numpy as np
 
-from panda_control.config import load_config
-from panda_control.remote_client import RemotePandaClient
+from frankatwin.config import load_config
+from frankatwin.remote_client import FrankaTwinClient
 
 
 def main() -> None:
@@ -46,7 +46,7 @@ def main() -> None:
     dt = 1.0 / args.rate
     n_steps = max(1, int(round(args.duration / dt)))
 
-    with RemotePandaClient(cfg) as robot:
+    with FrankaTwinClient(cfg) as robot:
         state = robot.wait_for_state(timeout_s=3.0)
         anchor_pos = state.ee_pos.astype(np.float64).copy()
         anchor_quat = state.ee_quat.astype(np.float64).copy()  # wxyz, held fixed

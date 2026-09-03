@@ -28,7 +28,7 @@ import torch
 from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="Franka system ID (CMA-ES) on step5b/step5c replay.")
-parser.add_argument("--task", type=str, default="Isaac-UW-Franka-Sysid-v0")
+parser.add_argument("--task", type=str, default="Isaac-FrankaTwin-Sysid-v0")
 parser.add_argument("--num_envs", type=int, default=128, help="CMA population size.")
 parser.add_argument(
     "--real_csv",
@@ -370,7 +370,7 @@ def main():
             per_traj_scores = []
             for traj in trajectories:
                 # Reset to this trajectory's q_init.  q_init is read at reset time
-                # by UWFrankaSysidEnv._reset_idx, so mutating cfg.q_init here is safe.
+                # by FrankaTwinSysidEnv._reset_idx, so mutating cfg.q_init here is safe.
                 unwrapped.cfg.q_init = traj["q_init"]
                 env.reset()
                 unwrapped.set_targets(traj["x_des"], traj["dx_des"], traj["quat_des_wxyz"])

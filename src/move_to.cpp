@@ -2,7 +2,7 @@
 //
 // One-shot blocking utility that drives the robot to a target joint
 // configuration OR a target end-effector pose, using libfranka's built-in
-// motion generators. Designed to be invoked by the panda_control daemon for
+// motion generators. Designed to be invoked by the frankatwin daemon for
 // reset/home before handing the libfranka session back to `osc_shm`.
 //
 // Two mutually-exclusive modes:

@@ -3,13 +3,13 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Cartesian controller for `Isaac-UW-Franka-Replay-v0`.
+"""Cartesian controller for `Isaac-FrankaTwin-Replay-v0`.
 
 Two task-space modes are supported, selectable via ``control_mode``:
 
 * ``"task_impedance"`` (default) - matches the real step5b controller in
-  `panda_control/src/step5b_cart_pose.cpp` (see
-  `panda_control/SIM2REAL_COMPARISON.md` §4) **exactly**::
+  `frankatwin/src/step5b_cart_pose.cpp` (see
+  `frankatwin/SIM2REAL_COMPARISON.md` §4) **exactly**::
 
       f_task[0:3] = Kp_pos * (x_des - x) - Kd_pos * v
       f_task[3:6] = Kp_ori * e_o          - Kd_ori * w
@@ -137,7 +137,7 @@ def compute_dof_torque(
 
     if control_mode == "task_impedance":
         # Pure task-space PD: `task_wrench = f_task` (no apparent mass).
-        # This is what `panda_control/src/step5b_cart_pose.cpp` implements.
+        # This is what `frankatwin/src/step5b_cart_pose.cpp` implements.
         task_wrench = task_wrench_motion
     elif control_mode == "osc":
         # Apparent-mass projection: ETH eq. 3.86, classic operational-space.

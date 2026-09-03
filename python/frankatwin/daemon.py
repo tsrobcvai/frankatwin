@@ -12,7 +12,7 @@ command path runs at <= 20 Hz so JSON parsing cost is negligible; the state
 PUB path is ~1.5 KB/msg @ 100 Hz = 150 KB/s, also fine.
 
 Usage:
-    python -m panda_control.daemon [--config /path/to/robot.yaml]
+    python -m frankatwin.daemon [--config /path/to/robot.yaml]
 """
 
 from __future__ import annotations
@@ -28,8 +28,8 @@ from typing import Any, Dict, Optional
 import numpy as np
 import zmq
 
-from panda_control.config import RobotConfig, load_config
-from panda_control.local_controller import LocalPandaController, RobotState
+from frankatwin.config import RobotConfig, load_config
+from frankatwin.local_controller import LocalController, RobotState
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ def _state_to_dict(state: RobotState) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Daemon
 # ---------------------------------------------------------------------------
-class PandaDaemon:
+class FrankaTwinDaemon:
     def __init__(self, cfg: RobotConfig, *, verbose: bool = False) -> None:
         self.cfg = cfg
         self.verbose = verbose
@@ -81,7 +81,7 @@ class PandaDaemon:
             cfg.network.state_port,
         )
 
-        self.controller = LocalPandaController(cfg, autostart=True, verbose=verbose)
+        self.controller = LocalController(cfg, autostart=True, verbose=verbose)
         # We must serialize ops since move_to* restarts the C++ child and we
         # cannot let another command land between stop/start.
         self._op_lock = threading.Lock()
@@ -256,7 +256,7 @@ class PandaDaemon:
 # CLI entry point
 # ---------------------------------------------------------------------------
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="panda_control.daemon")
+    parser = argparse.ArgumentParser(prog="frankatwin.daemon")
     parser.add_argument(
         "--config", "-c", type=str, default=None, help="path to robot.yaml"
     )
@@ -307,7 +307,7 @@ def main() -> None:
         )
     else:
         logger.info("payload: none (bare arm, setLoad skipped)")
-    daemon = PandaDaemon(cfg, verbose=args.verbose)
+    daemon = FrankaTwinDaemon(cfg, verbose=args.verbose)
 
     def _on_signal(_signo, _frame):
         logger.info("received signal, stopping")

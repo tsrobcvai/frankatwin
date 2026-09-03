@@ -1,11 +1,11 @@
-"""PC-side client. Same API surface as LocalPandaController.
+"""PC-side client. Same API surface as LocalController.
 
-Talks to panda_control.daemon over ZMQ. REQ socket for synchronous commands;
+Talks to frankatwin.daemon over ZMQ. REQ socket for synchronous commands;
 SUB socket for the 100 Hz state stream which is cached locally so get_state()
 is non-blocking on the network.
 
-Drop-in note: anywhere the policy code imports LocalPandaController it can
-import RemotePandaClient instead; the method signatures are identical.
+Drop-in note: anywhere the policy code imports LocalController it can
+import FrankaTwinClient instead; the method signatures are identical.
 """
 
 from __future__ import annotations
@@ -20,8 +20,8 @@ from typing import Any, Deque, Dict, List, Optional
 import numpy as np
 import zmq
 
-from panda_control.config import RobotConfig
-from panda_control.local_controller import RobotState
+from frankatwin.config import RobotConfig
+from frankatwin.local_controller import RobotState
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ MOVE_TO_REQ_TIMEOUT_S = 60.0
 SOCKET_LINGER_MS = 200
 
 
-class RemotePandaClient:
+class FrankaTwinClient:
     def __init__(
         self,
         cfg: RobotConfig,
@@ -80,7 +80,7 @@ class RemotePandaClient:
             except Exception:
                 pass
 
-    def __enter__(self) -> "RemotePandaClient":
+    def __enter__(self) -> "FrankaTwinClient":
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:

@@ -6,9 +6,9 @@
 //   - MotionGenerator: 7-DOF synchronized min-jerk joint trajectory generator
 //     compatible with robot.control(MotionGenerator&).
 //
-// This is reused by panda_control/src/move_to.cpp for the --q reset path.
+// This is reused by frankatwin/src/move_to.cpp for the --q reset path.
 // We intentionally keep the file verbatim so future libfranka upgrades can be
-// re-vendored with a clean diff. DO NOT add panda_control-specific changes here.
+// re-vendored with a clean diff. DO NOT add frankatwin-specific changes here.
 
 #pragma once
 

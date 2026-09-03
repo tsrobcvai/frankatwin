@@ -14,15 +14,15 @@ from isaaclab.envs import DirectRLEnv
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 
 from . import control as uw_control
-from .franka_sysid_env_cfg import UWFrankaSysidEnvCfg
+from .franka_sysid_env_cfg import FrankaTwinSysidEnvCfg
 
 
-class UWFrankaSysidEnv(DirectRLEnv):
+class FrankaTwinSysidEnv(DirectRLEnv):
     """Franka-only environment for CMA-ES system identification."""
 
-    cfg: UWFrankaSysidEnvCfg
+    cfg: FrankaTwinSysidEnvCfg
 
-    def __init__(self, cfg: UWFrankaSysidEnvCfg, render_mode: str | None = None, **kwargs):
+    def __init__(self, cfg: FrankaTwinSysidEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
 
         task_prop_gains = torch.tensor(self.cfg.ctrl.operation_space_cfg.task_prop_gains, device=self.device).repeat(
