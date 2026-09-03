@@ -61,12 +61,13 @@ Either raise `kp`, lower the reference speed, or loosen the clamp
 chirp defaults need `0.15 m / 0.80 rad` because the reference itself reaches
 0.61 rad of orientation offset.
 
-### Arm is softer than expected / policy drifts after a reset
+### Arm is softer than expected after a reset
 
-`osc_shm` re-seeds `kp 200 / 20` and clamps off every time it starts, and it
-restarts inside every `move_to_q` / `move_to_pose` and on a watchdog relaunch.
-Re-apply `set_gains(...)` after each reset; grep the daemon log for
-`watchdog: osc_shm restarted` if it happened mid-run.
+`osc_shm` re-seeds its built-ins (`kp 200 / 20`, clamps off) every time it
+starts. Since 0.2.0 the daemon restores the last gains/clamps after every start
+(`move_to_*`, watchdog relaunch), so this should not happen; with an older
+daemon, re-apply `set_gains(...)` after each reset. Grep the daemon log for
+`watchdog: osc_shm restarted` to find mid-run restarts.
 
 ## Communication
 

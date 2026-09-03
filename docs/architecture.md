@@ -82,15 +82,15 @@ ShmStateFrame 384 B  seq, timestamp_s, q[7], dq[7], ee_pos[3], ee_quat[4] (wxyz)
 ## Daemon behaviour
 
 - **Startup**: create + zero shm → spawn `osc_shm` → wait until `state_head`
-  advances. `osc_shm` seeds the command with the *current* EE pose as target (so
-  the arm holds in place) and its built-in defaults: `kp_pos 200`, `kp_ori 20`,
-  `kd = 2√kp`, error clamps **off** (pure impedance, same as the sim). The
-  daemon does **not** push the `control:` block of `robot.yaml` into shm;
-  `cart_impedance.py` uses it for its `--kp-*` defaults, and your own client
-  should call `set_gains(...)` explicitly after connecting — **and again after
-  any `move_to_*`**: it restarts `osc_shm`, whose startup re-seeds the whole
-  command block (anchor pose *and* gains/clamps back to the built-ins). A
-  watchdog relaunch does the same.
+  advances → write gains/clamps into the command block. `osc_shm` seeds the
+  command with the *current* EE pose as target (so the arm holds in place) and
+  its built-in defaults (`kp 200/20`, clamps off); the daemon then overwrites
+  the gain fields — on the first start with the `control:` block of
+  `robot.yaml`, on every later start (inside `move_to_*`, watchdog relaunch)
+  with a snapshot of whatever the client last set via `set_gains`. Gains,
+  clamps and `enabled` therefore persist across controller restarts; only the
+  anchor pose is re-captured (`snapshot_gains` / `restore_gains` in
+  `local_controller.py`).
 - **Commands** (`ping`, `set_ee_target`, `set_gains`, `enable`, `disable`,
   `get_state`, `move_to_q`, `move_to_pose`, `shutdown`) are JSON over a ZMQ
   REQ/REP socket and run under one lock, so a `move_to_*` (which stops
@@ -103,9 +103,8 @@ ShmStateFrame 384 B  seq, timestamp_s, q[7], dq[7], ee_pos[3], ee_quat[4] (wxyz)
   relaunches it if not (logging the exit code and captured stderr), so a
   libfranka reflex mid-run cannot leave the daemon ACKing commands into a dead
   controller. The relaunch re-anchors the setpoint at the current pose and
-  resets gains/clamps to the built-ins (kp 200 / 20, clamps off); a client that
-  had set stiffer gains must re-apply them. The daemon logs
-  `watchdog: osc_shm restarted`.
+  restores the client's gains/clamps (see *Startup*); the client's next
+  `set_ee_target` resumes control. The daemon logs `watchdog: osc_shm restarted`.
 - **Payload**: `--load-mass/--load-com/--load-inertia` (or `load:` in the yaml)
   are forwarded to `osc_shm`, which calls `robot.setLoad()` before entering
   control. A rejected load is a warning, not a crash.
@@ -121,9 +120,10 @@ Ordered from first to last line of defence:
 2. **Error clamp** (`error_delta_pos/rot`, per tick): when > 0, clips the
    position/orientation error coordinate-wise *and* aborts the loop if the
    unclipped error exceeds it — bounds the controller's own push to
-   `Kp · error_delta` (≈ 25 N at `kp_pos=500`, `0.05 m`). `osc_shm` starts with
-   both at `0` (pure impedance, what the sim does); enable them from the client
-   with `set_gains(error_delta_pos=…, error_delta_rot=…)` or
+   `Kp · error_delta` (≈ 25 N at `kp_pos=500`, `0.05 m`). `robot.yaml` sets
+   0.05 m / 0.30 rad as the daemon's initial values; `0` disables both (pure
+   impedance, what the sim does). Override at runtime with
+   `set_gains(error_delta_pos=…, error_delta_rot=…)` or
    `cart_impedance.py --err-delta-pos/--err-delta-rot`.
 3. **Torque clamp** `τ_max` per joint.
 4. **Torque slew limiter** 800 N·m/s per joint (libfranka's own limit is
