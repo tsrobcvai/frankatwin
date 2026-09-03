@@ -32,7 +32,7 @@ has the identical method set for in-process use on the NUC.
 | `set_ee_target(pos[3], quat[4] wxyz)` | New impedance setpoint in the base frame. Non-blocking; held until the next call. |
 | `set_gains(kp_pos, kp_ori, kd_pos, kd_ori, error_delta_pos, error_delta_rot)` | Any `None` keeps the current value. `kd_*=0` → auto `2√kp`. `error_delta_*=0` disables clamp + abort. |
 | `enable()` / `disable()` | `disable` zeroes the impedance torque (gravity comp stays); the slew limiter ramps it. |
-| `move_to_q(q[7], speed_factor=None)` | Blocking (≤ 60 s). Stops `osc_shm`, runs `move_to --q`, restarts `osc_shm` anchored at the new pose. `speed_factor ∈ (0, 0.5]`, default from yaml. |
+| `move_to_q(q[7], speed_factor=None)` | Blocking (≤ 60 s). Stops `osc_shm`, runs `move_to --q`, restarts `osc_shm` anchored at the new pose **with built-in gains** (re-apply `set_gains`). `speed_factor ∈ (0, 0.5]`, default from yaml. |
 | `move_to_pose(pos, quat wxyz, duration=None)` | Blocking. libfranka `CartesianPose`, `duration ∈ [1.5, 20]` s. |
 | `close()` | Also called by `__exit__`. |
 
@@ -66,6 +66,11 @@ Things that bite:
 
 - Send targets **relative to the pose the controller is anchored at**. After
   `move_to_*` or a watchdog restart the anchor is the current pose.
+- **Every `osc_shm` start re-seeds gains and clamps** to the built-ins
+  (kp 200 / 20, `kd = 2√kp`, clamps off) — that includes the restart inside
+  `move_to_q` / `move_to_pose` and a watchdog relaunch. Call `set_gains` after
+  each reset, not just once at connect. (The minimal loop above does it in
+  the right order.)
 - A large jump in `set_ee_target` is a torque step. The slew limiter keeps it
   from tripping a reflex, but `Kp · Δx` still has to stay under the collision
   threshold and `τ_max` — ramp your targets.

@@ -87,9 +87,10 @@ ShmStateFrame 384 B  seq, timestamp_s, q[7], dq[7], ee_pos[3], ee_quat[4] (wxyz)
   `kd = 2√kp`, error clamps **off** (pure impedance, same as the sim). The
   daemon does **not** push the `control:` block of `robot.yaml` into shm;
   `cart_impedance.py` uses it for its `--kp-*` defaults, and your own client
-  should call `set_gains(...)` explicitly after connecting (and after any
-  `move_to_*`, which restarts `osc_shm` — gains persist in shm across the
-  restart, the anchor pose does not).
+  should call `set_gains(...)` explicitly after connecting — **and again after
+  any `move_to_*`**: it restarts `osc_shm`, whose startup re-seeds the whole
+  command block (anchor pose *and* gains/clamps back to the built-ins). A
+  watchdog relaunch does the same.
 - **Commands** (`ping`, `set_ee_target`, `set_gains`, `enable`, `disable`,
   `get_state`, `move_to_q`, `move_to_pose`, `shutdown`) are JSON over a ZMQ
   REQ/REP socket and run under one lock, so a `move_to_*` (which stops
@@ -101,8 +102,10 @@ ShmStateFrame 384 B  seq, timestamp_s, q[7], dq[7], ee_pos[3], ee_quat[4] (wxyz)
 - **Watchdog**: every 0.5 s the daemon checks that `osc_shm` is alive and
   relaunches it if not (logging the exit code and captured stderr), so a
   libfranka reflex mid-run cannot leave the daemon ACKing commands into a dead
-  controller. The relaunch re-anchors the setpoint at the current pose; the
-  client's next `set_ee_target` resumes control.
+  controller. The relaunch re-anchors the setpoint at the current pose and
+  resets gains/clamps to the built-ins (kp 200 / 20, clamps off); a client that
+  had set stiffer gains must re-apply them. The daemon logs
+  `watchdog: osc_shm restarted`.
 - **Payload**: `--load-mass/--load-com/--load-inertia` (or `load:` in the yaml)
   are forwarded to `osc_shm`, which calls `robot.setLoad()` before entering
   control. A rejected load is a warning, not a crash.
