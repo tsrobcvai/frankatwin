@@ -208,13 +208,18 @@ another FCI client (`franka-interface`, `franka_ros`) at the same time.
 
 ```bibtex
 @software{frankatwin2026,
-  author  = {Sun, Tao},
+  author  = {Sun, Tao and Yin, Patrick},
   title   = {FrankaTwin: a sim-to-real aligned 1 kHz Cartesian impedance controller for the Franka Research 3},
   year    = {2026},
   version = {0.2.0},
   url     = {https://github.com/tsrobcvai/frankatwin}
 }
 ```
+
+## Authors
+
+- **Tao Sun** — McGill University
+- **Patrick Yin** — University of Washington
 
 ## License
 
