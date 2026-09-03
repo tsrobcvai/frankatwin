@@ -32,19 +32,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--base-sidecar",
         type=str,
-        default="/home/tao/Projects/panda_control/data/step5b_20260524_120834.json",
+        default="/home/tao/Projects/frankatwin/data/step5b_20260524_120834.json",
         help="Reference real sidecar used for q_init/x_anchor/q_anchor and gains.",
     )
     parser.add_argument(
         "--out-csv",
         type=str,
-        default="/home/tao/Projects/panda_control/tmp/step5c_excitation_target.csv",
+        default="/home/tao/Projects/frankatwin/tmp/step5c_excitation_target.csv",
         help="Output target CSV path.",
     )
     parser.add_argument(
         "--out-sidecar",
         type=str,
-        default="/home/tao/Projects/panda_control/tmp/step5c_excitation_target.json",
+        default="/home/tao/Projects/frankatwin/tmp/step5c_excitation_target.json",
         help="Output sidecar JSON path.",
     )
     parser.add_argument("--duration", type=float, default=12.0, help="Trajectory duration in seconds.")

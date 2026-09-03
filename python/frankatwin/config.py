@@ -1,8 +1,8 @@
-"""Load and validate panda_control runtime config.
+"""Load and validate frankatwin runtime config.
 
 Config resolution order:
   1. Explicit `path=` argument to `load_config(path=...)`.
-  2. `PANDA_CONFIG` environment variable.
+  2. `FRANKATWIN_CONFIG` environment variable.
   3. `<repo_root>/config/robot.yaml`  (repo default).
 
 Repo root is detected by walking upward from this file until a directory
@@ -161,13 +161,13 @@ def load_config(path: Optional[os.PathLike] = None) -> RobotConfig:
     chosen: pathlib.Path
     if path is not None:
         chosen = pathlib.Path(path).expanduser().resolve()
-    elif "PANDA_CONFIG" in os.environ:
-        chosen = pathlib.Path(os.environ["PANDA_CONFIG"]).expanduser().resolve()
+    elif "FRANKATWIN_CONFIG" in os.environ:
+        chosen = pathlib.Path(os.environ["FRANKATWIN_CONFIG"]).expanduser().resolve()
     else:
         chosen = DEFAULT_CONFIG_PATH
 
     if not chosen.is_file():
-        raise FileNotFoundError(f"panda_control config not found: {chosen}")
+        raise FileNotFoundError(f"frankatwin config not found: {chosen}")
 
     with chosen.open("r") as f:
         raw = yaml.safe_load(f)
@@ -211,7 +211,7 @@ def load_config(path: Optional[os.PathLike] = None) -> RobotConfig:
         base = chosen.parent.parent  # config/ -> repo root
         paths_cfg = PathsConfig(
             build_dir=_resolve_path(str(p["build_dir"]), base),
-            shm_name=str(p.get("shm_name", "/panda_osc")),
+            shm_name=str(p.get("shm_name", "/frankatwin_osc")),
         )
         if not paths_cfg.shm_name.startswith("/"):
             raise ValueError(

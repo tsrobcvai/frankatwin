@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(panda_control
+project(frankatwin
     VERSION 0.1.0
-    DESCRIPTION "From-scratch Franka controller stack (libfranka + small Python wrappers, hybrid)."
+    DESCRIPTION "FrankaTwin: 1 kHz Cartesian impedance controller for Franka FR3/Panda (libfranka) with a sim-to-real system-ID pipeline."
     LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -37,7 +37,7 @@ if(DEFINED ENV{CONDA_PREFIX})
         "${CMAKE_EXE_LINKER_FLAGS} -L$ENV{CONDA_PREFIX}/lib -Wl,-rpath,$ENV{CONDA_PREFIX}/lib")
     set(CMAKE_SHARED_LINKER_FLAGS
         "${CMAKE_SHARED_LINKER_FLAGS} -L$ENV{CONDA_PREFIX}/lib -Wl,-rpath,$ENV{CONDA_PREFIX}/lib")
-    message(STATUS "panda_control: prepending CONDA_PREFIX/lib to linker search path: $ENV{CONDA_PREFIX}/lib")
+    message(STATUS "frankatwin: prepending CONDA_PREFIX/lib to linker search path: $ENV{CONDA_PREFIX}/lib")
 endif()
 
 # ----------------------------------------------------------------------------
@@ -73,9 +73,9 @@ set(PINOCCHIO_LIBS "")
 if(Franka_VERSION VERSION_GREATER_EQUAL 0.14.0)
     find_package(pinocchio REQUIRED)
     set(PINOCCHIO_LIBS pinocchio::pinocchio pinocchio::pinocchio_parsers)
-    message(STATUS "panda_control: libfranka ${Franka_VERSION} (>= 0.14) -> linking Pinocchio for dynamics")
+    message(STATUS "frankatwin: libfranka ${Franka_VERSION} (>= 0.14) -> linking Pinocchio for dynamics")
 else()
-    message(STATUS "panda_control: libfranka ${Franka_VERSION} (< 0.14) -> Pinocchio not required")
+    message(STATUS "frankatwin: libfranka ${Franka_VERSION} (< 0.14) -> Pinocchio not required")
 endif()
 
 # ----------------------------------------------------------------------------
@@ -95,9 +95,9 @@ if(DEFINED ENV{CONDA_PREFIX})
     set(_CONDA_BOOST_CANDIDATE "$ENV{CONDA_PREFIX}/lib/libboost_filesystem.so.1.82.0")
     if(EXISTS "${_CONDA_BOOST_CANDIDATE}")
         set(CONDA_BOOST_FILESYSTEM "${_CONDA_BOOST_CANDIDATE}")
-        message(STATUS "panda_control: using conda boost filesystem: ${CONDA_BOOST_FILESYSTEM}")
+        message(STATUS "frankatwin: using conda boost filesystem: ${CONDA_BOOST_FILESYSTEM}")
     else()
-        message(WARNING "panda_control: conda boost filesystem not found under $ENV{CONDA_PREFIX}/lib")
+        message(WARNING "frankatwin: conda boost filesystem not found under $ENV{CONDA_PREFIX}/lib")
     endif()
 endif()
 
@@ -120,7 +120,7 @@ target_compile_options(read_current_q PRIVATE -O2)
 # Utility: Read current EE pose and emit step5b-style sidecar JSON
 # ----------------------------------------------------------------------------
 # Single readOnce() + model.pose(kEndEffector). Output is consumed by
-# panda_control/scripts/gen_excitation_traj.py via --base-sidecar, so step5c
+# frankatwin/scripts/gen_excitation_traj.py via --base-sidecar, so step5c
 # excitation trajectories can be anchored on the robot's *current* pose
 # instead of step5b's frozen x_anchor.
 add_executable(read_current_pose src/read_current_pose.cpp)
@@ -168,14 +168,14 @@ target_compile_options(read_load PRIVATE -O2)
 # Both link librt for shm_open / shm_unlink (POSIX shared memory).
 
 # Vendored helper from libfranka examples (MotionGenerator + setDefaultBehavior).
-add_library(panda_examples_common STATIC src/examples_common.cpp)
-target_include_directories(panda_examples_common PUBLIC src)
-target_link_libraries(panda_examples_common
+add_library(frankatwin_examples_common STATIC src/examples_common.cpp)
+target_include_directories(frankatwin_examples_common PUBLIC src)
+target_link_libraries(frankatwin_examples_common
     PUBLIC
         Franka::Franka
         ${PINOCCHIO_LIBS}
         Eigen3::Eigen)
-target_compile_options(panda_examples_common PRIVATE -O2)
+target_compile_options(frankatwin_examples_common PRIVATE -O2)
 
 # ----------------------------------------------------------------------------
 # osc_shm: long-running 1 kHz Cartesian impedance controller (shm-backed)
@@ -203,7 +203,7 @@ add_executable(move_to src/move_to.cpp)
 target_include_directories(move_to PRIVATE src)
 target_link_libraries(move_to
     PRIVATE
-        panda_examples_common
+        frankatwin_examples_common
         Franka::Franka
         ${PINOCCHIO_LIBS}
         Eigen3::Eigen

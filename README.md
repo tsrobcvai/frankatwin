@@ -1,4 +1,4 @@
-# Panda Control
+# FrankaTwin
 
 Real-time Cartesian impedance control for the **Franka Research 3** tuned for **sim-to-real transfer**. Ships a system-ID pipeline that matches IsaacLab to the real arm.
 
@@ -21,7 +21,7 @@ Real-time Cartesian impedance control for the **Franka Research 3** tuned for **
   └────────┘                      └──────────────┘                       └────────┘
 ```
 
-The daemon owns POSIX shm `/panda_osc`, supervises the two C++ binaries
+The daemon owns POSIX shm `/frankatwin_osc`, supervises the two C++ binaries
 (mutex'd against each other — libfranka allows one FCI session at a time),
 and exposes two control modes to the PC:
 
@@ -43,8 +43,8 @@ For NUC setup (real-time kernel, FCI network), follow
 ### NUC (libfranka + Python)
 
 ```bash
-git clone <repo> /path/to/panda_control
-cd /path/to/panda_control
+git clone <repo> /path/to/frankatwin
+cd /path/to/frankatwin
 
 # Build C++ binaries (libfranka must be installed system-wide).
 cmake -S . -B build && cmake --build build -j
@@ -63,8 +63,8 @@ pgrep -a franka-interface && echo "kill franka-interface before continuing"
 ### PC (Python only)
 
 ```bash
-git clone <repo> /path/to/panda_control
-cd /path/to/panda_control
+git clone <repo> /path/to/frankatwin
+cd /path/to/frankatwin
 pip install -e ".[analysis]"      # analysis extra: pandas/matplotlib for scripts/compare_*.py
 grep nuc_host config/robot.yaml   # default: 172.16.0.1
 ```
@@ -79,18 +79,18 @@ grep nuc_host config/robot.yaml   # default: 172.16.0.1
 - `control.kp_pos` / `kp_ori` — default impedance gains (runtime override via `set_gains`).
 - `control.error_delta_pos` / `error_delta_rot` — per-tick `osc_shm` safety clamps (runtime override via `set_gains`).
 
-Override the config path with `PANDA_CONFIG=/path/to/local.yaml`.
+Override the config path with `FRANKATWIN_CONFIG=/path/to/local.yaml`.
 
 ## Quick Start
 
 ### 1. Start the daemon # NUC
 
 ```bash
-python -m panda_control.daemon --config config/robot.yaml 
+python -m frankatwin.daemon --config config/robot.yaml 
 ```
 
 Binds `tcp://*:5555` (REQ/REP) and `tcp://*:5556` (state PUB @ 100 Hz), claims
-shm `/panda_osc`, launches `osc_shm`.
+shm `/frankatwin_osc`, launches `osc_shm`.
 
 > **Carrying a payload? Set `--load-mass` / `--load-com` on the command line.**
 > The default (`mass: 0` in `robot.yaml`) is the bare arm: no `setLoad` call,
@@ -100,11 +100,11 @@ shm `/panda_osc`, launches `osc_shm`.
 >
 > ```bash
 > # ZED Mini camera only (calibrated 2026-05-31):
-> python -m panda_control.daemon -c config/robot.yaml \
+> python -m frankatwin.daemon -c config/robot.yaml \
 >     --load-mass 0.15 --load-com 0 0 0.05
 >
 > # camera + 0.68 kg grasped object (object COM ~0.175 m along the tool axis):
-> python -m panda_control.daemon -c config/robot.yaml \
+> python -m frankatwin.daemon -c config/robot.yaml \
 >     --load-mass 0.83 --load-com 0 0 0.152
 > ```
 >
@@ -142,11 +142,11 @@ gravity and joint damping.
 
 ```python
 import numpy as np, time
-from panda_control.config import load_config
-from panda_control.remote_client import RemotePandaClient
+from frankatwin.config import load_config
+from frankatwin.remote_client import FrankaTwinClient
 
 cfg = load_config()
-with RemotePandaClient(cfg) as robot:
+with FrankaTwinClient(cfg) as robot:
     state = robot.wait_for_state(timeout_s=3.0)
     anchor_pos, anchor_quat = state.ee_pos, state.ee_quat   # quat is wxyz
 
@@ -160,7 +160,7 @@ with RemotePandaClient(cfg) as robot:
     print(f"q={s.q}, ee_pos={s.ee_pos}")
 ```
 
-`RemotePandaClient` methods: `set_ee_target`, `set_gains`, `get_state` /
+`FrankaTwinClient` methods: `set_ee_target`, `set_gains`, `get_state` /
 `wait_for_state`, `move_to_q`, `move_to_pose`, `enable` / `disable`, `ping`.
 All non-blocking — `set_ee_target` writes a seqlock-guarded frame to shm and
 returns; `osc_shm` consumes it on the next 1 kHz tick.
@@ -202,7 +202,7 @@ this repo ships them under `isaaclab_sysid/`. Deploy them into your IsaacLab
 checkout once:
 
 ```bash
-# panda_control
+# frankatwin
 ./isaaclab_sysid/install_into_isaaclab.sh /path/to/IsaacLab
 
 # inside the IsaacLab python env
@@ -211,7 +211,7 @@ pip install cmaes
 
 This copies three things into `/path/to/IsaacLab`:
 
-- **Gym tasks** `Isaac-UW-Franka-Sysid-v0` / `Isaac-UW-Franka-Replay-v0`
+- **Gym tasks** `Isaac-FrankaTwin-Sysid-v0` / `Isaac-FrankaTwin-Replay-v0`
   (`source/isaaclab_tasks/isaaclab_tasks/direct/franka_sysid/`) — Franka-only
   zero-reward envs whose task-impedance controller mirrors `osc_shm`
   (`src/step5b_cart_pose.cpp`). Auto-registered by `isaaclab_tasks`' package
@@ -244,7 +244,7 @@ This copies three things into `/path/to/IsaacLab`:
        --best logs/sysid_franka/<ts>/sysid_best_params.json --invoke-replay \
        --real-csv <run>.csv --real-sidecar <run>.json \
        --replay-script scripts/tools/replay_python_csv_sim.py
-   # panda_control
+   # frankatwin
    python scripts/compare_sim_real.py \
        --real-csv <run>.csv --sim-csv <run>_sim_sysid.csv --save
   ```

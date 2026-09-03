@@ -1,4 +1,4 @@
-"""LocalPandaController: NUC-side, same-machine controller wrapper.
+"""LocalController: NUC-side, same-machine controller wrapper.
 
 Responsibilities:
 - Own the POSIX shm segment (`shm_open(name, O_CREAT)`).
@@ -9,7 +9,7 @@ Responsibilities:
   to the FCI port at a time.
 
 This class is intended to be used either standalone on the NUC for local
-testing, or composed inside `panda_control.daemon.PandaDaemon` for the
+testing, or composed inside `frankatwin.daemon.FrankaTwinDaemon` for the
 PC-driven remote use case.
 """
 
@@ -26,9 +26,9 @@ from typing import List, Optional
 
 import numpy as np
 
-from panda_control.config import RobotConfig
-from panda_control.shm_layout import (
-    PANDA_SHM_STATE_FRAMES,
+from frankatwin.config import RobotConfig
+from frankatwin.shm_layout import (
+    FRANKATWIN_SHM_STATE_FRAMES,
     STATE_FRAME_DTYPE,
     SharedMemoryAccess,
 )
@@ -107,13 +107,13 @@ class RobotState:
         )
 
 
-class LocalPandaController:
+class LocalController:
     """Owns the shm segment and the C++ controller subprocess.
 
     Typical usage:
 
         cfg = load_config()
-        with LocalPandaController(cfg) as robot:
+        with LocalController(cfg) as robot:
             robot.set_gains(kp_pos=200, kp_ori=20)
             robot.set_ee_target(np.array([0.5, 0.0, 0.4]),
                                 np.array([1.0, 0.0, 0.0, 0.0]))
@@ -302,7 +302,7 @@ class LocalPandaController:
                 self._shm.close(unlink=True)
                 self._shm = None
 
-    def __enter__(self) -> "LocalPandaController":
+    def __enter__(self) -> "LocalController":
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
@@ -312,7 +312,7 @@ class LocalPandaController:
     @property
     def _view(self):
         if self._shm is None:
-            raise RuntimeError("LocalPandaController is closed")
+            raise RuntimeError("LocalController is closed")
         return self._shm.view
 
     def _wait_until_running(self, timeout: float) -> None:
@@ -476,7 +476,7 @@ class LocalPandaController:
         return [RobotState.from_frame(f) for f in frames]
 
     def get_all_state(self) -> List[RobotState]:
-        return self.get_state(k=PANDA_SHM_STATE_FRAMES)  # type: ignore[return-value]
+        return self.get_state(k=FRANKATWIN_SHM_STATE_FRAMES)  # type: ignore[return-value]
 
     # ------------------------------------------------------------------ reset
     def move_to_q(

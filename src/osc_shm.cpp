@@ -11,7 +11,7 @@
 //
 // Difference vs step5b:
 //   - x_des / q_des / Kp_pos / Kp_ori / Kd_pos / Kd_ori / enabled come from
-//     PandaShmCommand each tick (lock-free seqlock read).
+//     ShmCommand each tick (lock-free seqlock read).
 //   - q / dq / ee_pos / ee_quat / tau / timestamp are published to the state
 //     ring buffer each tick.
 //   - When `enabled == 0`, the controller outputs zero command torque (the
@@ -26,7 +26,7 @@
 //
 // CLI:
 //   ./osc_shm <robot_ip>
-//       [--shm-name NAME]       POSIX shm name (default "/panda_osc")
+//       [--shm-name NAME]       POSIX shm name (default "/frankatwin_osc")
 //       [--init-shm]            create + zero the shm before opening
 //                               (when daemon owns shm, omit this flag)
 //       [--no-coriolis]         disable explicit Coriolis term
@@ -108,7 +108,7 @@ void signal_handler(int /*signo*/) { g_stop_flag.store(true); }
 
 struct Args {
   std::string robot_ip;
-  std::string shm_name{PANDA_SHM_DEFAULT_NAME};
+  std::string shm_name{FRANKATWIN_SHM_DEFAULT_NAME};
   bool init_shm{false};
   bool no_coriolis{false};
   int print_every{0};
@@ -261,7 +261,7 @@ double monotonic_seconds() {
 
 // Open (or create) the POSIX shm segment and return a memory-mapped pointer.
 // On failure, prints an error and returns nullptr.
-PandaShm* open_shm(const std::string& name, bool create_init, int* out_fd) {
+ShmSegment* open_shm(const std::string& name, bool create_init, int* out_fd) {
   *out_fd = -1;
   int oflag = create_init ? (O_CREAT | O_RDWR) : O_RDWR;
   int fd = shm_open(name.c_str(), oflag, 0666);
@@ -271,7 +271,7 @@ PandaShm* open_shm(const std::string& name, bool create_init, int* out_fd) {
     return nullptr;
   }
   if (create_init) {
-    if (ftruncate(fd, static_cast<off_t>(sizeof(PandaShm))) != 0) {
+    if (ftruncate(fd, static_cast<off_t>(sizeof(ShmSegment))) != 0) {
       std::cerr << "[osc_shm] ftruncate failed: " << std::strerror(errno)
                 << std::endl;
       ::close(fd);
@@ -279,16 +279,16 @@ PandaShm* open_shm(const std::string& name, bool create_init, int* out_fd) {
     }
   } else {
     struct stat st{};
-    if (fstat(fd, &st) != 0 || static_cast<size_t>(st.st_size) != sizeof(PandaShm)) {
+    if (fstat(fd, &st) != 0 || static_cast<size_t>(st.st_size) != sizeof(ShmSegment)) {
       std::cerr << "[osc_shm] shm '" << name << "' has unexpected size "
-                << (st.st_size) << " (expected " << sizeof(PandaShm)
+                << (st.st_size) << " (expected " << sizeof(ShmSegment)
                 << ", did you forget --init-shm or run an older daemon?)"
                 << std::endl;
       ::close(fd);
       return nullptr;
     }
   }
-  void* mapped = mmap(nullptr, sizeof(PandaShm), PROT_READ | PROT_WRITE,
+  void* mapped = mmap(nullptr, sizeof(ShmSegment), PROT_READ | PROT_WRITE,
                       MAP_SHARED, fd, 0);
   if (mapped == MAP_FAILED) {
     std::cerr << "[osc_shm] mmap failed: " << std::strerror(errno) << std::endl;
@@ -296,19 +296,19 @@ PandaShm* open_shm(const std::string& name, bool create_init, int* out_fd) {
     return nullptr;
   }
   *out_fd = fd;
-  PandaShm* shm = reinterpret_cast<PandaShm*>(mapped);
+  ShmSegment* shm = reinterpret_cast<ShmSegment*>(mapped);
   if (create_init) {
-    std::memset(shm, 0, sizeof(PandaShm));
-    shm->header.magic = PANDA_SHM_MAGIC;
-    shm->header.version = PANDA_SHM_VERSION;
-    shm->header.state_frames = PANDA_SHM_STATE_FRAMES;
+    std::memset(shm, 0, sizeof(ShmSegment));
+    shm->header.magic = FRANKATWIN_SHM_MAGIC;
+    shm->header.version = FRANKATWIN_SHM_VERSION;
+    shm->header.state_frames = FRANKATWIN_SHM_STATE_FRAMES;
   } else {
-    if (shm->header.magic != PANDA_SHM_MAGIC ||
-        shm->header.version != PANDA_SHM_VERSION) {
+    if (shm->header.magic != FRANKATWIN_SHM_MAGIC ||
+        shm->header.version != FRANKATWIN_SHM_VERSION) {
       std::cerr << "[osc_shm] shm header mismatch: magic=0x" << std::hex
                 << shm->header.magic << " version=" << std::dec
                 << shm->header.version << std::endl;
-      munmap(mapped, sizeof(PandaShm));
+      munmap(mapped, sizeof(ShmSegment));
       ::close(fd);
       return nullptr;
     }
@@ -326,7 +326,7 @@ int main(int argc, char** argv) {
   std::signal(SIGTERM, signal_handler);
 
   int shm_fd = -1;
-  PandaShm* shm = open_shm(args.shm_name, args.init_shm, &shm_fd);
+  ShmSegment* shm = open_shm(args.shm_name, args.init_shm, &shm_fd);
   if (shm == nullptr) return 2;
 
   // Stamp our pid into the header so observers know the controller is alive.
@@ -419,7 +419,7 @@ int main(int argc, char** argv) {
     // Seed the command with the anchor pose + default gains so that the
     // controller holds in place until a client overrides the setpoint.
     {
-      PandaShmCommand* cmd = &shm->command;
+      ShmCommand* cmd = &shm->command;
       uint64_t s = panda_shm::cmd_write_begin(cmd);
       cmd->target_pos[0] = anchor.position.x();
       cmd->target_pos[1] = anchor.position.y();
@@ -486,7 +486,7 @@ int main(int argc, char** argv) {
       const Eigen::Vector3d w = jac6x7.bottomRows<3>() * dq;
 
       // Snapshot the command (lock-free seqlock).
-      PandaShmCommand cmd_snap;
+      ShmCommand cmd_snap;
       panda_shm::cmd_read(&shm->command, &cmd_snap);
 
       const Eigen::Vector3d x_des(cmd_snap.target_pos[0],
@@ -563,7 +563,7 @@ int main(int argc, char** argv) {
       tau_prev = tau_cmd;
 
       // Publish the state frame to the ring buffer.
-      PandaShmStateFrame frame{};
+      ShmStateFrame frame{};
       frame.timestamp_s = monotonic_seconds() - t_start_mono;
       for (int j = 0; j < 7; ++j) {
         frame.q[j] = s.q[j];
@@ -589,7 +589,7 @@ int main(int argc, char** argv) {
       frame.ee_angvel[1] = w.y();
       frame.ee_angvel[2] = w.z();
       panda_shm::state_publish(&shm->header, shm->states, frame,
-                               PANDA_SHM_STATE_FRAMES);
+                               FRANKATWIN_SHM_STATE_FRAMES);
 
       // Periodic diagnostic print (off by default).
       if (args.print_every > 0 &&
@@ -686,19 +686,19 @@ int main(int argc, char** argv) {
   } catch (const franka::Exception& e) {
     std::cerr << "[osc_shm] franka::Exception: " << e.what() << std::endl;
     __atomic_store_n(&shm->header.controller_pid, 0ull, __ATOMIC_RELEASE);
-    munmap(shm, sizeof(PandaShm));
+    munmap(shm, sizeof(ShmSegment));
     ::close(shm_fd);
     return 10;
   } catch (const std::exception& e) {
     std::cerr << "[osc_shm] std::exception: " << e.what() << std::endl;
     __atomic_store_n(&shm->header.controller_pid, 0ull, __ATOMIC_RELEASE);
-    munmap(shm, sizeof(PandaShm));
+    munmap(shm, sizeof(ShmSegment));
     ::close(shm_fd);
     return 11;
   }
 
   __atomic_store_n(&shm->header.controller_pid, 0ull, __ATOMIC_RELEASE);
-  munmap(shm, sizeof(PandaShm));
+  munmap(shm, sizeof(ShmSegment));
   ::close(shm_fd);
   // NOTE: we do NOT shm_unlink here. The owner of the segment (typically the
   // daemon or whoever launched us with --init-shm) is responsible for cleanup.

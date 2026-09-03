@@ -4,7 +4,7 @@ How it works:
   1. Compile tests/dump_shm_offsets.cpp with the system g++ (no libfranka deps).
   2. Run it, parse the lines `size:<Type>:<N>` and `off:<Type>.<Member>:<N>`.
   3. Cross-reference against the same offsets computed from
-     panda_control.shm_layout's numpy dtypes.
+     frankatwin.shm_layout's numpy dtypes.
 
 This guards against silent ABI drift if anyone reorders, renames, or repads
 a field in either side.
@@ -28,10 +28,10 @@ TESTS = ROOT / "tests"
 import sys
 sys.path.insert(0, str(ROOT / "python"))
 
-from panda_control.shm_layout import (  # noqa: E402
+from frankatwin.shm_layout import (  # noqa: E402
     COMMAND_DTYPE,
     HEADER_DTYPE,
-    PANDA_SHM_STATE_FRAMES,
+    FRANKATWIN_SHM_STATE_FRAMES,
     SHM_TOTAL_BYTES,
     STATE_FRAME_DTYPE,
 )
@@ -81,21 +81,21 @@ def _np_offset(dtype, field: str) -> int:
 
 def test_sizes(cpp_offsets):
     sizes, _ = cpp_offsets
-    assert sizes["PandaShmHeader"] == HEADER_DTYPE.itemsize == 32
-    assert sizes["PandaShmCommand"] == COMMAND_DTYPE.itemsize == 120
-    assert sizes["PandaShmStateFrame"] == STATE_FRAME_DTYPE.itemsize == 384
-    assert sizes["PandaShm"] == SHM_TOTAL_BYTES
+    assert sizes["ShmHeader"] == HEADER_DTYPE.itemsize == 32
+    assert sizes["ShmCommand"] == COMMAND_DTYPE.itemsize == 120
+    assert sizes["ShmStateFrame"] == STATE_FRAME_DTYPE.itemsize == 384
+    assert sizes["ShmSegment"] == SHM_TOTAL_BYTES
     assert SHM_TOTAL_BYTES == 32 + 120 + 1024 * 384
-    assert PANDA_SHM_STATE_FRAMES == 1024
+    assert FRANKATWIN_SHM_STATE_FRAMES == 1024
 
 
 def test_header_offsets(cpp_offsets):
     _, off = cpp_offsets
-    assert off["PandaShmHeader.magic"] == _np_offset(HEADER_DTYPE, "magic") == 0
-    assert off["PandaShmHeader.version"] == _np_offset(HEADER_DTYPE, "version") == 4
-    assert off["PandaShmHeader.state_frames"] == _np_offset(HEADER_DTYPE, "state_frames") == 8
-    assert off["PandaShmHeader.controller_pid"] == _np_offset(HEADER_DTYPE, "controller_pid") == 16
-    assert off["PandaShmHeader.state_head"] == _np_offset(HEADER_DTYPE, "state_head") == 24
+    assert off["ShmHeader.magic"] == _np_offset(HEADER_DTYPE, "magic") == 0
+    assert off["ShmHeader.version"] == _np_offset(HEADER_DTYPE, "version") == 4
+    assert off["ShmHeader.state_frames"] == _np_offset(HEADER_DTYPE, "state_frames") == 8
+    assert off["ShmHeader.controller_pid"] == _np_offset(HEADER_DTYPE, "controller_pid") == 16
+    assert off["ShmHeader.state_head"] == _np_offset(HEADER_DTYPE, "state_head") == 24
 
 
 def test_command_offsets(cpp_offsets):
@@ -113,7 +113,7 @@ def test_command_offsets(cpp_offsets):
         ("enabled", 112),
     ]
     for field, expected in pairs:
-        cpp = off[f"PandaShmCommand.{field}"]
+        cpp = off[f"ShmCommand.{field}"]
         np_off = _np_offset(COMMAND_DTYPE, field)
         assert cpp == np_off == expected, (
             f"command.{field}: cpp={cpp} numpy={np_off} expected={expected}"
@@ -135,7 +135,7 @@ def test_state_offsets(cpp_offsets):
         ("tau_J", 288),
     ]
     for field, expected in pairs:
-        cpp = off[f"PandaShmStateFrame.{field}"]
+        cpp = off[f"ShmStateFrame.{field}"]
         np_off = _np_offset(STATE_FRAME_DTYPE, field)
         assert cpp == np_off == expected, (
             f"state.{field}: cpp={cpp} numpy={np_off} expected={expected}"

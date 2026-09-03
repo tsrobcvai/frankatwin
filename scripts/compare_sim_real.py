@@ -9,7 +9,7 @@ For each subplot we overlay three traces:
               `IsaacLab/scripts/tools/replay_real_step5b_sim.py`
 
 Both CSVs must follow the schema documented in
-`panda_control/SIM2REAL_COMPARISON.md` (real §2.1, sim §5.4).
+`frankatwin/SIM2REAL_COMPARISON.md` (real §2.1, sim §5.4).
 
 Typical usage:
 

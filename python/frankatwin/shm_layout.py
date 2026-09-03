@@ -1,4 +1,4 @@
-"""POSIX shared-memory layout for panda_control Step 10.
+"""POSIX shared-memory layout for frankatwin Step 10.
 
 This module is a faithful numpy.dtype mirror of `src/shm_layout.h`. The C++
 side static-asserts the field offsets; this side enforces them via a unit
@@ -29,10 +29,10 @@ import numpy as np
 # ---------------------------------------------------------------------------
 # Constants (must match src/shm_layout.h)
 # ---------------------------------------------------------------------------
-PANDA_SHM_MAGIC = 0x50414E44
-PANDA_SHM_VERSION = 3  # v3: added state tau_J (measured link-side torque)
-PANDA_SHM_STATE_FRAMES = 1024
-PANDA_SHM_DEFAULT_NAME = "/panda_osc"
+FRANKATWIN_SHM_MAGIC = 0x50414E44
+FRANKATWIN_SHM_VERSION = 3  # v3: added state tau_J (measured link-side torque)
+FRANKATWIN_SHM_STATE_FRAMES = 1024
+FRANKATWIN_SHM_DEFAULT_NAME = "/frankatwin_osc"
 
 # ---------------------------------------------------------------------------
 # numpy dtypes (must produce the same byte layout as the C++ structs)
@@ -97,7 +97,7 @@ assert STATE_FRAME_DTYPE.itemsize == 384, (
 SHM_TOTAL_BYTES = (
     HEADER_DTYPE.itemsize
     + COMMAND_DTYPE.itemsize
-    + STATE_FRAME_DTYPE.itemsize * PANDA_SHM_STATE_FRAMES
+    + STATE_FRAME_DTYPE.itemsize * FRANKATWIN_SHM_STATE_FRAMES
 )
 assert SHM_TOTAL_BYTES == 32 + 120 + 1024 * 384
 
@@ -128,7 +128,7 @@ def _atomic_load_u64(buf: memoryview, offset: int) -> int:
 # View handle.
 # ---------------------------------------------------------------------------
 @dataclass
-class PandaShmView:
+class ShmView:
     """Read/write views over an open POSIX shared-memory segment.
 
     Lifetime: caller owns the underlying `shared_memory.SharedMemory` object
@@ -226,10 +226,10 @@ class PandaShmView:
         head = self.state_head
         if head == 0:
             return None
-        idx = head % PANDA_SHM_STATE_FRAMES
+        idx = head % FRANKATWIN_SHM_STATE_FRAMES
         snapshot = self.states[idx].copy()
         head2 = self.state_head
-        if head2 - head >= PANDA_SHM_STATE_FRAMES:
+        if head2 - head >= FRANKATWIN_SHM_STATE_FRAMES:
             # Producer wrapped during our read; frame is suspect.
             return None
         return snapshot
@@ -244,11 +244,11 @@ class PandaShmView:
         head = self.state_head
         if head == 0:
             return np.empty(0, dtype=STATE_FRAME_DTYPE)
-        k = min(k, PANDA_SHM_STATE_FRAMES, head)
-        idxs = [(head - k + 1 + i) % PANDA_SHM_STATE_FRAMES for i in range(k)]
+        k = min(k, FRANKATWIN_SHM_STATE_FRAMES, head)
+        idxs = [(head - k + 1 + i) % FRANKATWIN_SHM_STATE_FRAMES for i in range(k)]
         frames = np.stack([self.states[i].copy() for i in idxs])
         # Drop any prefix whose seq is stale (producer overwrote it mid-read).
-        valid = frames["seq"] > head - PANDA_SHM_STATE_FRAMES
+        valid = frames["seq"] > head - FRANKATWIN_SHM_STATE_FRAMES
         return frames[valid]
 
 
@@ -259,13 +259,13 @@ class SharedMemoryAccess:
     """RAII wrapper over multiprocessing.shared_memory.SharedMemory.
 
     On Linux this maps to `/dev/shm/<name>` (the leading '/' in the C-style
-    POSIX shm name is stripped by SharedMemory; pass either `/panda_osc` or
-    `panda_osc` and we normalize).
+    POSIX shm name is stripped by SharedMemory; pass either `/frankatwin_osc` or
+    `frankatwin_osc` and we normalize).
     """
 
     def __init__(
         self,
-        name: str = PANDA_SHM_DEFAULT_NAME,
+        name: str = FRANKATWIN_SHM_DEFAULT_NAME,
         create: bool = False,
     ) -> None:
         norm = name.lstrip("/")
@@ -282,9 +282,9 @@ class SharedMemoryAccess:
             buf = self.shm.buf
             buf[:] = b"\x00" * SHM_TOTAL_BYTES
             header_view = np.frombuffer(buf, dtype=HEADER_DTYPE, count=1)
-            header_view[0]["magic"] = PANDA_SHM_MAGIC
-            header_view[0]["version"] = PANDA_SHM_VERSION
-            header_view[0]["state_frames"] = PANDA_SHM_STATE_FRAMES
+            header_view[0]["magic"] = FRANKATWIN_SHM_MAGIC
+            header_view[0]["version"] = FRANKATWIN_SHM_VERSION
+            header_view[0]["state_frames"] = FRANKATWIN_SHM_STATE_FRAMES
         else:
             self.shm = shared_memory.SharedMemory(name=norm, create=False)
             if self.shm.size != SHM_TOTAL_BYTES:
@@ -296,14 +296,14 @@ class SharedMemoryAccess:
 
         self._created = create
         self.view = _build_view(self.shm.buf)
-        if self.view.magic != PANDA_SHM_MAGIC:
+        if self.view.magic != FRANKATWIN_SHM_MAGIC:
             raise RuntimeError(
                 f"shm '{norm}' magic mismatch: got 0x{self.view.magic:08x}"
             )
-        if self.view.version != PANDA_SHM_VERSION:
+        if self.view.version != FRANKATWIN_SHM_VERSION:
             raise RuntimeError(
                 f"shm '{norm}' version mismatch: got {self.view.version}, "
-                f"expected {PANDA_SHM_VERSION}"
+                f"expected {FRANKATWIN_SHM_VERSION}"
             )
 
     def close(self, unlink: Optional[bool] = None) -> None:
@@ -326,7 +326,7 @@ class SharedMemoryAccess:
         self.close()
 
 
-def _build_view(buf: memoryview) -> PandaShmView:
+def _build_view(buf: memoryview) -> ShmView:
     header = np.frombuffer(buf, dtype=HEADER_DTYPE, count=1, offset=OFFSET_HEADER)
     command = np.frombuffer(
         buf, dtype=COMMAND_DTYPE, count=1, offset=OFFSET_COMMAND
@@ -334,10 +334,10 @@ def _build_view(buf: memoryview) -> PandaShmView:
     states = np.frombuffer(
         buf,
         dtype=STATE_FRAME_DTYPE,
-        count=PANDA_SHM_STATE_FRAMES,
+        count=FRANKATWIN_SHM_STATE_FRAMES,
         offset=OFFSET_STATES,
     )
-    return PandaShmView(raw=buf, header=header, command=command, states=states)
+    return ShmView(raw=buf, header=header, command=command, states=states)
 
 
 def _unlink_quietly(name: str) -> None:

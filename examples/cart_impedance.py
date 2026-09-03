@@ -20,7 +20,7 @@ Three trajectory modes are supported (selected via ``--mode``):
   so the recorded q is rich in high-freq content).
 
 Prerequisites:
-  * On the NUC: ``python -m panda_control.daemon --config config/robot.yaml``
+  * On the NUC: ``python -m frankatwin.daemon --config config/robot.yaml``
   * On this machine: ``pip install -e .`` (or PYTHONPATH=python)
 
 Examples:
@@ -50,8 +50,8 @@ from pathlib import Path
 
 import numpy as np
 
-from panda_control.config import load_config
-from panda_control.remote_client import RemotePandaClient
+from frankatwin.config import load_config
+from frankatwin.remote_client import FrankaTwinClient
 
 # `gen_excitation_traj` lives under scripts/ which is not a package. Add it to
 # sys.path so we can import `build_step5d_trajectory` without copying code.
@@ -520,7 +520,7 @@ def main() -> int:
     kp_pos = float(args.kp_pos) if args.kp_pos is not None else float(cfg.control.kp_pos)
     kp_ori = float(args.kp_ori) if args.kp_ori is not None else float(cfg.control.kp_ori)
 
-    with RemotePandaClient(cfg) as robot:
+    with FrankaTwinClient(cfg) as robot:
         robot.set_gains(
             kp_pos=kp_pos,
             kp_ori=kp_ori,

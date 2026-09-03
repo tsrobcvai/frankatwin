@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Deploy the panda_control sysid extension into an official IsaacLab checkout.
+# Deploy the frankatwin sysid extension into an official IsaacLab checkout.
 #
 # Copies three things into <IsaacLab>:
 #   1. source/isaaclab_tasks/isaaclab_tasks/direct/franka_sysid/  (gym tasks:
-#      Isaac-UW-Franka-Sysid-v0, Isaac-UW-Franka-Replay-v0; auto-registered
+#      Isaac-FrankaTwin-Sysid-v0, Isaac-FrankaTwin-Replay-v0; auto-registered
 #      by isaaclab_tasks' package scanner)
 #   2. source/isaaclab_assets/data/Robots/Franka/franka_mimic.usd (robot asset)
 #   3. scripts/tools/{sysid_franka_osc,apply_sysid_params,replay_python_csv_sim}.py

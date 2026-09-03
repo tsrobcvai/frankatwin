@@ -41,7 +41,7 @@ from isaaclab.app import AppLauncher
 parser = argparse.ArgumentParser(
     description="Replay a Python-driven low-rate Cartesian trajectory in IsaacLab with ZOH."
 )
-parser.add_argument("--task", type=str, default="Isaac-UW-Franka-Replay-v0")
+parser.add_argument("--task", type=str, default="Isaac-FrankaTwin-Replay-v0")
 parser.add_argument("--num_envs", type=int, default=1)
 parser.add_argument("--real-csv", type=str, required=True,
                     help="Path to the Python-side CSV (from cart_impedance.py --log).")
@@ -52,7 +52,7 @@ parser.add_argument("--out-csv", type=str, default=None,
 parser.add_argument("--out-sidecar", type=str, default=None,
                     help="Output sim sidecar JSON path (default: <real>_sim.json).")
 parser.add_argument("--gain-source", type=str, default="sidecar",
-                    choices=["sidecar", "uw_task"],
+                    choices=["sidecar", "env_cfg"],
                     help="Use gains from real sidecar or Isaac-UW task defaults.")
 parser.add_argument("--warmup-steps", type=int, default=50,
                     help="Number of 1 kHz warmup steps at the initial target.")

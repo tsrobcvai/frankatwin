@@ -16,7 +16,7 @@ from .franka_replay_env_cfg import ReplayCtrlCfg
 
 
 @configclass
-class UWFrankaSysidEnvCfg(DirectRLEnvCfg):
+class FrankaTwinSysidEnvCfg(DirectRLEnvCfg):
     decimation = 1
     episode_length_s = 8.1
     action_space = 0

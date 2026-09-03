@@ -16,8 +16,8 @@ import argparse
 
 import numpy as np
 
-from panda_control.config import load_config
-from panda_control.remote_client import RemotePandaClient
+from frankatwin.config import load_config
+from frankatwin.remote_client import FrankaTwinClient
 
 
 def main() -> None:
@@ -29,7 +29,7 @@ def main() -> None:
     cfg = load_config(args.config)
     q_home = np.asarray(cfg.robot.init_q, dtype=np.float64)
     print(f"moving to home: {q_home}")
-    with RemotePandaClient(cfg) as robot:
+    with FrankaTwinClient(cfg) as robot:
         robot.move_to_q(q_home, speed_factor=args.speed)
     print("done")
 

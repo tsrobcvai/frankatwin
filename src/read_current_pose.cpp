@@ -3,7 +3,7 @@
 // One-shot utility that calls libfranka's `robot.readOnce()`, extracts the
 // end-effector pose via `model.pose(kEndEffector, state)`, and writes a JSON
 // document in the step5b sidecar schema so it can be consumed directly by
-// `panda_control/scripts/gen_excitation_traj.py --base-sidecar <path>`.
+// `frankatwin/scripts/gen_excitation_traj.py --base-sidecar <path>`.
 //
 // Schema (only the keys gen_excitation_traj.py reads are emitted; full
 // step5b-style fields are included verbatim so downstream tooling that

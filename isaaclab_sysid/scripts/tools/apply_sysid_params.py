@@ -29,7 +29,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--real-sidecar", default=None, help="Required with --invoke-replay")
     parser.add_argument("--out-csv", default=None, help="Default: <real>_sim_sysid.csv")
     parser.add_argument("--out-sidecar", default=None, help="Default: <real>_sim_sysid.json")
-    parser.add_argument("--gain-source", default="sidecar", choices=["sidecar", "uw_task"])
+    parser.add_argument("--gain-source", default="sidecar", choices=["sidecar", "env_cfg"])
     parser.add_argument("--control-mode", default="task_impedance", choices=["task_impedance", "osc"])
     parser.add_argument("--warmup-steps", type=int, default=50)
     parser.add_argument("--headless", action="store_true")

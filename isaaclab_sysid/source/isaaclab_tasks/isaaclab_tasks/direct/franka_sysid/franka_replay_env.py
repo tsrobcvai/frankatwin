@@ -13,15 +13,15 @@ from isaaclab.envs import DirectRLEnv
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 
 from . import control as uw_control
-from .franka_replay_env_cfg import UWFrankaReplayEnvCfg
+from .franka_replay_env_cfg import FrankaTwinReplayEnvCfg
 
 
-class UWFrankaReplayEnv(DirectRLEnv):
+class FrankaTwinReplayEnv(DirectRLEnv):
     """Franka-only replay environment for sim2real trajectory matching."""
 
-    cfg: UWFrankaReplayEnvCfg
+    cfg: FrankaTwinReplayEnvCfg
 
-    def __init__(self, cfg: UWFrankaReplayEnvCfg, render_mode: str | None = None, **kwargs):
+    def __init__(self, cfg: FrankaTwinReplayEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
 
         self.pos_threshold = torch.tensor(self.cfg.ctrl.pos_action_threshold, device=self.device).repeat((self.num_envs, 1))

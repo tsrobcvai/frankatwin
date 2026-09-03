@@ -31,8 +31,8 @@ import time
 
 import numpy as np
 
-from panda_control.config import load_config
-from panda_control.remote_client import RemotePandaClient
+from frankatwin.config import load_config
+from frankatwin.remote_client import FrankaTwinClient
 
 RAD2DEG = 180.0 / np.pi
 
@@ -61,7 +61,7 @@ def main() -> None:
     cfg = load_config(args.config)
     q_target = np.asarray(args.q, dtype=np.float64)
 
-    with RemotePandaClient(cfg) as robot:
+    with FrankaTwinClient(cfg) as robot:
         print(f"moving to target: {q_target}")
         robot.move_to_q(q_target, speed_factor=args.speed)
 

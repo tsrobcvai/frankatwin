@@ -5,7 +5,7 @@
 
 """Franka system-identification and replay environments for sim-to-real transfer.
 
-Companion tasks for the `panda_control` real-robot stack. Zero-reward /
+Companion tasks for the `frankatwin` real-robot stack. Zero-reward /
 zero-observation Franka-only envs driven by a 6-DOF task-impedance controller
 that mirrors the real `osc_shm` controller, used to replay real trajectories
 and fit arm dynamics (armature / friction / motor delay) with CMA-ES.
@@ -13,29 +13,29 @@ and fit arm dynamics (armature / friction / motor delay) with CMA-ES.
 
 import gymnasium as gym
 
-from .franka_replay_env import UWFrankaReplayEnv
-from .franka_replay_env_cfg import UWFrankaReplayEnvCfg
-from .franka_sysid_env import UWFrankaSysidEnv
-from .franka_sysid_env_cfg import UWFrankaSysidEnvCfg
+from .franka_replay_env import FrankaTwinReplayEnv
+from .franka_replay_env_cfg import FrankaTwinReplayEnvCfg
+from .franka_sysid_env import FrankaTwinSysidEnv
+from .franka_sysid_env_cfg import FrankaTwinSysidEnvCfg
 
 ##
 # Register Gym environments.
 ##
 
 gym.register(
-    id="Isaac-UW-Franka-Replay-v0",
-    entry_point="isaaclab_tasks.direct.franka_sysid.franka_replay_env:UWFrankaReplayEnv",
+    id="Isaac-FrankaTwin-Replay-v0",
+    entry_point="isaaclab_tasks.direct.franka_sysid.franka_replay_env:FrankaTwinReplayEnv",
     disable_env_checker=True,
     kwargs={
-        "env_cfg_entry_point": UWFrankaReplayEnvCfg,
+        "env_cfg_entry_point": FrankaTwinReplayEnvCfg,
     },
 )
 
 gym.register(
-    id="Isaac-UW-Franka-Sysid-v0",
-    entry_point="isaaclab_tasks.direct.franka_sysid.franka_sysid_env:UWFrankaSysidEnv",
+    id="Isaac-FrankaTwin-Sysid-v0",
+    entry_point="isaaclab_tasks.direct.franka_sysid.franka_sysid_env:FrankaTwinSysidEnv",
     disable_env_checker=True,
     kwargs={
-        "env_cfg_entry_point": UWFrankaSysidEnvCfg,
+        "env_cfg_entry_point": FrankaTwinSysidEnvCfg,
     },
 )

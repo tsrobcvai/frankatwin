@@ -16,38 +16,38 @@
   std::printf("off:%s.%s:%zu\n", #T, #M, offsetof(T, M))
 
 int main() {
-  PRINT_SIZE(PandaShmHeader);
-  PRINT_SIZE(PandaShmCommand);
-  PRINT_SIZE(PandaShmStateFrame);
-  PRINT_SIZE(PandaShm);
+  PRINT_SIZE(ShmHeader);
+  PRINT_SIZE(ShmCommand);
+  PRINT_SIZE(ShmStateFrame);
+  PRINT_SIZE(ShmSegment);
 
-  PRINT_OFFSET(PandaShmHeader, magic);
-  PRINT_OFFSET(PandaShmHeader, version);
-  PRINT_OFFSET(PandaShmHeader, state_frames);
-  PRINT_OFFSET(PandaShmHeader, controller_pid);
-  PRINT_OFFSET(PandaShmHeader, state_head);
+  PRINT_OFFSET(ShmHeader, magic);
+  PRINT_OFFSET(ShmHeader, version);
+  PRINT_OFFSET(ShmHeader, state_frames);
+  PRINT_OFFSET(ShmHeader, controller_pid);
+  PRINT_OFFSET(ShmHeader, state_head);
 
-  PRINT_OFFSET(PandaShmCommand, seq);
-  PRINT_OFFSET(PandaShmCommand, target_pos);
-  PRINT_OFFSET(PandaShmCommand, target_quat);
-  PRINT_OFFSET(PandaShmCommand, kp_pos);
-  PRINT_OFFSET(PandaShmCommand, kp_ori);
-  PRINT_OFFSET(PandaShmCommand, kd_pos);
-  PRINT_OFFSET(PandaShmCommand, kd_ori);
-  PRINT_OFFSET(PandaShmCommand, error_delta_pos);
-  PRINT_OFFSET(PandaShmCommand, error_delta_rot);
-  PRINT_OFFSET(PandaShmCommand, enabled);
+  PRINT_OFFSET(ShmCommand, seq);
+  PRINT_OFFSET(ShmCommand, target_pos);
+  PRINT_OFFSET(ShmCommand, target_quat);
+  PRINT_OFFSET(ShmCommand, kp_pos);
+  PRINT_OFFSET(ShmCommand, kp_ori);
+  PRINT_OFFSET(ShmCommand, kd_pos);
+  PRINT_OFFSET(ShmCommand, kd_ori);
+  PRINT_OFFSET(ShmCommand, error_delta_pos);
+  PRINT_OFFSET(ShmCommand, error_delta_rot);
+  PRINT_OFFSET(ShmCommand, enabled);
 
-  PRINT_OFFSET(PandaShmStateFrame, seq);
-  PRINT_OFFSET(PandaShmStateFrame, timestamp_s);
-  PRINT_OFFSET(PandaShmStateFrame, q);
-  PRINT_OFFSET(PandaShmStateFrame, dq);
-  PRINT_OFFSET(PandaShmStateFrame, ee_pos);
-  PRINT_OFFSET(PandaShmStateFrame, ee_quat);
-  PRINT_OFFSET(PandaShmStateFrame, tau);
-  PRINT_OFFSET(PandaShmStateFrame, ee_linvel);
-  PRINT_OFFSET(PandaShmStateFrame, ee_angvel);
-  PRINT_OFFSET(PandaShmStateFrame, tau_J);
+  PRINT_OFFSET(ShmStateFrame, seq);
+  PRINT_OFFSET(ShmStateFrame, timestamp_s);
+  PRINT_OFFSET(ShmStateFrame, q);
+  PRINT_OFFSET(ShmStateFrame, dq);
+  PRINT_OFFSET(ShmStateFrame, ee_pos);
+  PRINT_OFFSET(ShmStateFrame, ee_quat);
+  PRINT_OFFSET(ShmStateFrame, tau);
+  PRINT_OFFSET(ShmStateFrame, ee_linvel);
+  PRINT_OFFSET(ShmStateFrame, ee_angvel);
+  PRINT_OFFSET(ShmStateFrame, tau_J);
 
   return 0;
 }
