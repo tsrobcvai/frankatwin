@@ -24,6 +24,9 @@ by line, what it logs while running, how to stop it and when to restart it:
 ### Step 2 · Drive the arm from the PC
 
 <kbd>PC</kbd> — three usage examples, from a one-shot move to a closed-loop policy.
+Each one says what the arm will do before you run it. Examples 2 and 3 run under
+impedance control (the arm is compliant — you can push it and it springs back);
+Example 1 is stiff position control, see its safety note.
 
 #### Example 1 · Reset the arm
 
@@ -31,6 +34,19 @@ Script: [`examples/move_to.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.
 
 One-shot position control (`move_to`). Home by default; prints the pose
 `osc_shm` holds afterwards.
+
+**What the robot does.** `osc_shm` stops; libfranka drives all seven joints to
+the target along a min-jerk profile (for `--target-joints` / home the EE sweeps
+an arc, *not* a straight line; for `--target-ee` it follows a straight 5th-order
+path), at `--speed` × the joint speed limits — the default 0.2 takes 3–5 s from
+a typical pose. Then `osc_shm` restarts and holds the new pose compliantly.
+
+> **Safety.** This is stiff position control: the arm moves through whatever
+> lies between its current pose and the target, and does not yield on contact.
+> Before every move: clear the workspace of objects and people, check that the
+> target is reachable and that the path does not cross the table or fixtures,
+> and hold the user stop in your hand for the whole motion. Use `--speed 0.1`
+> the first time you try a new target.
 
 ```bash
 python examples/move_to.py                                                # home = robot.init_q
@@ -50,6 +66,13 @@ python examples/move_to.py --target-ee 0.4 0.0 0.3  0 1 0 0 --duration 5
 Script: [`examples/cart_impedance.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/cart_impedance.py)
 
 Continuous control (`osc_shm`) following a scripted EE reference at `--rate` Hz.
+
+**What the robot does.** Starting from wherever it is, the EE oscillates ±5 cm
+along z at 0.5 Hz for 4 s (`sine`), then returns to the start pose. `multiband`
+and `chirp` are the sysid excitations: 6-DOF motion of up to ±10–15 cm and
+±0.5 rad for 8–12 s with peak speeds around 0.5 m/s and visibly fast wrist
+rotation — start them from a pose with at least 30 cm of free space in every
+direction. Under impedance control the arm is compliant throughout.
 Logs a per-tick CSV + sidecar and prints tracking RMS and torque headroom. This
 is also the sysid data collector.
 
@@ -81,6 +104,12 @@ Modes:
 #### Example 3 · Run a policy closed-loop
 
 Script: [`examples/policy_loop.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/policy_loop.py)
+
+**What the robot does.** With the stand-in policy the EE rises 10 cm over 2 s,
+descends 10 cm over the next 2 s, and repeats four times (16 s), then holds
+where it ends. With your own policy it does whatever the actions command — bound
+them with `--pos-scale` / `--rot-scale`, and keep the user stop in hand on the
+first runs.
 
 Continuous control driven by a policy at a fixed rate. Ships with a stand-in
 policy that moves the EE up 10 cm and back down every 4 s for 16 s; swap in
