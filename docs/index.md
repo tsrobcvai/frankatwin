@@ -50,13 +50,27 @@ flowchart LR
 
 Start with the [Quick start](quickstart.md) — every command tagged
 <kbd>NUC</kbd> / <kbd>PC</kbd> / <kbd>SIM</kbd> — then [Usage](usage.md) for
-the scripts and the client API. The full [Guide](guide/index.md) and the
-[Reference](reference/index.md) (API from docstrings, contributing, changelog)
-are in the navigation bar.
+the scripts and the client API. The full guide and the reference (API from
+docstrings, contributing, changelog) are in the sidebar.
 
 ```{toctree}
 :hidden:
+:caption: Guide
 
-guide/index
-reference/index
+quickstart
+installation
+usage
+architecture
+sysid
+data_format
+troubleshooting
+```
+
+```{toctree}
+:hidden:
+:caption: Reference
+
+api
+contributing
+changelog
 ```
