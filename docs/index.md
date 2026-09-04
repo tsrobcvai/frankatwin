@@ -19,8 +19,7 @@ range.
   impedance law with the same gains, damping rule and torque slew limit — the
   control scheme used by sim-to-real work such as
   [IndustReal](https://arxiv.org/abs/2305.17110) and
-  [OmniReset](https://weirdlabuw.github.io/omnireset/), so their pipelines can
-  be reproduced on a Franka with this stack.
+  [OmniReset](https://weirdlabuw.github.io/omnireset/).
 - **System identification that closes the loop.** A CMA-ES fit of 29
   parameters (armature, static / dynamic / viscous friction, motor delay) drives
   the sim replay of real excitation runs — joint-position MSE 4.8 × 10⁻⁴ rad²
