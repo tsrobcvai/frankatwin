@@ -11,14 +11,19 @@
 
 ---
 
-FrankaTwin is a 1 kHz task impedance controller for the Franka Research 3 / Panda
-(C++ on libfranka, Python client over ZMQ) with a system-identification pipeline
-that fits the arm's joint dynamics in IsaacLab. Real and simulated controllers
-share one control law — the task-space impedance used by sim-to-real work such as
-[IndustReal](https://arxiv.org/abs/2305.17110) and
-[OmniReset](https://weirdlabuw.github.io/omnireset/) — and the identified
-dynamics track the real arm to a joint-position MSE of 4.8 × 10⁻⁴ rad² on a
-held-out 6-DOF chirp.
+**FrankaTwin aligns the Franka Research 3 / Panda between simulation and reality.**
+
+- **One task impedance controller, real and simulated.** The same 1 kHz
+  task-space impedance law on the robot (C++, libfranka) and in IsaacLab — same
+  gains, damping and torque limits.
+- **A reliable system-identification pipeline for Isaac Sim.** Fits the arm's
+  joint dynamics from real excitation runs; the identified sim tracks the real
+  arm to a joint-position MSE of 4.8 × 10⁻⁴ rad² (1–3 % of joint range) on
+  held-out motions.
+
+Built for training and evaluating policies that transfer — the controller is
+the one sim-to-real work such as [IndustReal](https://arxiv.org/abs/2305.17110)
+and [OmniReset](https://weirdlabuw.github.io/omnireset/) builds on.
 
 ## Documentation
 
