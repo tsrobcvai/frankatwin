@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use FrankaTwin in your research, please cite it as below."
-title: "FrankaTwin: a sim-to-real aligned 1 kHz Cartesian impedance controller for the Franka Research 3"
+title: "FrankaTwin: a sim-to-real aligned 1 kHz task impedance controller for the Franka Research 3"
 type: software
 authors:
   - family-names: Sun
