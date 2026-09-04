@@ -20,11 +20,15 @@ the twin's dynamics match the real arm to within 1–3 % of joint motion range.
 Most Franka stacks give you a controller. FrankaTwin gives you a controller **and a
 proof that the simulated arm behaves like the real one under it**:
 
-- **One control law, two implementations that are kept identical.**
-  `src/osc_shm.cpp` (real, libfranka, 1 kHz) and
-  `isaaclab_sysid/.../control.py` (IsaacLab, PhysX, 1 kHz) implement the same
-  Jacobian-transpose task impedance — no null-space term, no apparent-mass
-  projection, same gains, same damping rule, same torque slew limit.
+- **Task impedance control, identical in sim and on the robot.** The controller
+  is the task-space impedance law that sim-to-real work such as
+  [IndustReal](https://arxiv.org/abs/2305.17110) and
+  [OmniReset](https://github.com/uw-lab/omnireset) trains policies on: a
+  Cartesian PD wrench mapped through Jᵀ, no null-space term, no apparent-mass
+  projection. `src/osc_shm.cpp` (libfranka, 1 kHz) and the IsaacLab controller
+  in `isaaclab_sysid/` are the same law with the same gains, damping rule and
+  torque slew limit, so a policy runs on the arm through the controller it was
+  trained with.
 - **System identification that closes the loop.** A CMA-ES fit of 29 parameters
   (per-joint armature, static / dynamic / viscous friction, motor delay) drives the
   sim replay of real excitation runs. Validated on a held-out chirp:
