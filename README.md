@@ -49,14 +49,28 @@ proof that the simulated arm behaves like the real one under it**:
 
 ## Architecture
 
-```
-      PC                                  NUC (RT kernel)                       FR3 / FCI
- ┌───────────┐                    ┌──────────────────────────┐              ┌──────────┐
- │ your code │  ZMQ REQ  5555 ──▶ │ frankatwin.daemon        │              │          │
- │ Franka-   │  ZMQ SUB  5556 ◀── │   ├─ POSIX shm           │◀─ 1 kHz ────▶│  robot   │
- │ TwinClient│   ≤ 50 Hz          │   ├─ osc_shm  (C++ 1kHz) │   libfranka  │          │
- └───────────┘                    │   └─ move_to  (C++ reset)│              └──────────┘
-                                  └──────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph PC["PC · your workstation"]
+        C["FrankaTwinClient<br/>examples/*.py"]
+    end
+    subgraph NUC["NUC · PREEMPT_RT kernel"]
+        D["frankatwin.daemon"]
+        S[("POSIX shm<br/>/frankatwin_osc")]
+        O["osc_shm<br/>C++ · 1 kHz task impedance"]
+        M["move_to<br/>C++ · one-shot position control"]
+        D --- S
+        S --- O
+        D -. "stop / start" .- O
+        D -. "reset" .- M
+    end
+    subgraph ROBOT["Franka FR3"]
+        R["FCI"]
+    end
+    C -- "ZMQ REQ · 5555 · ≤ 50 Hz" --> D
+    D -- "ZMQ PUB · 5556 · 100 Hz" --> C
+    O <== "libfranka · 1 kHz" ==> R
+    M <== "libfranka" ==> R
 ```
 
 Two controllers run on the NUC; the daemon serialises them (libfranka allows one
