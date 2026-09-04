@@ -56,16 +56,16 @@ html_theme_options = {
     "navbar_end": ["theme-switcher", "navbar-icon-links"],
     "show_toc_level": 2,
     "navigation_with_keys": True,
+    # Left sidebar: the current section's pages with their headings, collapsible.
+    "navbar_align": "left",
+    "show_nav_level": 1,
+    "navigation_depth": 3,
+    "collapse_navigation": False,
+    "secondary_sidebar_items": ["page-toc"],
     "footer_start": ["copyright"],
     "footer_end": ["last-updated"],
-    "icon_links": [
-        {
-            "name": "GitHub",
-            "url": "https://github.com/tsrobcvai/frankatwin",
-            "icon": "fa-brands fa-github",
-        }
-    ],
 }
+html_sidebars = {"index": []}                 # landing page: no sidebar
 html_context = {
     "github_user": "tsrobcvai",
     "github_repo": "frankatwin",

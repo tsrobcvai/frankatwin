@@ -154,7 +154,20 @@ Per-joint RMS on the training multiband run [mrad]:
 | translation-only fit | 88 | 25 | 89 | 38 | 30 | 53 | 64 |
 | **+ rotation (v3)** | **39** | **13** | **38** | **16** | **10** | **19** | **27** |
 
-Fitted values are in the README. Two things worth knowing about them:
+Fitted parameters (`motor_delay_steps = 1`, i.e. one 1 ms tick):
+
+| joint | armature [kg·m²] | μ_static [N·m] | μ_dynamic [N·m] | μ_viscous [N·m·s/rad] |
+|---|---:|---:|---:|---:|
+| j1 | 0.382 | 0.73 | 0.29 | 3.68 |
+| j2 | 0.159 | 1.17 | 0.90 | 2.29 |
+| j3 | 0.157 | 0.59 | 0.34 | 2.87 |
+| j4 | 0.174 | 1.03 | 0.81 | 2.37 |
+| j5 | 0.239 | 1.63 | 0.92 | 3.30 |
+| j6 | 0.180 | 1.14 | 0.58 | 0.79 |
+| j7 | 0.060 | 1.06 | 0.50 | 1.94 |
+
+These are for *our* FR3 with a Franka Hand; friction varies unit to unit, so
+run the fit on yours. Two things worth knowing about them:
 
 - μ_static came *down* and μ_viscous *up* relative to translation-only fits —
   the extra joint motion lets CMA-ES separate stiction from damping instead of

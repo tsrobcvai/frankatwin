@@ -48,28 +48,15 @@ flowchart LR
     M <== "libfranka" ==> R
 ```
 
-Start with [Installation](installation.md), then [Usage](usage.md) for the
-scripts and the client API. The quick start with every command tagged
-<kbd>NUC</kbd> / <kbd>PC</kbd> / <kbd>SIM</kbd> is in the
-[README on GitHub](https://github.com/tsrobcvai/frankatwin#quick-start).
+Start with the [Quick start](quickstart.md) — every command tagged
+<kbd>NUC</kbd> / <kbd>PC</kbd> / <kbd>SIM</kbd> — then [Usage](usage.md) for
+the scripts and the client API. The full [Guide](guide/index.md) and the
+[Reference](reference/index.md) (API from docstrings, contributing, changelog)
+are in the navigation bar.
 
 ```{toctree}
-:maxdepth: 2
-:caption: Guide
+:hidden:
 
-installation
-usage
-architecture
-sysid
-data_format
-troubleshooting
-```
-
-```{toctree}
-:maxdepth: 1
-:caption: Reference
-
-api
-contributing
-changelog
+guide/index
+reference/index
 ```
