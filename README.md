@@ -23,7 +23,7 @@ proof that the simulated arm behaves like the real one under it**:
 - **Task impedance control, identical in sim and on the robot.** The controller
   is the task-space impedance law that sim-to-real work such as
   [IndustReal](https://arxiv.org/abs/2305.17110) and
-  [OmniReset](https://github.com/uw-lab/omnireset) trains policies on: a
+  [OmniReset](https://weirdlabuw.github.io/omnireset/) trains policies on: a
   Cartesian PD wrench mapped through Jᵀ, no null-space term, no apparent-mass
   projection. `src/osc_shm.cpp` (libfranka, 1 kHz) and the IsaacLab controller
   in `isaaclab_sysid/` are the same law with the same gains, damping rule and
