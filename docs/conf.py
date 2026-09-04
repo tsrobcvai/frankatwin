@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.abspath("../python"))  # autodoc imports frankatwin f
 project = "FrankaTwin"
 author = "Tao Sun, Patrick Yin"
 copyright = f"{date.today().year}, {author}"
+version = "0.2"
 release = "0.2.0"
 
 extensions = [
@@ -65,7 +66,7 @@ html_theme_options = {
     "max_navbar_depth": 3,
     "show_toc_level": 2,           # right-hand "On this page"
     "navigation_with_keys": True,
-    "logo": {"text": "FrankaTwin"},
+    "logo": {"text": "FrankaTwin v0.2"},
 }
 copybutton_prompt_text = r"\$ |>>> "
 copybutton_prompt_is_regexp = True

@@ -74,7 +74,9 @@ Design notes:
 
 <kbd>NUC</kbd> = real-time PC on the robot, <kbd>PC</kbd> = your workstation, <kbd>SIM</kbd> = machine with IsaacLab (may be the PC).
 
-### 0. One-time IsaacLab setup <kbd>SIM</kbd>
+### 0. One-time IsaacLab setup
+
+<kbd>SIM</kbd>
 
 ```bash
 ./isaaclab_sysid/install_into_isaaclab.sh /path/to/IsaacLab
@@ -87,7 +89,9 @@ Installs `Isaac-FrankaTwin-Sysid-v0` / `Isaac-FrankaTwin-Replay-v0`
 scripts under `scripts/tools/`. Always launch the scripts from the IsaacLab root —
 the task configs reference the USD relative to it.
 
-### 1. Collect <kbd>PC</kbd> (daemon running on the NUC)
+### 1. Collect
+
+<kbd>PC</kbd> with the daemon running on the NUC.
 
 ```bash
 python examples/move_to.py
@@ -102,7 +106,9 @@ python examples/cart_impedance.py --mode multiband --kp-pos 200 --kp-ori 20 \
 Check the printed torque headroom (`max |tau_J| … (limits 87/…/12)`) and that
 `abort.name == "none"` in the sidecar.
 
-### 2. Fit <kbd>SIM</kbd>
+### 2. Fit
+
+<kbd>SIM</kbd>
 
 ```bash
 cd /path/to/IsaacLab
@@ -112,7 +118,9 @@ python scripts/tools/sysid_franka_osc.py --headless --num_envs 128 --max_iter 40
     --traj_weights 1.0,1.5
 ```
 
-### 3. Validate <kbd>SIM</kbd>
+### 3. Validate
+
+<kbd>SIM</kbd>
 
 Replay a run — ideally one **not** used in the fit — with the fitted parameters:
 
@@ -125,7 +133,9 @@ python scripts/tools/apply_sysid_params.py \
 
 `--print-snippet` instead prints the actuator config overrides for your own task.
 
-### 4. Compare <kbd>PC</kbd> (needs `pip install -e ".[analysis]"`)
+### 4. Compare
+
+<kbd>PC</kbd>, needs `pip install -e ".[analysis]"`.
 
 ```bash
 python scripts/compare_sim_real.py --real-csv /data/heldout.csv \
