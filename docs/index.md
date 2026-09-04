@@ -1,5 +1,11 @@
 # FrankaTwin
 
+```{image} images/logo.svg
+:width: 560px
+:align: center
+:alt: FrankaTwin — a panda lying across the sim | real split
+```
+
 A 1 kHz task impedance controller for the **Franka Research 3 / Panda** whose
 simulation twin is *the same controller* — plus the system identification that
 makes the twin's dynamics match the real arm to within 1–3 % of joint motion
