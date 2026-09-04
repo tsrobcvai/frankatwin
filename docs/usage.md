@@ -2,9 +2,9 @@
 
 ## Basic control
 
-Four steps: bring the controller up on the NUC, then drive the arm from the PC
-with three scripts (each takes `--config robot.yaml`; the two controllers they
-use are described in [Architecture](architecture.md)).
+Two steps: bring the controller up on the NUC, then drive the arm from the PC.
+Step 2 shows three usage examples (each script takes `--config robot.yaml`; the
+two controllers they use are described in [Architecture](architecture.md)).
 
 ### Step 1 · Start the daemon
 
@@ -21,9 +21,11 @@ then `daemon ready`. All flags (`--config`, payload overrides), the banner line
 by line, what it logs while running, how to stop it and when to restart it:
 [Daemon](daemon.md).
 
-### Step 2 · Reset the arm
+### Step 2 · Drive the arm from the PC
 
-<kbd>PC</kbd> · script: [`examples/move_to.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/move_to.py)
+<kbd>PC</kbd> — three usage examples, from a one-shot move to a closed-loop policy.
+
+#### Example 1 · Reset the arm — [`examples/move_to.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/move_to.py)
 
 One-shot position control (`move_to`). Home by default; prints the pose
 `osc_shm` holds afterwards.
@@ -41,9 +43,7 @@ python examples/move_to.py --target-ee 0.4 0.0 0.3  0 1 0 0 --duration 5
 | `--speed` | joint move: speed factor (0, 0.5]; default `reset.joint_speed_factor` |
 | `--duration` | EE move: seconds in [1.5, 20]; default `reset.pose_duration` |
 
-### Step 3 · Track a scripted reference
-
-<kbd>PC</kbd> · script: [`examples/cart_impedance.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/cart_impedance.py)
+#### Example 2 · Track a scripted reference — [`examples/cart_impedance.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/cart_impedance.py)
 
 Continuous control (`osc_shm`) following a scripted EE reference at `--rate` Hz.
 Logs a per-tick CSV + sidecar and prints tracking RMS and torque headroom. This
@@ -74,9 +74,7 @@ Modes:
 | `multiband` | SysID v3: two-band sinusoids on x/y/z + yaw/roll (`frankatwin.excitation.multiband`) | 12 s | `--kp-pos 200 --kp-ori 20` |
 | `chirp` | SysID v4: 6-DOF linear chirp `--f0 0.1 → --f1 0.7` Hz, π/3 phase-staggered (`frankatwin.excitation.chirp`) | 8 s | `--kp-pos 500 --kp-ori 30 --err-delta-pos 0.15 --err-delta-rot 0.80` |
 
-### Step 4 · Run a policy closed-loop
-
-<kbd>PC</kbd> · script: [`examples/policy_loop.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/policy_loop.py)
+#### Example 3 · Run a policy closed-loop — [`examples/policy_loop.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/policy_loop.py)
 
 Continuous control driven by a policy at a fixed rate. Ships with a stand-in
 policy that moves the EE up 10 cm and back down every 4 s for 16 s; swap in
