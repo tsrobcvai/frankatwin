@@ -70,6 +70,7 @@ troubleshooting
 :hidden:
 :caption: Reference
 
+interfaces
 api
 contributing
 changelog

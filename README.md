@@ -29,7 +29,8 @@ Everything lives in [`docs/`](docs/):
 [Architecture](docs/architecture.md) ·
 [System identification](docs/sysid.md) ·
 [Data format](docs/data_format.md) ·
-[Troubleshooting](docs/troubleshooting.md)
+[Troubleshooting](docs/troubleshooting.md) ·
+[Interfaces](docs/interfaces.md)
 
 Browse it as a site with `pip install -e ".[docs]" && sphinx-autobuild docs docs/_build/html`
 (includes the API reference generated from docstrings).
