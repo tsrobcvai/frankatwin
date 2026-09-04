@@ -1,13 +1,45 @@
 # Installation
 
-FrankaTwin runs as two halves:
+Three machines can be involved. Every command below is tagged with where it runs:
 
-| where | what | needs |
-|---|---|---|
-| **NUC** (real-time PC wired to the robot) | `osc_shm`, `move_to` (C++), `frankatwin.daemon` (Python) | RT kernel, libfranka, Eigen3, CMake ≥ 3.10, Python ≥ 3.9 |
-| **PC** (your workstation) | `FrankaTwinClient` + examples/scripts (Python) | Python ≥ 3.9, network route to the NUC |
+| tag | machine | runs | software (tested) |
+|---|---|---|---|
+| — | **Robot** | — | Franka Research 3 (system ≥ 5.7) or Panda, Franka Hand attached, FCI enabled in Desk |
+| <kbd>NUC</kbd> | real-time PC wired to the robot (FCI) | `python -m frankatwin.daemon` → `osc_shm` / `move_to` | Ubuntu 20.04 / 22.04 with `PREEMPT_RT` kernel · libfranka 0.13–0.15; ≥ 0.14 needs Pinocchio, handled by CMake · Eigen3, CMake ≥ 3.10 · Python ≥ 3.9 |
+| <kbd>PC</kbd> | your workstation | `examples/*.py`, analysis scripts | Python ≥ 3.9 (numpy, pyyaml, pyzmq; pandas + matplotlib for the analysis scripts) |
+| <kbd>SIM</kbd> | any GPU box with IsaacLab (can be the PC) | sysid fit, sim replay | IsaacLab 2.3.0 (≥ 2.3 for the dynamic/viscous joint-friction API) · `cmaes` |
 
-If you run everything on one machine, install both halves there.
+## At a glance
+
+The whole installation in two blocks; the sections below explain each line.
+
+Full prerequisites (RT kernel, FCI, libfranka ≥ 0.14 + Pinocchio, conda caveats):
+[docs/installation.md](installation.md).
+
+<kbd>NUC</kbd> build the 1 kHz controller, install the Python side, start the daemon
+
+```bash
+git clone https://github.com/tsrobcvai/frankatwin && cd frankatwin
+cmake -S . -B build && cmake --build build -j      # libfranka + Eigen3 (+ Pinocchio for libfranka >= 0.14)
+pip install -e .
+python -m frankatwin.doctor        # RT kernel, rtprio, binaries, libfranka/pinocchio, FCI link, other FCI clients
+python -m frankatwin.daemon        # binds 5555 (commands) / 5556 (state), launches osc_shm
+```
+
+<kbd>PC</kbd> Python only
+
+```bash
+git clone https://github.com/tsrobcvai/frankatwin && cd frankatwin
+pip install -e ".[analysis]"          # analysis: pandas + matplotlib for the compare/plot scripts
+vim config/robot.yaml                 # network.nuc_host = the NUC's address as seen from here
+python -m frankatwin.doctor                     # daemon reachable? state stream flowing?
+```
+
+<kbd>SIM</kbd> only if you will run the sysid loop — see [System identification](sysid.md).
+
+`config/robot.yaml` is shared by all sides (network, robot IP, gains, safety
+clamps, collision thresholds, payload). Override with `--config` or
+`$FRANKATWIN_CONFIG`.
 
 ## 1. NUC prerequisites
 
