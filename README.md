@@ -73,64 +73,88 @@ the safety chain and the reasoning behind each default.
 
 ## Quick start
 
-Full instructions, including the RT-kernel/FCI prerequisites and the
-libfranka ≥ 0.14 / Pinocchio situation: [docs/installation.md](docs/installation.md).
+Four steps: install on both machines, move the arm from Python, run the sysid
+loop, and know which interface to reach for. Each step links to the full page in
+[docs/](docs/).
 
-**NUC** (builds the C++ binaries, runs the daemon):
+### 1. Installation
+
+Prerequisites on the **NUC**: a `PREEMPT_RT` kernel, FCI enabled in Desk, libfranka
+(+ Pinocchio for libfranka ≥ 0.14), Eigen3, CMake ≥ 3.10. The **PC** only needs
+Python ≥ 3.9. Details, including the conda and Pinocchio caveats:
+[docs/installation.md](docs/installation.md).
 
 ```bash
+# NUC — build the 1 kHz controller, install the Python side, start the daemon
 git clone https://github.com/tsrobcvai/frankatwin && cd frankatwin
-cmake -S . -B build && cmake --build build -j       # needs libfranka + Eigen3
+cmake -S . -B build && cmake --build build -j
 pip install -e .
-frankatwin-doctor                                   # RT kernel, binaries, libfranka, FCI link
-frankatwin-daemon
+frankatwin-doctor        # RT kernel, rtprio, binaries, libfranka/pinocchio, FCI link, other FCI clients
+frankatwin-daemon        # binds 5555 (commands) / 5556 (state), launches osc_shm
+
+# PC — Python only
+git clone https://github.com/tsrobcvai/frankatwin && cd frankatwin
+pip install -e ".[analysis]"          # analysis: pandas + matplotlib for the compare/plot scripts
+vim config/robot.yaml                 # network.nuc_host
+frankatwin-doctor                     # daemon reachable? state stream flowing?
 ```
 
-**PC** (Python only):
+`config/robot.yaml` is shared by both sides (network, robot IP, gains, safety
+clamps, collision thresholds, payload). Override with `--config` or
+`$FRANKATWIN_CONFIG`.
+
+### 2. Basic control
+
+Two motions are available: a blocking **joint-space reset** (`move_to`,
+libfranka min-jerk) and streaming **Cartesian impedance targets** (`osc_shm`,
+1 kHz). Try them from the shell first:
 
 ```bash
-git clone https://github.com/tsrobcvai/frankatwin && cd frankatwin
-pip install -e ".[analysis]"
-# edit config/robot.yaml: network.nuc_host
-frankatwin-doctor        # daemon reachable? state stream flowing?
-frankatwin-reset         # joint-space reset via move_to
-frankatwin-excite        # 4 s z-sine around the current pose, prints tracking RMS
+frankatwin-reset                       # move_to -> robot.init_q, osc_shm resumes anchored there
+frankatwin-excite                      # 4 s, ±5 cm z-sine at 50 Hz; prints tracking RMS + torque headroom
+python examples/lift_ee.py --height 0.02
 ```
 
-`pip install -e .` also gives you `frankatwin-daemon`, `frankatwin-reset`,
-`frankatwin-doctor`, `frankatwin-excite` (excitation runner / logger) and
-`frankatwin-gen-{multiband,chirp}` (reference generators).
-
-**From your own code:**
+Then from Python — this is the whole API you need for a policy loop:
 
 ```python
 import numpy as np, time
 from frankatwin import FrankaTwinClient, load_config
 
-with FrankaTwinClient(load_config()) as robot:
-    s = robot.wait_for_state()                    # q, dq, ee_pos, ee_quat (wxyz), tau, tau_J, ...
-    anchor_pos, anchor_quat = s.ee_pos, s.ee_quat
-    robot.set_gains(kp_pos=500, kp_ori=30)        # Kd defaults to 2*sqrt(Kp)
-    for k in range(100):                          # 2 s, 50 Hz
-        robot.set_ee_target(anchor_pos + [0, 0, 0.05 * np.sin(2 * np.pi * k / 50)], anchor_quat)
+cfg = load_config()
+with FrankaTwinClient(cfg) as robot:
+    robot.move_to_q(cfg.robot.init_q)                 # blocking reset (optional)
+    s = robot.wait_for_state()                        # RobotState: q, dq, ee_pos, ee_quat (wxyz), tau, tau_J, ...
+    p0, q0 = s.ee_pos.copy(), s.ee_quat.copy()
+
+    robot.set_gains(kp_pos=500, kp_ori=30,            # Kd = 2*sqrt(Kp) unless given
+                    error_delta_pos=0.15, error_delta_rot=0.80)
+    for k in range(200):                              # 4 s at 50 Hz
+        target = p0 + [0, 0, 0.05 * np.sin(2 * np.pi * 0.5 * k / 50)]
+        robot.set_ee_target(target, q0)               # non-blocking; held until the next call
+        s = robot.get_state()                         # cached 100 Hz stream, non-blocking
         time.sleep(0.02)
+    robot.set_ee_target(p0, q0)
 ```
 
-`set_ee_target` is non-blocking: it writes a seqlock-guarded frame to shm and
-returns; `osc_shm` picks it up on the next 1 kHz tick. See
-[docs/usage.md](docs/usage.md) for the full API and configuration reference.
+Rules of thumb: targets are absolute poses in the base frame; a big jump is a
+torque step (the slew limiter keeps it from tripping a reflex, but ramp anyway);
+gains and clamps persist across `move_to_*` and controller restarts; quaternions
+are **wxyz** on the API. Control law, safety chain and timing:
+[docs/architecture.md](docs/architecture.md); every method and config key:
+[docs/usage.md](docs/usage.md).
 
-## System identification
+### 3. System identification
 
-The sysid workflow is four commands ([docs/sysid.md](docs/sysid.md) has the details,
-the excitation design and the parameter bounds):
+Four commands take you from a real excitation run to a PhysX arm that tracks it.
+Excitation design, parameter bounds and the loss: [docs/sysid.md](docs/sysid.md).
 
 ```bash
 # 1. Excite the real arm with a 6-DOF chirp and log at 50 Hz (PC)
 frankatwin-excite --mode chirp --kp-pos 500 --kp-ori 30 \
     --err-delta-pos 0.15 --err-delta-rot 0.80 --log data/chirp_$(date +%Y%m%d_%H%M%S).csv
 
-# 2. Deploy the IsaacLab extension once, then fit (IsaacLab env)
+# 2. Deploy the IsaacLab extension once, then fit 29 parameters with CMA-ES (IsaacLab env)
 ./isaaclab_sysid/install_into_isaaclab.sh /path/to/IsaacLab && pip install cmaes
 cd /path/to/IsaacLab
 python scripts/tools/sysid_franka_osc.py --headless --num_envs 128 --max_iter 40 \
@@ -140,11 +164,34 @@ python scripts/tools/sysid_franka_osc.py --headless --num_envs 128 --max_iter 40
 python scripts/tools/apply_sysid_params.py --best logs/sysid_franka/<ts>/sysid_best_params.json \
     --invoke-replay --real-csv /path/to/chirp.csv --real-sidecar /path/to/chirp.json
 
-# 4. Overlay (frankatwin repo)
+# 4. Overlay real vs sim (frankatwin repo)
 python scripts/compare_sim_real.py --real-csv chirp.csv --sim-csv chirp_sim_sysid.csv --save
 ```
 
-### Results
+The fitted `sysid_best_params.json` drops into any IsaacLab Franka task via
+`apply_sysid_params.py --print-snippet` (actuator armature / friction / delay
+overrides). Results on our arm are in [Results](#results).
+
+### 4. Interfaces
+
+Everything you can talk to, from highest to lowest level:
+
+| interface | what | reference |
+|---|---|---|
+| **Console scripts** | `frankatwin-daemon`, `frankatwin-doctor`, `frankatwin-reset`, `frankatwin-excite`, `frankatwin-gen-{multiband,chirp}` | [usage.md → Command-line tools](docs/usage.md#command-line-tools) |
+| **Python client** `FrankaTwinClient` | `set_ee_target(pos, quat_wxyz)`, `set_gains(kp_pos, kp_ori, kd_pos, kd_ori, error_delta_pos, error_delta_rot)`, `enable()` / `disable()`, `get_state(fresh=False)`, `get_state_history()`, `wait_for_state()`, `move_to_q(q, speed_factor)`, `move_to_pose(pos, quat, duration)`. `LocalController` has the same methods for in-process use on the NUC. | [usage.md → Client API](docs/usage.md#client-api-pc) |
+| **`RobotState`** | `timestamp_s, q[7], dq[7], ee_pos[3], ee_quat[4] (wxyz), ee_linvel[3], ee_angvel[3], tau[7]` (commanded), `tau_J[7]` (measured, gravity incl.), `seq` | [usage.md](docs/usage.md#client-api-pc) |
+| **Daemon protocol** (any language) | JSON over ZMQ. REQ/REP on `cmd_port`: `{"op": "ping" \| "set_ee_target" \| "set_gains" \| "enable" \| "disable" \| "get_state" \| "move_to_q" \| "move_to_pose" \| "shutdown", ...}` → `{"ok": true, ...}`; PUB on `state_port`: one `RobotState` JSON at 100 Hz | [architecture.md → Daemon](docs/architecture.md#daemon-behaviour) |
+| **Shared memory** (same-host, any language) | `/frankatwin_osc`: `ShmCommand` (seqlock: target, gains, clamps, enabled) and a 1024-frame `ShmStateFrame` ring at 1 kHz. Fixed ABI in `src/shm_layout.h` / `frankatwin.shm_layout`, pinned by `tests/test_shm_layout.py` | [architecture.md → Shared memory](docs/architecture.md#shared-memory) |
+| **C++ binaries** | `osc_shm <ip> [--shm-name] [--max-torque-rate] [--load-mass/--load-com/--load-inertia] [--collision-torque/--collision-cartesian] [--no-coriolis] [--duration]`; `move_to <ip> --q q1..q7 [--speed-factor]` or `--pose x y z qw qx qy qz [--duration]`; `read_current_q`, `read_current_pose`, `read_load` | `src/*.cpp` headers |
+| **Config** `config/robot.yaml` | `network`, `robot`, `control` (gains, clamps), `collision`, `paths`, `reset`, `load` | [usage.md → Configuration reference](docs/usage.md#configuration-reference-configrobotyaml) |
+| **Data files** | Run CSV + sidecar JSON, sim replay CSV, `sysid_best_params.json` | [docs/data_format.md](docs/data_format.md) |
+| **IsaacLab tasks** | `Isaac-FrankaTwin-Replay-v0`, `Isaac-FrankaTwin-Sysid-v0` (task-impedance controller mirroring `osc_shm`), `franka_mimic.usd` | [docs/sysid.md](docs/sysid.md) |
+
+Not exposed (yet): gripper control, joint-space impedance, relative-pose
+targets, ROS. Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Results
 
 Parameters fitted on three multi-band runs (v3), validated on a **held-out** 6-DOF chirp (v4):
 
