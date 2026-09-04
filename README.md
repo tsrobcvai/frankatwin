@@ -124,19 +124,25 @@ clamps, collision thresholds, payload). Override with `--config` or
 
 ### 2. Basic control
 
-<kbd>NUC</kbd> start the daemon. It launches `osc_shm` (the arm now holds its
-current pose under impedance control) and keeps it alive; leave this terminal open.
+Four steps: bring the controller up on the NUC, then drive the arm from the PC
+with three scripts (each takes `--config robot.yaml`; the two controllers they
+use are described in [Architecture](#architecture)).
+
+#### Step 1 · <kbd>NUC</kbd> Start the daemon
 
 ```bash
-python -m frankatwin.daemon -v     # banner: RT = SCHED_FIFO, tau_rate = 800 Nm/s, load, collision … "daemon ready"
+python -m frankatwin.daemon -v
 ```
 
-<kbd>PC</kbd> everything else happens here, through three scripts (each takes
-`--config robot.yaml`; the controllers they drive are described in
-[Architecture](#architecture)):
+It launches `osc_shm` — the arm now holds its current pose under impedance
+control — and keeps it alive. Leave the terminal open; the banner should show
+`RT = SCHED_FIFO`, `tau_rate = 800 Nm/s`, the payload and collision settings,
+then `daemon ready`.
 
-**[`examples/move_to.py`](examples/move_to.py)** — one-shot position control
-(`move_to`). Home by default; prints the pose `osc_shm` holds afterwards.
+#### Step 2 · <kbd>PC</kbd> Reset the arm — [`examples/move_to.py`](examples/move_to.py)
+
+One-shot position control (`move_to`). Home by default; prints the pose
+`osc_shm` holds afterwards.
 
 ```bash
 python examples/move_to.py                                                # home = robot.init_q
@@ -151,10 +157,11 @@ python examples/move_to.py --target-ee 0.4 0.0 0.3  0 1 0 0 --duration 5
 | `--speed` | joint move: speed factor (0, 0.5]; default `reset.joint_speed_factor` |
 | `--duration` | EE move: seconds in [1.5, 20]; default `reset.pose_duration` |
 
-**[`examples/cart_impedance.py`](examples/cart_impedance.py)** — continuous
-control (`osc_shm`) tracking a scripted EE reference at `--rate` Hz; logs a
-per-tick CSV + sidecar and prints tracking RMS and torque headroom. This is
-also the sysid data collector.
+#### Step 3 · <kbd>PC</kbd> Track a scripted reference — [`examples/cart_impedance.py`](examples/cart_impedance.py)
+
+Continuous control (`osc_shm`) following a scripted EE reference at `--rate` Hz.
+Logs a per-tick CSV + sidecar and prints tracking RMS and torque headroom. This
+is also the sysid data collector.
 
 ```bash
 python examples/cart_impedance.py                                         # sine: ±5 cm z at 0.5 Hz for 4 s
@@ -173,9 +180,11 @@ python examples/cart_impedance.py --mode multiband --dry-run              # buil
 | `--log run.csv [--sidecar run.json]` | write the CSV + metadata ([format](docs/data_format.md)) |
 | `--dry-run` | build the reference and print peak rates without a robot |
 
-**[`examples/policy_loop.py`](examples/policy_loop.py)** — continuous control
-driven by a policy at a fixed rate. Ships with a stand-in policy that moves the
-EE up 10 cm and back down every 4 s for 16 s; swap in your network.
+#### Step 4 · <kbd>PC</kbd> Run a policy closed-loop — [`examples/policy_loop.py`](examples/policy_loop.py)
+
+Continuous control driven by a policy at a fixed rate. Ships with a stand-in
+policy that moves the EE up 10 cm and back down every 4 s for 16 s; swap in
+your network.
 
 ```bash
 python examples/policy_loop.py                          # demo policy, 10 Hz, 16 s
@@ -189,7 +198,7 @@ python examples/policy_loop.py --hz 20 --pos-scale 0.0025 --no-reset
 | `--kp-pos`, `--kp-ori`, `--err-delta-pos`, `--err-delta-rot` | impedance gains (500 / 30) and clamps (0.15 / 0.80) |
 | `--no-reset` | skip the initial `move_to` home |
 
-The whole loop, which is the pattern every closed-loop rollout uses:
+The whole loop — the pattern every closed-loop rollout uses:
 
 ```python
 def demo_policy(t, obs):                      # stand-in for a network; 6-D action in [-1, 1]
