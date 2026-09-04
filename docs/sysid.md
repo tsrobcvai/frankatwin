@@ -6,6 +6,23 @@ this by replaying real excitation runs in simulation — same setpoint staircase
 same gains, same control law — and fitting the sim's joint dynamics until the sim
 joint trajectories land on the real ones.
 
+## Approach
+
+We follow the procedure [OmniReset](https://arxiv.org/abs/2603.15789) uses for
+its UR7e, which in turn follows PACE
+([Bjelonic et al., 2025](https://arxiv.org/abs/2509.06342)): run excitation
+trajectories on the real arm, replay them in simulation under the same
+controller, and fit the actuator parameters — friction, armature, motor delay —
+by minimizing the simulated-vs-real joint-trajectory error with CMA-ES. Two
+differences from OmniReset:
+
+- **One real-world trajectory for the fit.** We identify from a single
+  multi-band sinusoidal excitation (v3, see [Excitation design](#excitation-design))
+  rather than from chirps.
+- **A chirp as the held-out test.** The identified parameters are validated on
+  a 6-DOF chirp (v4) — the excitation family OmniReset fits on — that was not
+  used in the fit. Joint-position MSE on it: 4.8 × 10⁻⁴ rad².
+
 ## What is identified
 
 29 parameters, all per joint except the last:
@@ -147,7 +164,7 @@ joint.
 
 ## Reference results
 
-Fit on three multiband runs, validated on a held-out chirp:
+Fit on one multiband run (v3), validated on a held-out chirp (v4):
 
 | | baseline (PhysX defaults) | fitted |
 |---|---:|---:|
