@@ -71,6 +71,7 @@ sysid
 
 architecture
 daemon
+configuration
 interfaces
 api
 data_format

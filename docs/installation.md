@@ -150,7 +150,7 @@ the NUC's LAN IP otherwise). Ports 5555 (REQ/REP) and 5556 (PUB) must be open.
 Both halves read the same `config/robot.yaml` from the checkout
 (`pip install -e .` is the intended install mode). Override with `--config` on
 any command or `FRANKATWIN_CONFIG=/path/to/local.yaml`. Keys are documented
-inline in the file and in [usage.md](usage.md#configuration-reference).
+inline in the file and in [Configuration](configuration.md).
 
 ## 6. First run
 
