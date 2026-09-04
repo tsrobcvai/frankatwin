@@ -3,6 +3,7 @@
 A panda lying across a sim | real split: wireframe on the simulation side, solid
 on the real side, a robot arm on each, and a dashed sim -> real arc between them.
 Pure SVG, no dependencies; edit the coordinates here rather than the SVG.
+"""
 import pathlib, sys
 
 W, H, MID = 640, 320, 320
