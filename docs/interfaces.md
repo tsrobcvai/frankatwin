@@ -20,17 +20,24 @@ sidecar JSON and IsaacLab), torques in N·m, joints ordered J1…J7.
 
 ## Scripts
 
-Plain Python files, one job each (flags in [Usage → Scripts](usage.md#scripts)):
+Plain Python files — read them, copy them, run them with `python …`. All accept
+`--config`; otherwise `$FRANKATWIN_CONFIG`, then the checkout's `config/robot.yaml`.
+The walkthrough is in [Usage](usage.md).
 
-| script | where | job |
+| script | where | does |
 |---|---|---|
-| `python -m frankatwin.daemon` | <kbd>NUC</kbd> | Own the shm segment, run `osc_shm`, serve ZMQ. |
-| `python -m frankatwin.doctor` | <kbd>NUC</kbd> <kbd>PC</kbd> | Environment / connectivity check with a hint per failure. |
-| `examples/move_to.py` | <kbd>PC</kbd> | One-shot position control: home, `--target-joints`, `--target-ee`. |
-| `examples/cart_impedance.py` | <kbd>PC</kbd> | Track a scripted EE reference (sine / multiband / chirp), log CSV + sidecar. |
-| `examples/policy_loop.py` | <kbd>PC</kbd> | Fixed-rate policy on task impedance control. |
-| `scripts/gen_excitation_traj.py`, `scripts/gen_chirp_traj.py` | <kbd>PC</kbd> | Write a 1 kHz reference CSV + sidecar. |
-| `scripts/compare_sim_real.py`, `scripts/check_torque_limits.py`, `scripts/plot_ee_tracking.py` | <kbd>PC</kbd> | Analysis of logged runs. |
+| `python -m frankatwin.daemon [-c robot.yaml] [-v] [--load-mass …]` | NUC | The daemon (below). |
+| `python -m frankatwin.doctor [--role auto\|nuc\|pc]` | NUC, PC | Environment check: RT kernel, rtprio, binaries + `ldd` (libfranka / pinocchio), FCI port, competing FCI clients, daemon ping, state stream. Exit 1 on a hard failure, with a hint per line. Run it first on both machines. |
+| `examples/move_to.py [--target-joints J1..J7 \| --target-ee x y z qw qx qy qz] [--speed] [--duration]` | PC | Position-controlled move via `move_to`: home (`robot.init_q`) by default, a joint configuration, or an EE pose (base frame, quaternion **wxyz**). Prints the held pose afterwards. |
+| `examples/policy_loop.py [--hz 10] [--duration 16] [--pos-scale 0.005] [--rot-scale 0.02]` | PC | Fixed-rate policy on top of task impedance: read state → policy → Δpose target → `set_ee_target`. Ships a stand-in policy (10 cm up/down every 4 s). The closed-loop rollout skeleton. |
+| `examples/cart_impedance.py --mode {sine,multiband,chirp} …` | PC | Run a scripted Cartesian reference at `--rate` Hz, log CSV + sidecar, print tracking RMS and torque headroom. `--dry-run` needs no robot. |
+| `scripts/gen_excitation_traj.py` / `scripts/gen_chirp_traj.py --base-sidecar ref.json` | PC | Write a 1 kHz reference CSV + sidecar (for plotting / other collectors). The math is `frankatwin.excitation`. |
+| `scripts/compare_sim_real.py --real-csv a.csv --sim-csv a_sim.csv [--save] [--show]` | PC | Overlay target / real / sim EE pose and per-joint q, dq; print RMS. |
+| `scripts/check_torque_limits.py run.csv` | PC | Per-joint max `\|tau_J\|` vs 87/87/87/87/12/12/12 N·m from a `cart_impedance.py` log. |
+| `scripts/plot_ee_tracking.py run.csv` | PC | Actual vs target per dimension. |
+| `scripts/read_q.sh` | NUC | `read_current_q` wrapper (`ROBOT_IP=…`). Stop the daemon first. |
+| `build/read_current_pose <ip> [out.json]` | NUC | Current EE pose as a sidecar for `--base-sidecar`. |
+| `build/read_load <ip>` | NUC | Print `m_ee / m_load / m_total` as the robot sees them. |
 
 ## Python client
 
@@ -71,6 +78,19 @@ NUC (no ZMQ); scripts written against one run against the other.
 Quaternion helpers in `frankatwin.quat` (`mul_wxyz`, `from_rotvec_wxyz`,
 `to_rotvec_wxyz`, `error_rotvec_wxyz`, `wxyz_to_xyzw`, …). Full signatures:
 [API reference](api.md).
+
+### Notes
+
+- Send targets **relative to the pose the controller is anchored at**. After
+  `move_to_*` or a watchdog restart the anchor is the current pose.
+- Gains, clamps and `enabled` persist across controller restarts
+  (`move_to_*`, watchdog relaunch): the daemon restores them after every
+  `osc_shm` start. Initial values come from `robot.yaml → control:`.
+- A large jump in `set_ee_target` is a torque step. The slew limiter keeps it
+  from tripping a reflex, but `Kp · Δx` still has to stay under the collision
+  threshold and `τ_max` — ramp your targets.
+- `error_delta_pos = 0.15 m` at `kp_pos = 500` allows 75 N of push. Lower the
+  clamp when working near people or fixtures.
 
 ## Daemon protocol
 
@@ -159,7 +179,7 @@ address, ports, client cache), `robot` (FCI IP, home `init_q`), `control`
 (initial gains and error clamps), `collision` (reflex thresholds), `paths`
 (build dir, shm name), `reset` (move speeds), `load` (payload for `setLoad`).
 Override with `--config` or `$FRANKATWIN_CONFIG`. Key-by-key reference:
-[Usage → Configuration reference](usage.md).
+[Configuration](configuration.md).
 
 ## Data files
 
