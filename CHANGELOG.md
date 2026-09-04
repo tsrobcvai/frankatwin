@@ -35,6 +35,9 @@ First public release, renamed from the internal `panda_control` repository.
 - `python -m frankatwin.doctor`: environment / connectivity check with a
   hint per failing line (RT kernel, rtprio, binaries + ldd, FCI port, other
   FCI clients, daemon ping, state stream).
+- `examples/policy_loop.py`: fixed-rate policy skeleton on task impedance;
+  `frankatwin.quat`: wxyz quaternion helpers (product, rotvec, osc_shm-style
+  orientation error).
 - `examples/move_to.py`: one position-control script — home (default),
   `--target-joints`, or `--target-ee x y z qw qx qy qz` (replaces
   `reset_home.py` / `move_to_q.py`).
