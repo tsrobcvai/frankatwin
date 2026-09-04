@@ -197,15 +197,13 @@ class LocalController:
 
         self._osc_shm_bin = cfg.paths.build_dir / "osc_shm"
         self._move_to_bin = cfg.paths.build_dir / "move_to"
-        if not self._osc_shm_bin.is_file():
-            raise FileNotFoundError(
-                f"osc_shm binary not found at {self._osc_shm_bin}. "
-                "Did you run `cmake --build build`?"
-            )
-        if not self._move_to_bin.is_file():
-            raise FileNotFoundError(
-                f"move_to binary not found at {self._move_to_bin}"
-            )
+        for b in (self._osc_shm_bin, self._move_to_bin):
+            if not b.is_file():
+                raise FileNotFoundError(
+                    f"{b.name} not found at {b}. Build the C++ side first: "
+                    "`cmake -S . -B build && cmake --build build` "
+                    "(docs/installation.md), or point paths.build_dir at it."
+                )
 
         # Create and own the shm segment up front. The C++ child only opens it.
         self._shm = SharedMemoryAccess(name=cfg.paths.shm_name, create=True)

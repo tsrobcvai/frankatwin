@@ -1,6 +1,11 @@
 # Troubleshooting
 
-Each entry is a real failure we hit. Symptom → cause → fix, plus where the fix
+Start with `frankatwin-doctor` on the machine that misbehaves — it covers the
+environment half of this page (RT kernel, rtprio, binaries, libfranka /
+pinocchio loading, FCI port, competing FCI clients, daemon ping, state stream)
+and prints the matching hint.
+
+Each entry below is a real failure we hit. Symptom → cause → fix, plus where the fix
 lives in the code so you can audit it.
 
 ## Reflexes and aborts
@@ -57,7 +62,7 @@ and `|q̇|∞ < 0.05 rad/s` (1 s cap). Don't `kill -9` the controller.
 
 Your reference moves faster than the impedance can follow at the current `kp`.
 Either raise `kp`, lower the reference speed, or loosen the clamp
-(`--err-delta-pos/--err-delta-rot` on `cart_impedance.py`, or `set_gains`). The
+(`--err-delta-pos/--err-delta-rot` on `frankatwin-excite`, or `set_gains`). The
 chirp defaults need `0.15 m / 0.80 rad` because the reference itself reaches
 0.61 rad of orientation offset.
 
@@ -145,7 +150,7 @@ Your excitation has no rotation component. Use `--mode multiband` with non-zero
 
 ### Replay is 20× too short / truncated to 5 %
 
-You fed a 50 Hz `cart_impedance.py` log to a 1 kHz replay path. Use
+You fed a 50 Hz `frankatwin-excite` log to a 1 kHz replay path. Use
 `replay_python_csv_sim.py` (zero-order-hold over the real timestamps).
 
 ### `usd_path` not found when launching the IsaacLab scripts

@@ -3,7 +3,7 @@
 ## Daemon (NUC)
 
 ```bash
-python -m frankatwin.daemon [--config robot.yaml] [-v]
+frankatwin-daemon [--config robot.yaml] [-v]
                             [--load-mass KG --load-com X Y Z [--load-inertia i0..i8]]
 ```
 
@@ -13,6 +13,21 @@ Binds `tcp://*:5555` (REQ/REP) and `tcp://*:5556` (PUB, 100 Hz), creates
 `--load-*` override the `load:` block for this run only. Mass 0 (default) means
 "don't call `setLoad`, keep what Desk has". Restart the daemon after changing
 gains/clamps/collision values in the yaml — no rebuild needed.
+
+## Command-line tools
+
+Installed by `pip install -e .`:
+
+| command | does |
+|---|---|
+| `frankatwin-daemon [-c robot.yaml] [-v] [--load-mass …]` | NUC daemon (below). |
+| `frankatwin-doctor [--role auto\|nuc\|pc]` | Environment check: RT kernel, rtprio, binaries + `ldd` (libfranka / pinocchio), FCI port, competing FCI clients, daemon ping, state stream. Exit 1 on a hard failure, with a hint per line. Run it first on both machines. |
+| `frankatwin-reset [--speed 0.2] [--q q1..q7]` | Joint-space reset to `robot.init_q` (or `--q`). |
+| `frankatwin-excite --mode {sine,multiband,chirp} …` | Run a scripted Cartesian reference at `--rate` Hz, log CSV + sidecar, print tracking RMS and torque headroom. `--dry-run` needs no robot. |
+| `frankatwin-gen-multiband` / `frankatwin-gen-chirp --base-sidecar ref.json` | Write a 1 kHz reference CSV + sidecar (for plotting / other collectors). |
+
+All accept `--config` / `-c`; otherwise `$FRANKATWIN_CONFIG`, then the
+checkout's `config/robot.yaml`.
 
 ## Client API (PC)
 
@@ -41,7 +56,7 @@ has the identical method set for in-process use on the NUC.
 included), `ee_linvel[3]`, `ee_angvel[3]` (base frame, `J q̇`), `seq`.
 
 Quaternion convention: **wxyz everywhere on the wire and in `RobotState`.** The CSV
-logs and IsaacLab use **xyzw**; `cart_impedance.py` converts.
+logs and IsaacLab use **xyzw**; `frankatwin-excite` converts.
 
 ### Minimal loop
 
@@ -79,27 +94,24 @@ Things that bite:
 
 | script | what it does |
 |---|---|
-| `examples/reset_home.py [--speed 0.2]` | `move_to_q(init_q)`. |
 | `examples/move_to_q.py --q q1..q7 [--speed]` | Move to an arbitrary joint configuration and read back. |
 | `examples/lift_ee.py [--height 0.01] [--duration 2]` | Ramp the z-target up from the current pose. Good first motion test. |
-| `examples/cart_impedance.py --mode {sine,multiband,chirp} …` | The workhorse: runs a scripted Cartesian reference at `--rate` Hz, logs `--log run.csv` + `run.json` sidecar, prints tracking RMS and torque headroom. `--dry-run` builds and checks the reference without a robot. |
+| `examples/reset_home.py`, `examples/cart_impedance.py` | Thin shims for `frankatwin-reset` / `frankatwin-excite`. |
 
-`cart_impedance.py` modes:
+`frankatwin-excite` modes:
 
 | mode | reference | default duration | typical gains |
 |---|---|---|---|
 | `sine` | ±`--amp` (5 cm) z-sine at `--freq` (0.5 Hz) | 4 s | yaml defaults |
-| `multiband` | SysID v3: two-band sinusoids on x/y/z + yaw/roll (`scripts/gen_excitation_traj.py`) | 12 s | `--kp-pos 200 --kp-ori 20` |
-| `chirp` | SysID v4: 6-DOF linear chirp `--f0 0.1 → --f1 0.7` Hz, π/3 phase-staggered (`scripts/gen_chirp_traj.py`) | 8 s | `--kp-pos 500 --kp-ori 30 --err-delta-pos 0.15 --err-delta-rot 0.80` |
+| `multiband` | SysID v3: two-band sinusoids on x/y/z + yaw/roll (`frankatwin.excitation.multiband`) | 12 s | `--kp-pos 200 --kp-ori 20` |
+| `chirp` | SysID v4: 6-DOF linear chirp `--f0 0.1 → --f1 0.7` Hz, π/3 phase-staggered (`frankatwin.excitation.chirp`) | 8 s | `--kp-pos 500 --kp-ori 30 --err-delta-pos 0.15 --err-delta-rot 0.80` |
 
 ## Scripts
 
 | script | purpose |
 |---|---|
-| `scripts/gen_excitation_traj.py --base-sidecar ref.json` | Emit a 1 kHz v3 multiband target CSV + sidecar anchored on `ref.json` (from `read_current_pose` or a previous run). |
-| `scripts/gen_chirp_traj.py --base-sidecar ref.json` | Same for the v4 chirp. |
 | `scripts/compare_sim_real.py --real-csv a.csv --sim-csv a_sim.csv [--save] [--show]` | Overlay target / real / sim EE pose and per-joint q, dq; print RMS. |
-| `scripts/check_torque_limits.py run.csv` | Per-joint max `\|tau_J\|` vs 87/87/87/87/12/12/12 N·m from a `cart_impedance.py` log. |
+| `scripts/check_torque_limits.py run.csv` | Per-joint max `\|tau_J\|` vs 87/87/87/87/12/12/12 N·m from a `frankatwin-excite` log. |
 | `scripts/plot_ee_tracking.py run.csv` | Actual vs target per dimension. |
 | `scripts/read_q.sh` | `read_current_q` wrapper (`ROBOT_IP=…`). Stop the daemon first. |
 | `build/read_current_pose <ip> [out.json]` | Current EE pose as a sidecar for `--base-sidecar`. |
@@ -116,7 +128,7 @@ Things that bite:
 | `robot.init_q` | Franka home | `reset_home.py` target, 7 floats [rad]. |
 | `control.kp_pos` / `kp_ori` | 200 N/m / 20 N·m/rad | Initial gains the daemon writes at startup; runtime override via `set_gains` (persists across restarts). Also the defaults of `cart_impedance.py --kp-*`. |
 | `control.kd_pos` / `kd_ori` | `null` | `null` → `2√kp` (`osc_shm`'s auto rule). |
-| `control.error_delta_pos` / `error_delta_rot` | 0.05 m / 0.30 rad | Initial per-tick error clamp + abort. `0` → pure impedance (as in sim). Runtime override via `set_gains(error_delta_*)` or `cart_impedance.py --err-delta-*`. |
+| `control.error_delta_pos` / `error_delta_rot` | 0.05 m / 0.30 rad | Initial per-tick error clamp + abort. `0` → pure impedance (as in sim). Runtime override via `set_gains(error_delta_*)` or `frankatwin-excite --err-delta-*`. |
 | `collision.torque_threshold` / `cartesian_threshold` | 100 N·m / 100 N | `setCollisionBehavior` thresholds (all entries). |
 | `paths.build_dir` | `build` | Where `osc_shm` / `move_to` live (relative to repo root). |
 | `paths.shm_name` | `/frankatwin_osc` | POSIX shm name. |

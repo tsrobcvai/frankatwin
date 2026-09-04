@@ -12,7 +12,10 @@ from typing import Any
 
 from frankatwin.config import RobotConfig, load_config
 
+__version__ = "0.2.0"
+
 __all__ = [
+    "__version__",
     "LocalController",
     "FrankaTwinClient",
     "RobotConfig",

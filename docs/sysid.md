@@ -43,7 +43,7 @@ checkpointed every `--save_interval` generations to
 
 Identifiability is decided before you touch the optimizer. Two designs ship:
 
-| | **v3 multiband** (`gen_excitation_traj.py`, `--mode multiband`) | **v4 chirp** (`gen_chirp_traj.py`, `--mode chirp`) |
+| | **v3 multiband** (`frankatwin-gen-multiband` / `frankatwin-excite --mode multiband`) | **v4 chirp** (`frankatwin-gen-chirp` / `frankatwin-excite --mode chirp`) |
 |---|---|---|
 | Spectrum | two stationary bands per axis (≈ 0.15–0.30 Hz + 0.7–1.1 Hz at 0.2× amplitude) | linear sweep 0.1 → 0.7 Hz on every axis |
 | Active DOF | x, y, z + base-yaw + EE-roll | x, y, z, rx, ry, rz, π/3 phase-staggered |
@@ -88,12 +88,12 @@ the task configs reference the USD relative to it.
 ### 1. Collect (PC, robot running)
 
 ```bash
-python examples/reset_home.py
-python examples/cart_impedance.py --mode chirp --rate 50 --kp-pos 500 --kp-ori 30 \
+frankatwin-reset
+frankatwin-excite --mode chirp --rate 50 --kp-pos 500 --kp-ori 30 \
     --err-delta-pos 0.15 --err-delta-rot 0.80 \
     --log data/chirp_$(date +%Y%m%d_%H%M%S).csv
 # optionally also a multiband run:
-python examples/cart_impedance.py --mode multiband --kp-pos 200 --kp-ori 20 \
+frankatwin-excite --mode multiband --kp-pos 200 --kp-ori 20 \
     --log data/multiband_$(date +%Y%m%d_%H%M%S).csv
 ```
 
