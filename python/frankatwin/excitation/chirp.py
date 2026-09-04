@@ -160,10 +160,13 @@ def build_chirp_trajectory(
     """Build a 6-DOF chirp reference trajectory around the given anchor pose.
 
     Returns:
-        x_des: (T, 3) Cartesian target positions.
-        dx_des: (T, 3) Cartesian target velocities (analytic).
-        quat_des_xyzw: (T, 4) target orientation (xyzw), anchor pre-rotated by the world-frame axis-angle offset.
-        rot_offsets: (T, 3) axis-angle offset vector applied to the anchor (returned for diagnostics + sidecar metadata).
+        ``(x_des, dx_des, quat_des_xyzw, rot_offsets)`` --
+        ``x_des`` (T, 3) Cartesian target positions;
+        ``dx_des`` (T, 3) analytic target velocities;
+        ``quat_des_xyzw`` (T, 4) target orientation (xyzw), the anchor
+        pre-rotated by the world-frame axis-angle offset;
+        ``rot_offsets`` (T, 3) that axis-angle offset (for diagnostics and
+        the sidecar).
     """
     t_s = np.asarray(t_s, dtype=np.float64)
     x_anchor = np.asarray(x_anchor, dtype=np.float64).reshape(3)
