@@ -1,4 +1,4 @@
-"""Sphinx configuration for the FrankaTwin docs (PyData theme, Markdown via MyST)."""
+"""Sphinx configuration for the FrankaTwin docs (sphinx-book-theme, Markdown via MyST)."""
 
 import os
 import sys
@@ -42,7 +42,9 @@ napoleon_google_docstring = True
 napoleon_numpy_docstring = True
 
 # --- HTML ---------------------------------------------------------------
-html_theme = "pydata_sphinx_theme"
+# sphinx-book-theme: the whole table of contents lives in the left sidebar
+# (captions as section headers, pages expandable); no top navigation bar.
+html_theme = "sphinx_book_theme"
 html_title = "FrankaTwin"
 html_logo = "images/favicon.png"
 html_favicon = "images/favicon.png"
@@ -50,27 +52,20 @@ html_static_path = ["_static"]
 html_css_files = ["custom.css"]
 html_last_updated_fmt = "%Y-%m-%d"
 html_theme_options = {
-    "github_url": "https://github.com/tsrobcvai/frankatwin",
-    "navbar_start": ["navbar-logo"],
-    "logo": {"text": "FrankaTwin"},
-    "navbar_end": ["theme-switcher", "navbar-icon-links"],
-    "show_toc_level": 2,
+    "repository_url": "https://github.com/tsrobcvai/frankatwin",
+    "repository_branch": "v0.2",
+    "path_to_docs": "docs",
+    "use_repository_button": True,
+    "use_edit_page_button": False,
+    "use_issues_button": False,
+    "use_download_button": False,
+    "use_fullscreen_button": False,
+    "home_page_in_toc": True,
+    "show_navbar_depth": 1,        # sections collapsed to page level; expand on click
+    "max_navbar_depth": 3,
+    "show_toc_level": 2,           # right-hand "On this page"
     "navigation_with_keys": True,
-    # Left sidebar: the current section's pages with their headings, collapsible.
-    "navbar_align": "left",
-    "show_nav_level": 1,
-    "navigation_depth": 3,
-    "collapse_navigation": False,
-    "secondary_sidebar_items": ["page-toc"],
-    "footer_start": ["copyright"],
-    "footer_end": ["last-updated"],
-}
-html_sidebars = {"index": []}                 # landing page: no sidebar
-html_context = {
-    "github_user": "tsrobcvai",
-    "github_repo": "frankatwin",
-    "github_version": "v0.2",
-    "doc_path": "docs",
+    "logo": {"text": "FrankaTwin"},
 }
 copybutton_prompt_text = r"\$ |>>> "
 copybutton_prompt_is_regexp = True

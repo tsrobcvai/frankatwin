@@ -32,7 +32,7 @@ The C++ side needs libfranka and a robot; see
 
 ## Docs
 
-The site under `docs/` is Sphinx (PyData theme, Markdown via MyST). Preview it
+The site under `docs/` is Sphinx (sphinx-book-theme, Markdown via MyST). Preview it
 locally with live reload — no GitHub involvement:
 
 ```bash
@@ -40,10 +40,9 @@ pip install -e ".[docs]"
 sphinx-autobuild docs docs/_build/html      # http://127.0.0.1:8000
 ```
 
-`docs/index.md` is the landing page; `docs/guide/index.md` and
-`docs/reference/index.md` hold the two navigation sections. The guide pages are
-the same `docs/*.md` you see on GitHub; API pages are generated from docstrings
-(`docs/api.md`).
+`docs/index.md` is the landing page and holds the two sidebar sections
+(Guide, Reference). The guide pages are the same `docs/*.md` you see on GitHub;
+API pages are generated from docstrings (`docs/api.md`).
 
 ## Pull requests
 
