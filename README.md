@@ -133,7 +133,7 @@ With the daemon running on the NUC, everything in this step is <kbd>PC</kbd>.
 | move to an EE pose | `python examples/move_to.py --target-ee 0.4 0.0 0.3  0 1 0 0 [--duration 5]` | position, Cartesian | same → `move_to_pose` |
 | hold a pose compliantly and nudge it | `python examples/lift_ee.py --height 0.02 --duration 3` | impedance | [`examples/lift_ee.py`](examples/lift_ee.py) — 70 lines, the minimal `set_ee_target` loop |
 | track a scripted EE reference + log it | `python examples/cart_impedance.py --kp-pos 500 --kp-ori 30 --log run.csv` | impedance | [`examples/cart_impedance.py`](examples/cart_impedance.py) — `--mode sine` (default, ±5 cm z at 0.5 Hz), `multiband`, `chirp`; prints tracking RMS + torque headroom |
-| write my own controller loop | Python below | impedance | `FrankaTwinClient` |
+| run a policy closed-loop | `python examples/policy_loop.py --hz 10` | impedance | [`examples/policy_loop.py`](examples/policy_loop.py) — the rollout pattern below, with a stand-in policy |
 
 `--target-ee` format: `x y z` in metres in the robot **base frame** (libfranka's
 `O` frame, +x forward, +z up), then the EE orientation as a **unit quaternion in
@@ -142,32 +142,48 @@ wxyz order** — the same convention as `RobotState.ee_quat` / `set_ee_target`.
 orientation). The EE frame is the one configured in Desk (Franka Hand: the TCP
 between the fingertips). Home = `robot.init_q` in `config/robot.yaml`.
 
-<kbd>PC</kbd> a complete impedance-control loop — this is the whole API you need for a policy
+<kbd>PC</kbd> **a 10 Hz policy on task impedance control** — this is what every closed-loop rollout does
 
 ```python
-import numpy as np, time
+import time, numpy as np
 from frankatwin import FrankaTwinClient, load_config
+from frankatwin.quat import from_rotvec_wxyz, mul_wxyz
+
+HZ, POS_SCALE, ROT_SCALE = 10, 0.02, 0.05        # policy rate; max |Δpos| [m] and |Δrot| [rad] per step
+
+def policy(obs):                                  # your network; 6-D action in [-1, 1]: Δxyz, Δrot (axis-angle)
+    return np.zeros(6)
 
 cfg = load_config()
 with FrankaTwinClient(cfg) as robot:
-    robot.move_to_q(cfg.robot.init_q)                 # position control: blocking reset (optional)
-    s = robot.wait_for_state()                        # RobotState: q, dq, ee_pos, ee_quat (wxyz), tau, tau_J, ...
-    p0, q0 = s.ee_pos.copy(), s.ee_quat.copy()
-
-    robot.set_gains(kp_pos=500, kp_ori=30,            # Kd = 2*sqrt(Kp) unless given
-                    error_delta_pos=0.15, error_delta_rot=0.80)
-    for k in range(200):                              # impedance control: 4 s at 50 Hz
-        target = p0 + [0, 0, 0.05 * np.sin(2 * np.pi * 0.5 * k / 50)]
-        robot.set_ee_target(target, q0)               # non-blocking; held until the next call
-        s = robot.get_state()                         # cached 100 Hz stream, non-blocking
-        time.sleep(0.02)
-    robot.set_ee_target(p0, q0)
+    robot.move_to_q(cfg.robot.init_q)                       # 1. position control: blocking reset to home
+    robot.set_gains(kp_pos=500, kp_ori=30,                  # 2. impedance gains (Kd = 2*sqrt(Kp)); clamp 0.15 m
+                    error_delta_pos=0.15, error_delta_rot=0.80)   #    > one step, so it never engages (sim has no clip)
+    s = robot.wait_for_state()
+    t_next = time.monotonic()
+    for step in range(300):                                 # 3. 30 s at 10 Hz
+        obs = np.concatenate([s.q, s.dq, s.ee_pos, s.ee_quat, s.ee_linvel, s.ee_angvel])
+        a = np.clip(policy(obs), -1, 1)
+        pos  = s.ee_pos + POS_SCALE * a[:3]                 #    Δ on the measured pose, base frame (as in the sim task)
+        quat = mul_wxyz(from_rotvec_wxyz(ROT_SCALE * a[3:]), s.ee_quat)   # world-frame Δrot ⊗ current
+        robot.set_ee_target(pos, quat)                      # 4. non-blocking; osc_shm holds it at 1 kHz until next step
+        t_next += 1 / HZ
+        time.sleep(max(0.0, t_next - time.monotonic()))     # 5. fixed-rate tick, no drift
+        s = robot.get_state()                               # 6. newest frame of the 100 Hz stream (<= 10 ms old)
 ```
 
-Rules of thumb: targets are absolute poses in the base frame; a big jump is a
-torque step (the slew limiter keeps it from tripping a reflex, but ramp anyway);
-gains and clamps persist across `move_to_*` and controller restarts; quaternions
-are **wxyz** on the API. Control law, safety chain and timing:
+What is happening underneath: the policy writes a new pose target every 100 ms;
+`osc_shm` reads it on its next 1 ms tick and applies `τ = Jᵀ[Kp e − Kd ẋ]` a
+hundred times before the next target arrives (zero-order hold). The IsaacLab
+replay reproduces exactly that staircase, which is why the sysid transfers.
+`error_delta_pos` is set above the largest single step so the controller never
+clips — matching the sim's unclipped task impedance. With `POS_SCALE = 0.02` and
+`kp_pos = 500` one step commands at most 10 N.
+
+Rules of thumb: targets are absolute poses in the base frame, quaternions
+**wxyz**; a big jump is a torque step (the slew limiter keeps it from tripping a
+reflex, but scale your actions); gains and clamps persist across `move_to_*`
+and controller restarts. Control law, safety chain and timing:
 [docs/architecture.md](docs/architecture.md); every method and config key:
 [docs/usage.md](docs/usage.md).
 

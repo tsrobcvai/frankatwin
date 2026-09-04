@@ -25,6 +25,7 @@ Plain Python files — read them, copy them, run them with `python …`. All acc
 | `python -m frankatwin.doctor [--role auto\|nuc\|pc]` | NUC, PC | Environment check: RT kernel, rtprio, binaries + `ldd` (libfranka / pinocchio), FCI port, competing FCI clients, daemon ping, state stream. Exit 1 on a hard failure, with a hint per line. Run it first on both machines. |
 | `examples/move_to.py [--target-joints J1..J7 \| --target-ee x y z qw qx qy qz] [--speed] [--duration]` | PC | Position-controlled move via `move_to`: home (`robot.init_q`) by default, a joint configuration, or an EE pose (base frame, quaternion **wxyz**). Prints the held pose afterwards. |
 | `examples/lift_ee.py [--height 0.01] [--duration 2]` | PC | Ramp the z-target up from the current pose under impedance control. Good first motion test; the minimal `set_ee_target` loop. |
+| `examples/policy_loop.py [--hz 10] [--steps] [--pos-scale] [--rot-scale]` | PC | Fixed-rate policy on top of task impedance: read state → policy → Δpose target → `set_ee_target`, with a stand-in policy. The closed-loop rollout skeleton. |
 | `examples/cart_impedance.py --mode {sine,multiband,chirp} …` | PC | Run a scripted Cartesian reference at `--rate` Hz, log CSV + sidecar, print tracking RMS and torque headroom. `--dry-run` needs no robot. |
 | `scripts/gen_excitation_traj.py` / `scripts/gen_chirp_traj.py --base-sidecar ref.json` | PC | Write a 1 kHz reference CSV + sidecar (for plotting / other collectors). The math is `frankatwin.excitation`. |
 | `scripts/compare_sim_real.py --real-csv a.csv --sim-csv a_sim.csv [--save] [--show]` | PC | Overlay target / real / sim EE pose and per-joint q, dq; print RMS. |
@@ -38,6 +39,7 @@ Plain Python files — read them, copy them, run them with `python …`. All acc
 
 ```python
 from frankatwin import FrankaTwinClient, LocalController, RobotConfig, load_config
+from frankatwin.quat import from_rotvec_wxyz, mul_wxyz, error_rotvec_wxyz   # wxyz helpers
 ```
 
 `FrankaTwinClient(cfg, *, connect_timeout_s=3.0, verbose=False)` — context
