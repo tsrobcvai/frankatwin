@@ -187,25 +187,9 @@ The fitted `sysid_best_params.json` drops into any IsaacLab Franka task via
 `apply_sysid_params.py --print-snippet` (actuator armature / friction / delay
 overrides). Results on our arm: [Reference results](sysid.md#reference-results).
 
-## 4. Interfaces
-
-Everything you can talk to, from highest to lowest level:
-
-| interface | where | what | reference |
-|---|---|---|---|
-| **Scripts** | <kbd>NUC</kbd> `python -m frankatwin.daemon`, `python -m frankatwin.doctor` · <kbd>PC</kbd> `examples/move_to.py`, `examples/cart_impedance.py`, `examples/policy_loop.py`, `scripts/gen_*_traj.py`, `scripts/compare_sim_real.py`, `scripts/check_torque_limits.py`, `python -m frankatwin.doctor` | plain Python files, one job each; read them | [usage.md → Scripts](usage.md#scripts) |
-| **Python client** `FrankaTwinClient` | <kbd>PC</kbd> | `set_ee_target(pos, quat_wxyz)`, `set_gains(kp_pos, kp_ori, kd_pos, kd_ori, error_delta_pos, error_delta_rot)`, `enable()` / `disable()`, `get_state(fresh=False)`, `get_state_history()`, `wait_for_state()`, `move_to_q(q, speed_factor)`, `move_to_pose(pos, quat, duration)` | [usage.md → Client API](usage.md#client-api-pc) |
-| **`LocalController`** | <kbd>NUC</kbd> | same methods as the client, in-process (no ZMQ) | [usage.md → Client API](usage.md#client-api-pc) |
-| **`RobotState`** | both | `timestamp_s, q[7], dq[7], ee_pos[3], ee_quat[4] (wxyz), ee_linvel[3], ee_angvel[3], tau[7]` (commanded), `tau_J[7]` (measured, gravity incl.), `seq` | [usage.md](usage.md#client-api-pc) |
-| **Daemon protocol** (any language) | <kbd>PC</kbd> → <kbd>NUC</kbd> | JSON over ZMQ. REQ/REP on `cmd_port`: `{"op": "ping" \| "set_ee_target" \| "set_gains" \| "enable" \| "disable" \| "get_state" \| "move_to_q" \| "move_to_pose" \| "shutdown", ...}` → `{"ok": true, ...}`; PUB on `state_port`: one `RobotState` JSON at 100 Hz | [architecture.md → Daemon](architecture.md#daemon-behaviour) |
-| **Shared memory** (any language) | <kbd>NUC</kbd> | `/frankatwin_osc`: `ShmCommand` (seqlock: target, gains, clamps, enabled) and a 1024-frame `ShmStateFrame` ring at 1 kHz. Fixed ABI in `src/shm_layout.h` / `frankatwin.shm_layout`, pinned by `tests/test_shm_layout.py` | [architecture.md → Shared memory](architecture.md#shared-memory) |
-| **C++ binaries** | <kbd>NUC</kbd> | `osc_shm <ip> [--shm-name] [--max-torque-rate] [--load-mass/--load-com/--load-inertia] [--collision-torque/--collision-cartesian] [--no-coriolis] [--duration]`; `move_to <ip> --q q1..q7 [--speed-factor]` or `--pose x y z qw qx qy qz [--duration]`; `read_current_q`, `read_current_pose`, `read_load` | `src/*.cpp` headers |
-| **Config** `config/robot.yaml` | all | `network`, `robot`, `control` (gains, clamps), `collision`, `paths`, `reset`, `load` | [usage.md → Configuration reference](usage.md#configuration-reference-configrobotyaml) |
-| **Data files** | <kbd>PC</kbd> / <kbd>SIM</kbd> | run CSV + sidecar JSON, sim replay CSV, `sysid_best_params.json` | [docs/data_format.md](data_format.md) |
-| **IsaacLab tasks** | <kbd>SIM</kbd> | `Isaac-FrankaTwin-Replay-v0`, `Isaac-FrankaTwin-Sysid-v0` (task-impedance controller mirroring `osc_shm`), `franka_mimic.usd` | [docs/sysid.md](sysid.md) |
-
-Not exposed (yet): gripper control, joint-space impedance, relative-pose
-targets, ROS. Contributions welcome — see [CONTRIBUTING.md](https://github.com/tsrobcvai/frankatwin/blob/v0.2/CONTRIBUTING.md).
+Everything you can program against — scripts, the Python client, the ZMQ
+protocol, shared memory, the C++ binaries, config, data files, IsaacLab tasks —
+is catalogued in [Interfaces](interfaces.md).
 
 ## Repository layout
 
