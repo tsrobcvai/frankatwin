@@ -171,3 +171,17 @@ robot's hard limits still apply at the driver level.
 | shm → ZMQ PUB | 100 Hz (latest frame, dropped if the subscriber is slow) |
 | client `set_ee_target` | as fast as you call it; 20–50 Hz typical. The target is zero-order-held between writes, and the sim replay reproduces exactly that staircase. |
 | `get_state()` | cached, non-blocking; `fresh=True` forces a REQ round-trip |
+
+## Repository layout
+
+```
+src/                 C++: osc_shm (1 kHz controller), move_to (reset), read_* utilities, shm_layout.h
+python/frankatwin/   daemon, FrankaTwinClient (PC), LocalController (NUC), config, shm_layout,
+                     doctor, excitation/ (multiband + chirp reference math)
+config/robot.yaml    network, robot IP, gains, safety clamps, collision thresholds, payload
+examples/            move_to (home / joints / EE pose), cart_impedance (sine / multiband / chirp), policy_loop
+scripts/             gen_*_traj (write references), compare_sim_real, check_torque_limits, plot_ee_tracking
+isaaclab_sysid/      self-contained IsaacLab extension: tasks, robot USD, sysid/replay scripts
+tests/               shm ABI pinning test (C++ offsets vs numpy dtype)
+docs/                installation · architecture · usage · sysid · data_format · troubleshooting
+```

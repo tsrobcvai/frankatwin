@@ -23,7 +23,6 @@ held-out 6-DOF chirp.
 ## Documentation
 
 Everything lives in [`docs/`](docs/):
-[Quick start](docs/quickstart.md) ·
 [Installation](docs/installation.md) ·
 [Usage](docs/usage.md) ·
 [Architecture](docs/architecture.md) ·

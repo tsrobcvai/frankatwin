@@ -51,16 +51,15 @@ flowchart LR
     M <== "libfranka" ==> R
 ```
 
-Start with the [Quick start](quickstart.md) — every command tagged
-<kbd>NUC</kbd> / <kbd>PC</kbd> / <kbd>SIM</kbd> — then [Usage](usage.md) for
-the scripts and the client API. The full guide and the reference (API from
-docstrings, contributing, changelog) are in the sidebar.
+Start with [Installation](installation.md), then [Usage](usage.md) — every
+command is tagged <kbd>NUC</kbd> / <kbd>PC</kbd> / <kbd>SIM</kbd> with the
+machine it runs on. The reference (interfaces, API from docstrings,
+contributing, changelog) is in the sidebar.
 
 ```{toctree}
 :hidden:
 :caption: Guide
 
-quickstart
 installation
 usage
 architecture
