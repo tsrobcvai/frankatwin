@@ -372,8 +372,8 @@ another FCI client (`franka-interface`, `franka_ros`) at the same time.
 
 ## Authors
 
-- **Tao Sun** — McGill University
-- **Patrick Yin** — University of Washington
+- [**Tao Sun**](https://taosun99.github.io/) — McGill University
+- [**Patrick Yin**](https://patrickyin.me/) — University of Washington
 
 ## License
 
