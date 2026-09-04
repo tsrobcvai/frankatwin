@@ -37,6 +37,15 @@ analysis = [
     "pandas>=1.5",
     "matplotlib>=3.5",
 ]
+# Sphinx docs: `sphinx-autobuild docs docs/_build/html` for a live preview.
+docs = [
+    "sphinx>=7",
+    "pydata-sphinx-theme>=0.15",
+    "myst-parser>=2",
+    "sphinx-copybutton",
+    "sphinxcontrib-mermaid",
+    "sphinx-autobuild",
+]
 
 [project.urls]
 Homepage = "https://github.com/tsrobcvai/frankatwin"

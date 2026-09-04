@@ -30,6 +30,20 @@ python -m pytest tests -q          # needs g++, no libfranka
 The C++ side needs libfranka and a robot; see
 [docs/installation.md](docs/installation.md).
 
+## Docs
+
+The site under `docs/` is Sphinx (PyData theme, Markdown via MyST). Preview it
+locally with live reload — no GitHub involvement:
+
+```bash
+pip install -e ".[docs]"
+sphinx-autobuild docs docs/_build/html      # http://127.0.0.1:8000
+```
+
+`docs/index.md` is the landing page and the table of contents; the guide pages
+are the same `docs/*.md` you see on GitHub. API pages are generated from
+docstrings (`docs/api.md`).
+
 ## Pull requests
 
 - One logical change per PR, conventional-commit style subject
