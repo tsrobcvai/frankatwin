@@ -83,21 +83,12 @@ Shm layout, seqlock, safety chain and the reasoning behind each default:
 
 Three machines can be involved. Every command below is tagged with where it runs:
 
-| tag | machine | runs | needs |
+| tag | machine | runs | software (tested) |
 |---|---|---|---|
-| <kbd>NUC</kbd> | real-time PC wired to the robot (FCI) | `python -m frankatwin.daemon` → `osc_shm` / `move_to` | RT kernel, libfranka, C++ build |
-| <kbd>PC</kbd> | your workstation | your code, `examples/*.py`, analysis scripts | Python only |
-| <kbd>SIM</kbd> | any GPU box with IsaacLab (can be the PC) | sysid fit, sim replay | IsaacLab ≥ 2.3 |
-
-Tested with:
-
-| component | tested |
-|---|---|
-| Robot | Franka Research 3 (system ≥ 5.7) and Panda; Franka Hand attached |
-| libfranka | 0.9.x (Panda), 0.13–0.15 (FR3); ≥ 0.14 needs Pinocchio, handled by CMake |
-| OS | Ubuntu 20.04 / 22.04 with `PREEMPT_RT` kernel on the NUC |
-| IsaacLab | 2.3.0 (needs ≥ 2.3 for the dynamic/viscous joint-friction API) |
-| Python | ≥ 3.9 on the PC; ≥ 3.9 on the NUC |
+| — | **Robot** | — | Franka Research 3 (system ≥ 5.7) or Panda, Franka Hand attached, FCI enabled in Desk |
+| <kbd>NUC</kbd> | real-time PC wired to the robot (FCI) | `python -m frankatwin.daemon` → `osc_shm` / `move_to` | Ubuntu 20.04 / 22.04 with `PREEMPT_RT` kernel · libfranka 0.9.x (Panda) / 0.13–0.15 (FR3); ≥ 0.14 needs Pinocchio, handled by CMake · Eigen3, CMake ≥ 3.10 · Python ≥ 3.9 |
+| <kbd>PC</kbd> | your workstation | your code, `examples/*.py`, analysis scripts | Python ≥ 3.9 (numpy, pyyaml, pyzmq; pandas + matplotlib for the analysis scripts) |
+| <kbd>SIM</kbd> | any GPU box with IsaacLab (can be the PC) | sysid fit, sim replay | IsaacLab 2.3.0 (≥ 2.3 for the dynamic/viscous joint-friction API) · `cmaes` |
 
 Each step links to the full page in [docs/](docs/).
 
