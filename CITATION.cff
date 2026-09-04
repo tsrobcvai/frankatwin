@@ -7,9 +7,11 @@ authors:
     given-names: Tao
     email: tao.sun@mail.mcgill.ca
     affiliation: McGill University
+    website: https://taosun99.github.io/
   - family-names: Yin
     given-names: Patrick
     affiliation: University of Washington
+    website: https://patrickyin.me/
 version: 0.2.0
 date-released: 2026-09-03
 license: Apache-2.0
