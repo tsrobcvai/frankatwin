@@ -79,13 +79,25 @@ Shm layout, seqlock, safety chain and the reasoning behind each default:
 
 ## Quick start
 
+### 0. Prerequisites
+
 Three machines can be involved. Every command below is tagged with where it runs:
 
 | tag | machine | runs | needs |
 |---|---|---|---|
 | <kbd>NUC</kbd> | real-time PC wired to the robot (FCI) | `python -m frankatwin.daemon` → `osc_shm` / `move_to` | RT kernel, libfranka, C++ build |
-| <kbd>PC</kbd> | your workstation | your code, `examples/move_to.py` / `cart_impedance.py`, analysis scripts | Python only |
+| <kbd>PC</kbd> | your workstation | your code, `examples/*.py`, analysis scripts | Python only |
 | <kbd>SIM</kbd> | any GPU box with IsaacLab (can be the PC) | sysid fit, sim replay | IsaacLab ≥ 2.3 |
+
+Tested with:
+
+| component | tested |
+|---|---|
+| Robot | Franka Research 3 (system ≥ 5.7) and Panda; Franka Hand attached |
+| libfranka | 0.9.x (Panda), 0.13–0.15 (FR3); ≥ 0.14 needs Pinocchio, handled by CMake |
+| OS | Ubuntu 20.04 / 22.04 with `PREEMPT_RT` kernel on the NUC |
+| IsaacLab | 2.3.0 (needs ≥ 2.3 for the dynamic/viscous joint-friction API) |
+| Python | ≥ 3.9 on the PC; ≥ 3.9 on the NUC |
 
 Each step links to the full page in [docs/](docs/).
 
@@ -314,16 +326,6 @@ isaaclab_sysid/      self-contained IsaacLab extension: tasks, robot USD, sysid/
 tests/               shm ABI pinning test (C++ offsets vs numpy dtype)
 docs/                installation · architecture · usage · sysid · data_format · troubleshooting
 ```
-
-## Compatibility
-
-| component | tested |
-|---|---|
-| Robot | Franka Research 3 (system ≥ 5.7) and Panda; Franka Hand attached |
-| libfranka | 0.9.x (Panda), 0.13–0.15 (FR3); ≥ 0.14 needs Pinocchio, handled by CMake |
-| OS | Ubuntu 20.04 / 22.04 with `PREEMPT_RT` kernel on the NUC |
-| IsaacLab | 2.3.0 (needs ≥ 2.3 for the dynamic/viscous joint-friction API) |
-| Python | ≥ 3.9 on the PC; ≥ 3.9 on the NUC |
 
 ## Safety
 
