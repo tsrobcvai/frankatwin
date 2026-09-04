@@ -151,7 +151,9 @@ python -m frankatwin.daemon -v
 It launches `osc_shm` — the arm now holds its current pose under impedance
 control — and keeps it alive. Leave the terminal open; the banner should show
 `RT = SCHED_FIFO`, `tau_rate = 800 Nm/s`, the payload and collision settings,
-then `daemon ready`.
+then `daemon ready`. All flags (`--config`, payload overrides), the banner line
+by line, what it logs while running, how to stop it and when to restart it:
+[docs/usage.md → Daemon](docs/usage.md#daemon-nuc).
 
 #### Step 2 · <kbd>PC</kbd> Reset the arm — [`examples/move_to.py`](examples/move_to.py)
 
