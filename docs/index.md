@@ -70,6 +70,7 @@ sysid
 :caption: Reference
 
 architecture
+daemon
 interfaces
 api
 data_format
