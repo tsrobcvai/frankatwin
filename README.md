@@ -73,49 +73,61 @@ the safety chain and the reasoning behind each default.
 
 ## Quick start
 
-Four steps: install on both machines, move the arm from Python, run the sysid
-loop, and know which interface to reach for. Each step links to the full page in
-[docs/](docs/).
+Three machines can be involved. Every command below is tagged with where it runs:
+
+| tag | machine | runs | needs |
+|---|---|---|---|
+| <kbd>NUC</kbd> | real-time PC wired to the robot (FCI) | `frankatwin-daemon` → `osc_shm` / `move_to` | RT kernel, libfranka, C++ build |
+| <kbd>PC</kbd> | your workstation | your code, `frankatwin-reset` / `-excite`, analysis scripts | Python only |
+| <kbd>SIM</kbd> | any GPU box with IsaacLab (can be the PC) | sysid fit, sim replay | IsaacLab ≥ 2.3 |
+
+Each step links to the full page in [docs/](docs/).
 
 ### 1. Installation
 
-Prerequisites on the **NUC**: a `PREEMPT_RT` kernel, FCI enabled in Desk, libfranka
-(+ Pinocchio for libfranka ≥ 0.14), Eigen3, CMake ≥ 3.10. The **PC** only needs
-Python ≥ 3.9. Details, including the conda and Pinocchio caveats:
+Full prerequisites (RT kernel, FCI, libfranka ≥ 0.14 + Pinocchio, conda caveats):
 [docs/installation.md](docs/installation.md).
 
+<kbd>NUC</kbd> build the 1 kHz controller, install the Python side, start the daemon
+
 ```bash
-# NUC — build the 1 kHz controller, install the Python side, start the daemon
 git clone https://github.com/tsrobcvai/frankatwin && cd frankatwin
-cmake -S . -B build && cmake --build build -j
+cmake -S . -B build && cmake --build build -j      # libfranka + Eigen3 (+ Pinocchio for libfranka >= 0.14)
 pip install -e .
 frankatwin-doctor        # RT kernel, rtprio, binaries, libfranka/pinocchio, FCI link, other FCI clients
 frankatwin-daemon        # binds 5555 (commands) / 5556 (state), launches osc_shm
+```
 
-# PC — Python only
+<kbd>PC</kbd> Python only
+
+```bash
 git clone https://github.com/tsrobcvai/frankatwin && cd frankatwin
 pip install -e ".[analysis]"          # analysis: pandas + matplotlib for the compare/plot scripts
-vim config/robot.yaml                 # network.nuc_host
+vim config/robot.yaml                 # network.nuc_host = the NUC's address as seen from here
 frankatwin-doctor                     # daemon reachable? state stream flowing?
 ```
 
-`config/robot.yaml` is shared by both sides (network, robot IP, gains, safety
+<kbd>SIM</kbd> only if you will run the sysid loop — see [step 3](#3-system-identification).
+
+`config/robot.yaml` is shared by all sides (network, robot IP, gains, safety
 clamps, collision thresholds, payload). Override with `--config` or
 `$FRANKATWIN_CONFIG`.
 
 ### 2. Basic control
 
-Two motions are available: a blocking **joint-space reset** (`move_to`,
-libfranka min-jerk) and streaming **Cartesian impedance targets** (`osc_shm`,
-1 kHz). Try them from the shell first:
+Two motions exist: a blocking **joint-space reset** (`move_to`, libfranka
+min-jerk) and streaming **Cartesian impedance targets** (`osc_shm`, 1 kHz). With
+the daemon running on the NUC, everything in this step is <kbd>PC</kbd>.
+
+<kbd>PC</kbd> try them from the shell
 
 ```bash
-frankatwin-reset                       # move_to -> robot.init_q, osc_shm resumes anchored there
-frankatwin-excite                      # 4 s, ±5 cm z-sine at 50 Hz; prints tracking RMS + torque headroom
-python examples/lift_ee.py --height 0.02
+frankatwin-reset                          # move_to -> robot.init_q, osc_shm resumes anchored there
+frankatwin-excite                         # 4 s, ±5 cm z-sine at 50 Hz; prints tracking RMS + torque headroom
+python examples/lift_ee.py --height 0.02  # ramp the z-target up by 2 cm
 ```
 
-Then from Python — this is the whole API you need for a policy loop:
+<kbd>PC</kbd> from Python — this is the whole API you need for a policy loop
 
 ```python
 import numpy as np, time
@@ -146,25 +158,30 @@ are **wxyz** on the API. Control law, safety chain and timing:
 
 ### 3. System identification
 
-Four commands take you from a real excitation run to a PhysX arm that tracks it.
+From a real excitation run to a PhysX arm that tracks it, in four commands.
 Excitation design, parameter bounds and the loss: [docs/sysid.md](docs/sysid.md).
 
+<kbd>PC</kbd> excite the real arm with a 6-DOF chirp, log at 50 Hz
+
 ```bash
-# 1. Excite the real arm with a 6-DOF chirp and log at 50 Hz (PC)
 frankatwin-excite --mode chirp --kp-pos 500 --kp-ori 30 \
     --err-delta-pos 0.15 --err-delta-rot 0.80 --log data/chirp_$(date +%Y%m%d_%H%M%S).csv
+```
 
-# 2. Deploy the IsaacLab extension once, then fit 29 parameters with CMA-ES (IsaacLab env)
-./isaaclab_sysid/install_into_isaaclab.sh /path/to/IsaacLab && pip install cmaes
+<kbd>SIM</kbd> deploy the IsaacLab extension once, fit 29 parameters with CMA-ES, replay with them
+
+```bash
+./isaaclab_sysid/install_into_isaaclab.sh /path/to/IsaacLab && pip install cmaes   # once
 cd /path/to/IsaacLab
 python scripts/tools/sysid_franka_osc.py --headless --num_envs 128 --max_iter 40 \
     --real_csv /path/to/chirp.csv --real_sidecar /path/to/chirp.json
-
-# 3. Replay the real run in sim with the fitted parameters
 python scripts/tools/apply_sysid_params.py --best logs/sysid_franka/<ts>/sysid_best_params.json \
-    --invoke-replay --real-csv /path/to/chirp.csv --real-sidecar /path/to/chirp.json
+    --invoke-replay --real-csv /path/to/chirp.csv --real-sidecar /path/to/chirp.json   # -> chirp_sim_sysid.csv
+```
 
-# 4. Overlay real vs sim (frankatwin repo)
+<kbd>PC</kbd> overlay real vs sim
+
+```bash
 python scripts/compare_sim_real.py --real-csv chirp.csv --sim-csv chirp_sim_sysid.csv --save
 ```
 
@@ -176,17 +193,18 @@ overrides). Results on our arm are in [Results](#results).
 
 Everything you can talk to, from highest to lowest level:
 
-| interface | what | reference |
-|---|---|---|
-| **Console scripts** | `frankatwin-daemon`, `frankatwin-doctor`, `frankatwin-reset`, `frankatwin-excite`, `frankatwin-gen-{multiband,chirp}` | [usage.md → Command-line tools](docs/usage.md#command-line-tools) |
-| **Python client** `FrankaTwinClient` | `set_ee_target(pos, quat_wxyz)`, `set_gains(kp_pos, kp_ori, kd_pos, kd_ori, error_delta_pos, error_delta_rot)`, `enable()` / `disable()`, `get_state(fresh=False)`, `get_state_history()`, `wait_for_state()`, `move_to_q(q, speed_factor)`, `move_to_pose(pos, quat, duration)`. `LocalController` has the same methods for in-process use on the NUC. | [usage.md → Client API](docs/usage.md#client-api-pc) |
-| **`RobotState`** | `timestamp_s, q[7], dq[7], ee_pos[3], ee_quat[4] (wxyz), ee_linvel[3], ee_angvel[3], tau[7]` (commanded), `tau_J[7]` (measured, gravity incl.), `seq` | [usage.md](docs/usage.md#client-api-pc) |
-| **Daemon protocol** (any language) | JSON over ZMQ. REQ/REP on `cmd_port`: `{"op": "ping" \| "set_ee_target" \| "set_gains" \| "enable" \| "disable" \| "get_state" \| "move_to_q" \| "move_to_pose" \| "shutdown", ...}` → `{"ok": true, ...}`; PUB on `state_port`: one `RobotState` JSON at 100 Hz | [architecture.md → Daemon](docs/architecture.md#daemon-behaviour) |
-| **Shared memory** (same-host, any language) | `/frankatwin_osc`: `ShmCommand` (seqlock: target, gains, clamps, enabled) and a 1024-frame `ShmStateFrame` ring at 1 kHz. Fixed ABI in `src/shm_layout.h` / `frankatwin.shm_layout`, pinned by `tests/test_shm_layout.py` | [architecture.md → Shared memory](docs/architecture.md#shared-memory) |
-| **C++ binaries** | `osc_shm <ip> [--shm-name] [--max-torque-rate] [--load-mass/--load-com/--load-inertia] [--collision-torque/--collision-cartesian] [--no-coriolis] [--duration]`; `move_to <ip> --q q1..q7 [--speed-factor]` or `--pose x y z qw qx qy qz [--duration]`; `read_current_q`, `read_current_pose`, `read_load` | `src/*.cpp` headers |
-| **Config** `config/robot.yaml` | `network`, `robot`, `control` (gains, clamps), `collision`, `paths`, `reset`, `load` | [usage.md → Configuration reference](docs/usage.md#configuration-reference-configrobotyaml) |
-| **Data files** | Run CSV + sidecar JSON, sim replay CSV, `sysid_best_params.json` | [docs/data_format.md](docs/data_format.md) |
-| **IsaacLab tasks** | `Isaac-FrankaTwin-Replay-v0`, `Isaac-FrankaTwin-Sysid-v0` (task-impedance controller mirroring `osc_shm`), `franka_mimic.usd` | [docs/sysid.md](docs/sysid.md) |
+| interface | where | what | reference |
+|---|---|---|---|
+| **Console scripts** | <kbd>NUC</kbd> `frankatwin-daemon`, `-doctor` · <kbd>PC</kbd> `frankatwin-reset`, `-excite`, `-doctor`, `-gen-{multiband,chirp}` | one command per job | [usage.md → Command-line tools](docs/usage.md#command-line-tools) |
+| **Python client** `FrankaTwinClient` | <kbd>PC</kbd> | `set_ee_target(pos, quat_wxyz)`, `set_gains(kp_pos, kp_ori, kd_pos, kd_ori, error_delta_pos, error_delta_rot)`, `enable()` / `disable()`, `get_state(fresh=False)`, `get_state_history()`, `wait_for_state()`, `move_to_q(q, speed_factor)`, `move_to_pose(pos, quat, duration)` | [usage.md → Client API](docs/usage.md#client-api-pc) |
+| **`LocalController`** | <kbd>NUC</kbd> | same methods as the client, in-process (no ZMQ) | [usage.md → Client API](docs/usage.md#client-api-pc) |
+| **`RobotState`** | both | `timestamp_s, q[7], dq[7], ee_pos[3], ee_quat[4] (wxyz), ee_linvel[3], ee_angvel[3], tau[7]` (commanded), `tau_J[7]` (measured, gravity incl.), `seq` | [usage.md](docs/usage.md#client-api-pc) |
+| **Daemon protocol** (any language) | <kbd>PC</kbd> → <kbd>NUC</kbd> | JSON over ZMQ. REQ/REP on `cmd_port`: `{"op": "ping" \| "set_ee_target" \| "set_gains" \| "enable" \| "disable" \| "get_state" \| "move_to_q" \| "move_to_pose" \| "shutdown", ...}` → `{"ok": true, ...}`; PUB on `state_port`: one `RobotState` JSON at 100 Hz | [architecture.md → Daemon](docs/architecture.md#daemon-behaviour) |
+| **Shared memory** (any language) | <kbd>NUC</kbd> | `/frankatwin_osc`: `ShmCommand` (seqlock: target, gains, clamps, enabled) and a 1024-frame `ShmStateFrame` ring at 1 kHz. Fixed ABI in `src/shm_layout.h` / `frankatwin.shm_layout`, pinned by `tests/test_shm_layout.py` | [architecture.md → Shared memory](docs/architecture.md#shared-memory) |
+| **C++ binaries** | <kbd>NUC</kbd> | `osc_shm <ip> [--shm-name] [--max-torque-rate] [--load-mass/--load-com/--load-inertia] [--collision-torque/--collision-cartesian] [--no-coriolis] [--duration]`; `move_to <ip> --q q1..q7 [--speed-factor]` or `--pose x y z qw qx qy qz [--duration]`; `read_current_q`, `read_current_pose`, `read_load` | `src/*.cpp` headers |
+| **Config** `config/robot.yaml` | all | `network`, `robot`, `control` (gains, clamps), `collision`, `paths`, `reset`, `load` | [usage.md → Configuration reference](docs/usage.md#configuration-reference-configrobotyaml) |
+| **Data files** | <kbd>PC</kbd> / <kbd>SIM</kbd> | run CSV + sidecar JSON, sim replay CSV, `sysid_best_params.json` | [docs/data_format.md](docs/data_format.md) |
+| **IsaacLab tasks** | <kbd>SIM</kbd> | `Isaac-FrankaTwin-Replay-v0`, `Isaac-FrankaTwin-Sysid-v0` (task-impedance controller mirroring `osc_shm`), `franka_mimic.usd` | [docs/sysid.md](docs/sysid.md) |
 
 Not exposed (yet): gripper control, joint-space impedance, relative-pose
 targets, ROS. Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
