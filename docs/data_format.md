@@ -27,7 +27,7 @@ row *k+1*.
 
 ## Real sidecar (`<run>.json`, `schema_version: 2`)
 
-```jsonc
+```js
 {
   "schema_version": 2,
   "controller": "python_v4_chirp_excitation",   // or python_multiband_excitation / python_sine
@@ -83,7 +83,7 @@ any) and the same `summary` block.
 
 ## `sysid_best_params.json`
 
-```jsonc
+```js
 {
   "best_score": 0.002247,
   "best_params": [29 floats],                 // raw optimizer vector

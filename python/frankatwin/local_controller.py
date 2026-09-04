@@ -172,7 +172,7 @@ class RobotState:
 class LocalController:
     """Owns the shm segment and the C++ controller subprocess.
 
-    Typical usage:
+    Typical usage::
 
         cfg = load_config()
         with LocalController(cfg) as robot:

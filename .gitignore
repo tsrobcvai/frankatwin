@@ -38,3 +38,6 @@ __pycache__/
 .pytest_cache/
 tmp/
 logs/
+
+# Sphinx
+docs/_build/

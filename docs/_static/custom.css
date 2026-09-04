@@ -1,0 +1,12 @@
+/* kbd tags used for the NUC / PC / SIM machine labels */
+kbd {
+  font-family: var(--pst-font-family-monospace);
+  font-size: 0.8em;
+  padding: 0.1em 0.45em;
+  border: 1px solid var(--pst-color-border);
+  border-bottom-width: 2px;
+  border-radius: 0.3em;
+  background: var(--pst-color-surface);
+  color: var(--pst-color-text-base);
+}
+table.table td, table.table th { vertical-align: top; }

@@ -1,0 +1,6 @@
+sphinx>=7
+pydata-sphinx-theme>=0.15
+myst-parser>=2
+sphinx-copybutton
+sphinxcontrib-mermaid
+sphinx-autobuild
