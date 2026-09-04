@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Shim: equivalent to the ``frankatwin-reset`` console script.
 
-    frankatwin-reset [--config robot.yaml] [--speed 0.2] [--q q1 .. q7]
+    frankatwin-reset                                   # joint-space move to robot.init_q
+    frankatwin-reset --q q1 .. q7 [--speed 0.2]        # joint-space move to any configuration
+    frankatwin-reset --pose x y z qw qx qy qz [--duration 5]   # EE-pose move (position control)
 """
 import sys
 

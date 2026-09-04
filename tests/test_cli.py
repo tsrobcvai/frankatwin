@@ -47,3 +47,11 @@ def test_doctor_bad_config_is_reported_not_raised(tmp_path, capsys):
     rc = doctor_main(["--config", str(path)])
     out = capsys.readouterr().out
     assert rc == 1 and "[XX] config" in out
+
+
+def test_reset_q_and_pose_are_exclusive(capsys):
+    from frankatwin.cli import reset_main
+    with pytest.raises(SystemExit) as e:
+        reset_main(["--q", "0", "0", "0", "0", "0", "0", "0", "--pose", "0", "0", "0", "1", "0", "0", "0"])
+    assert e.value.code == 2
+    assert "not allowed with" in capsys.readouterr().err

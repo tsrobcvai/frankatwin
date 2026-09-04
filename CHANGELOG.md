@@ -32,7 +32,8 @@ First public release, renamed from the internal `panda_control` repository.
   their compare tools). They remain on the `v0.1` branch.
 
 ### Added
-- Console scripts: `frankatwin-daemon`, `frankatwin-reset`, `frankatwin-doctor`
+- Console scripts: `frankatwin-daemon`, `frankatwin-reset` (joint-space `--q` or
+  EE-pose `--pose`), `frankatwin-doctor`
   (environment / connectivity check with per-line hints), `frankatwin-excite`
   (the excitation runner, formerly `examples/cart_impedance.py`) and
   `frankatwin-gen-{multiband,chirp}`.

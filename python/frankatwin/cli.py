@@ -26,28 +26,47 @@ FCI_TCP_PORT = 1337  # libfranka command channel
 # frankatwin-reset
 # =============================================================================
 def reset_main(argv: Optional[Sequence[str]] = None) -> int:
-    """Move to the home joint configuration (or ``--q``) via ``move_to``."""
+    """Blocking position-controlled move via ``move_to``.
+
+    Default: joint-space move to ``robot.init_q`` (home). ``--q`` picks another
+    joint target; ``--pose`` does an EE-pose move instead (libfranka
+    CartesianPose, no IK on our side). Either way osc_shm is stopped for the
+    move and restarted anchored at the new pose, gains preserved.
+    """
     import numpy as np
 
     from frankatwin.remote_client import FrankaTwinClient
 
     p = argparse.ArgumentParser(
         prog="frankatwin-reset",
-        description="Blocking joint-space reset: stops osc_shm, runs move_to, restarts osc_shm.",
+        description="Position-controlled move (joint-space by default, --pose for an EE pose): "
+                    "stops osc_shm, runs move_to, restarts osc_shm at the new pose.",
     )
     p.add_argument("--config", "-c", default=None, help="path to robot.yaml")
-    p.add_argument("--speed", type=float, default=None, help="MotionGenerator speed factor (0, 0.5]")
-    p.add_argument("--q", type=float, nargs=7, default=None, metavar="Q",
-                   help="target joint configuration [rad] (default: robot.init_q)")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--q", type=float, nargs=7, default=None, metavar="Q",
+                   help="joint target [rad] x7 (default: robot.init_q)")
+    g.add_argument("--pose", type=float, nargs=7, default=None, metavar="P",
+                   help="EE target: x y z [m] qw qx qy qz (base frame, wxyz)")
+    p.add_argument("--speed", type=float, default=None,
+                   help="joint move: MotionGenerator speed factor (0, 0.5] (default: reset.joint_speed_factor)")
+    p.add_argument("--duration", type=float, default=None,
+                   help="pose move: seconds, [1.5, 20] (default: reset.pose_duration)")
     args = p.parse_args(argv)
 
     cfg = load_config(args.config)
-    q = np.asarray(args.q if args.q is not None else cfg.robot.init_q, dtype=np.float64)
-    print(f"[frankatwin-reset] moving to q = {np.round(q, 4).tolist()}")
     with FrankaTwinClient(cfg) as robot:
-        robot.move_to_q(q, speed_factor=args.speed)
+        if args.pose is not None:
+            pos, quat = np.asarray(args.pose[:3], dtype=np.float64), np.asarray(args.pose[3:], dtype=np.float64)
+            print(f"[frankatwin-reset] moving EE to pos = {pos.tolist()}, quat(wxyz) = {quat.tolist()}")
+            robot.move_to_pose(pos, quat, duration=args.duration)
+        else:
+            q = np.asarray(args.q if args.q is not None else cfg.robot.init_q, dtype=np.float64)
+            print(f"[frankatwin-reset] moving to q = {np.round(q, 4).tolist()}")
+            robot.move_to_q(q, speed_factor=args.speed)
         s = robot.wait_for_state(timeout_s=5.0)
-    print(f"[frankatwin-reset] done; ee_pos = {np.round(s.ee_pos, 4).tolist()}")
+    print(f"[frankatwin-reset] done; q = {np.round(s.q, 4).tolist()}")
+    print(f"[frankatwin-reset]       ee_pos = {np.round(s.ee_pos, 4).tolist()}, ee_quat(wxyz) = {np.round(s.ee_quat, 4).tolist()}")
     return 0
 
 
