@@ -82,8 +82,8 @@ libfranka ≥ 0.14 / Pinocchio situation: [docs/installation.md](docs/installati
 git clone https://github.com/tsrobcvai/frankatwin && cd frankatwin
 cmake -S . -B build && cmake --build build -j       # needs libfranka + Eigen3
 pip install -e .
-python -m pytest tests/test_shm_layout.py -q        # ABI check: C++ struct == numpy dtype
-python -m frankatwin.daemon --config config/robot.yaml
+frankatwin-doctor                                   # RT kernel, binaries, libfranka, FCI link
+frankatwin-daemon
 ```
 
 **PC** (Python only):
@@ -92,9 +92,14 @@ python -m frankatwin.daemon --config config/robot.yaml
 git clone https://github.com/tsrobcvai/frankatwin && cd frankatwin
 pip install -e ".[analysis]"
 # edit config/robot.yaml: network.nuc_host
-python examples/reset_home.py            # joint-space reset via move_to
-python examples/cart_impedance.py        # 4 s z-sine around the current pose
+frankatwin-doctor        # daemon reachable? state stream flowing?
+frankatwin-reset         # joint-space reset via move_to
+frankatwin-excite        # 4 s z-sine around the current pose, prints tracking RMS
 ```
+
+`pip install -e .` also gives you `frankatwin-daemon`, `frankatwin-reset`,
+`frankatwin-doctor`, `frankatwin-excite` (excitation runner / logger) and
+`frankatwin-gen-{multiband,chirp}` (reference generators).
 
 **From your own code:**
 
@@ -122,7 +127,7 @@ the excitation design and the parameter bounds):
 
 ```bash
 # 1. Excite the real arm with a 6-DOF chirp and log at 50 Hz (PC)
-python examples/cart_impedance.py --mode chirp --kp-pos 500 --kp-ori 30 \
+frankatwin-excite --mode chirp --kp-pos 500 --kp-ori 30 \
     --err-delta-pos 0.15 --err-delta-rot 0.80 --log data/chirp_$(date +%Y%m%d_%H%M%S).csv
 
 # 2. Deploy the IsaacLab extension once, then fit (IsaacLab env)
@@ -178,10 +183,11 @@ on yours — it takes ~4 h on one GPU with 128 parallel envs.
 
 ```
 src/                 C++: osc_shm (1 kHz controller), move_to (reset), read_* utilities, shm_layout.h
-python/frankatwin/   daemon, FrankaTwinClient (PC), LocalController (NUC), config, shm_layout
+python/frankatwin/   daemon, FrankaTwinClient (PC), LocalController (NUC), config, shm_layout,
+                     cli (reset / doctor), excitation/ (multiband, chirp), tools/ (excite)
 config/robot.yaml    network, robot IP, gains, safety clamps, collision thresholds, payload
-examples/            cart_impedance (sine / multiband / chirp), reset_home, lift_ee, move_to_q
-scripts/             excitation generators, sim-vs-real compare, torque-limit check, plots
+examples/            lift_ee, move_to_q (+ thin shims for the console scripts)
+scripts/             sim-vs-real compare, torque-limit check, plots
 isaaclab_sysid/      self-contained IsaacLab extension: tasks, robot USD, sysid/replay scripts
 tests/               shm ABI pinning test (C++ offsets vs numpy dtype)
 docs/                installation · architecture · usage · sysid · data_format · troubleshooting

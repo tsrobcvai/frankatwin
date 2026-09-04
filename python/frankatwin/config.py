@@ -1,12 +1,12 @@
 """Load and validate frankatwin runtime config.
 
-Config resolution order:
-  1. Explicit `path=` argument to `load_config(path=...)`.
-  2. `FRANKATWIN_CONFIG` environment variable.
-  3. `<repo_root>/config/robot.yaml`  (repo default).
+Config resolution order (first hit wins):
+  1. Explicit `path=` argument to `load_config(path=...)` / `--config`.
+  2. `$FRANKATWIN_CONFIG`.
+  3. `<repo>/config/robot.yaml` -- the checkout this package was installed
+     from (`pip install -e .`).
 
-Repo root is detected by walking upward from this file until a directory
-containing both `src/` and `config/` is found.
+Relative `paths.build_dir` is resolved against the repo root.
 """
 
 from __future__ import annotations
@@ -20,22 +20,20 @@ from typing import List, Optional
 import yaml
 
 _THIS_FILE = pathlib.Path(__file__).resolve()
-
-
-def _detect_repo_root() -> pathlib.Path:
-    cur = _THIS_FILE.parent
-    for _ in range(6):
-        if (cur / "CMakeLists.txt").exists() and (cur / "src").is_dir():
-            return cur
-        if cur.parent == cur:
-            break
-        cur = cur.parent
-    # Fallback: assume the parent of the python package directory.
-    return _THIS_FILE.parents[2]
-
-
-REPO_ROOT = _detect_repo_root()
+# python/frankatwin/config.py -> repo root (editable install of a checkout).
+REPO_ROOT = _THIS_FILE.parents[2]
 DEFAULT_CONFIG_PATH = REPO_ROOT / "config" / "robot.yaml"
+
+
+def resolve_config_path(path: Optional[os.PathLike] = None) -> pathlib.Path:
+    """Pick the config file per the module docstring (existence is checked by
+    `load_config`)."""
+    if path is not None:
+        return pathlib.Path(path).expanduser().resolve()
+    env = os.environ.get("FRANKATWIN_CONFIG")
+    if env:
+        return pathlib.Path(env).expanduser().resolve()
+    return DEFAULT_CONFIG_PATH
 
 
 @dataclass
@@ -73,7 +71,7 @@ class ControlConfig:
 
 @dataclass
 class PathsConfig:
-    build_dir: pathlib.Path
+    build_dir: pathlib.Path   # absolute after load (relative -> repo root)
     shm_name: str
 
 
@@ -133,7 +131,7 @@ class RobotConfig:
 
 
 def _resolve_path(value: str, base: pathlib.Path) -> pathlib.Path:
-    p = pathlib.Path(value)
+    p = pathlib.Path(value).expanduser()
     return p if p.is_absolute() else (base / p).resolve()
 
 
@@ -158,16 +156,12 @@ def _validate_quat(v) -> None:
 def load_config(path: Optional[os.PathLike] = None) -> RobotConfig:
     """Load and validate robot.yaml. See module docstring for resolution rules."""
 
-    chosen: pathlib.Path
-    if path is not None:
-        chosen = pathlib.Path(path).expanduser().resolve()
-    elif "FRANKATWIN_CONFIG" in os.environ:
-        chosen = pathlib.Path(os.environ["FRANKATWIN_CONFIG"]).expanduser().resolve()
-    else:
-        chosen = DEFAULT_CONFIG_PATH
-
+    chosen = resolve_config_path(path)
     if not chosen.is_file():
-        raise FileNotFoundError(f"frankatwin config not found: {chosen}")
+        raise FileNotFoundError(
+            f"frankatwin config not found: {chosen} "
+            "(pass --config or set $FRANKATWIN_CONFIG)"
+        )
 
     with chosen.open("r") as f:
         raw = yaml.safe_load(f)
@@ -207,10 +201,9 @@ def load_config(path: Optional[os.PathLike] = None) -> RobotConfig:
             error_delta_rot=float(ctrl.get("error_delta_rot", 0.30)),
         )
 
-        p = raw["paths"]
-        base = chosen.parent.parent  # config/ -> repo root
+        p = raw.get("paths", {}) or {}
         paths_cfg = PathsConfig(
-            build_dir=_resolve_path(str(p["build_dir"]), base),
+            build_dir=_resolve_path(str(p.get("build_dir", "build")), REPO_ROOT),
             shm_name=str(p.get("shm_name", "/frankatwin_osc")),
         )
         if not paths_cfg.shm_name.startswith("/"):

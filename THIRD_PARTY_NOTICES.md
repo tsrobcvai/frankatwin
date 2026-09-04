@@ -9,7 +9,7 @@ derives from the following third-party code:
 | `isaaclab_sysid/source/isaaclab_tasks/.../franka_sysid/` | Derived from the [Isaac Lab](https://github.com/isaac-sim/IsaacLab) `DirectRLEnv` task template and its OSC controller utilities | BSD-3-Clause, © Isaac Lab Project Developers |
 | `isaaclab_sysid/scripts/tools/*.py` | Written against the Isaac Lab script conventions (`AppLauncher`, `parse_env_cfg`); carry the Isaac Lab header | BSD-3-Clause, © Isaac Lab Project Developers |
 | `isaaclab_sysid/source/isaaclab_assets/data/Robots/Franka/franka_mimic.usd` | Franka Emika Panda USD from the Isaac Sim asset pack with an added `panda_fingertip_centered` frame | NVIDIA Omniverse asset license |
-| `scripts/gen_chirp_traj.py` (design only) | The 6-DOF linear-chirp excitation shape follows the UR5e `collect_sysid_data.py` in [uw-lab/omnireset](https://github.com/uw-lab/omnireset); no code is copied | — |
+| `python/frankatwin/excitation/chirp.py` (design only) | The 6-DOF linear-chirp excitation shape follows the UR5e `collect_sysid_data.py` in [uw-lab/omnireset](https://github.com/uw-lab/omnireset); no code is copied | — |
 
 Runtime dependencies (not redistributed): libfranka (Apache-2.0), Eigen (MPL-2.0),
 Pinocchio (BSD-2-Clause), Boost (BSL-1.0), NumPy (BSD-3-Clause), PyYAML (MIT),

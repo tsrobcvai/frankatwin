@@ -84,9 +84,13 @@ git clone https://github.com/tsrobcvai/frankatwin && cd frankatwin
 cmake -S . -B build && cmake --build build -j
 ls build/osc_shm build/move_to build/read_current_q build/read_current_pose build/read_load
 
-pip install -e .                                   # numpy, pyyaml, pyzmq
-python -m pytest tests/test_shm_layout.py -q       # C++ struct offsets == numpy dtype
+pip install -e .                                   # numpy, pyyaml, pyzmq + frankatwin-* commands
+python -m pytest tests -q                          # shm ABI, config, excitation, cli
+frankatwin-doctor                                  # RT kernel, rtprio, binaries, libfranka, FCI link
 ```
+
+`frankatwin-doctor` prints one line per check with a hint on failure; fix the
+`[XX]` lines before starting the daemon.
 
 `osc_shm` asks for `SCHED_FIFO` priority 80 at startup. Either run the daemon
 from a shell with `ulimit -r 99` (realtime group) or grant the capability once:
@@ -111,17 +115,18 @@ the NUC's LAN IP otherwise). Ports 5555 (REQ/REP) and 5556 (PUB) must be open.
 
 ## 5. Configuration file
 
-Both halves read the same `config/robot.yaml`. Override the path with
-`FRANKATWIN_CONFIG=/path/to/local.yaml` or `--config` on the CLIs. Keys are
-documented inline in the file and in [usage.md](usage.md#configuration-reference).
+Both halves read the same `config/robot.yaml` from the checkout
+(`pip install -e .` is the intended install mode). Override with `--config` on
+any command or `FRANKATWIN_CONFIG=/path/to/local.yaml`. Keys are documented
+inline in the file and in [usage.md](usage.md#configuration-reference).
 
 ## 6. First run
 
 Terminal 1, **NUC**:
 
 ```bash
-pgrep -a franka-interface && echo "stop other FCI clients first"
-python -m frankatwin.daemon --config config/robot.yaml -v
+frankatwin-doctor          # flags other FCI clients, missing binaries, unreachable FCI
+frankatwin-daemon -v
 ```
 
 Expected banner:
@@ -139,8 +144,9 @@ Expected banner:
 Terminal 2, **PC**:
 
 ```bash
-python examples/reset_home.py           # move_to -> init_q, then osc_shm resumes
-python examples/cart_impedance.py       # 4 s, ±5 cm z-sine, prints tracking RMS
+frankatwin-doctor          # daemon ping + state stream
+frankatwin-reset           # move_to -> init_q, then osc_shm resumes
+frankatwin-excite          # 4 s, ±5 cm z-sine, prints tracking RMS
 ```
 
 ## 7. IsaacLab (only for sysid / replay)
