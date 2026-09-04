@@ -14,12 +14,13 @@ simulation twin is *the same controller* — plus the system identification that
 makes the twin's dynamics match the real arm to within 1–3 % of joint motion
 range.
 
-- **Task impedance control, identical in sim and on the robot.** The controller
-  is the task-space impedance law that sim-to-real work such as
+- **Task impedance control, identical in sim and on the robot.** `osc_shm`
+  (libfranka, 1 kHz) and the IsaacLab controller are the same task-space
+  impedance law with the same gains, damping rule and torque slew limit — the
+  control scheme used by sim-to-real work such as
   [IndustReal](https://arxiv.org/abs/2305.17110) and
-  [OmniReset](https://weirdlabuw.github.io/omnireset/) trains policies on.
-  `osc_shm` (libfranka, 1 kHz) and the IsaacLab controller are the same law
-  with the same gains, damping rule and torque slew limit.
+  [OmniReset](https://weirdlabuw.github.io/omnireset/), so their pipelines can
+  be reproduced on a Franka with this stack.
 - **System identification that closes the loop.** A CMA-ES fit of 29
   parameters (armature, static / dynamic / viscous friction, motor delay) drives
   the sim replay of real excitation runs — joint-position MSE 4.8 × 10⁻⁴ rad²
