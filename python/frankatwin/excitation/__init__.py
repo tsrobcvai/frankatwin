@@ -5,8 +5,8 @@
 * :mod:`frankatwin.excitation.chirp` -- SysID v4: 6-DOF linear chirp.
 
 Both modules expose a ``build_*_trajectory`` function that evaluates the
-reference on an arbitrary time grid (used by ``frankatwin-excite``) and a
-``main()`` that writes a 1 kHz target CSV + sidecar (``frankatwin-gen-*``).
+reference on an arbitrary time grid. ``examples/cart_impedance.py`` drives the
+robot with it; ``scripts/gen_*_traj.py`` write it out as a 1 kHz CSV + sidecar.
 """
 
 from .chirp import (

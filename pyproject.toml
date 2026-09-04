@@ -38,14 +38,6 @@ analysis = [
     "matplotlib>=3.5",
 ]
 
-[project.scripts]
-frankatwin-daemon        = "frankatwin.daemon:main"
-frankatwin-reset         = "frankatwin.cli:reset_main"
-frankatwin-doctor        = "frankatwin.cli:doctor_main"
-frankatwin-excite        = "frankatwin.tools.cart_impedance:main"
-frankatwin-gen-multiband = "frankatwin.excitation.multiband:main"
-frankatwin-gen-chirp     = "frankatwin.excitation.chirp:main"
-
 [project.urls]
 Homepage = "https://github.com/tsrobcvai/frankatwin"
 Documentation = "https://github.com/tsrobcvai/frankatwin/tree/main/docs"

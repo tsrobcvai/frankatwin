@@ -84,12 +84,12 @@ git clone https://github.com/tsrobcvai/frankatwin && cd frankatwin
 cmake -S . -B build && cmake --build build -j
 ls build/osc_shm build/move_to build/read_current_q build/read_current_pose build/read_load
 
-pip install -e .                                   # numpy, pyyaml, pyzmq + frankatwin-* commands
+pip install -e .                                   # numpy, pyyaml, pyzmq
 python -m pytest tests -q                          # shm ABI, config, excitation, cli
-frankatwin-doctor                                  # RT kernel, rtprio, binaries, libfranka, FCI link
+python -m frankatwin.doctor                                  # RT kernel, rtprio, binaries, libfranka, FCI link
 ```
 
-`frankatwin-doctor` prints one line per check with a hint on failure; fix the
+`python -m frankatwin.doctor` prints one line per check with a hint on failure; fix the
 `[XX]` lines before starting the daemon.
 
 `osc_shm` asks for `SCHED_FIFO` priority 80 at startup. Either run the daemon
@@ -125,8 +125,8 @@ inline in the file and in [usage.md](usage.md#configuration-reference).
 Terminal 1, **NUC**:
 
 ```bash
-frankatwin-doctor          # flags other FCI clients, missing binaries, unreachable FCI
-frankatwin-daemon -v
+python -m frankatwin.doctor          # flags other FCI clients, missing binaries, unreachable FCI
+python -m frankatwin.daemon -v
 ```
 
 Expected banner:
@@ -144,9 +144,9 @@ Expected banner:
 Terminal 2, **PC**:
 
 ```bash
-frankatwin-doctor          # daemon ping + state stream
-frankatwin-reset           # move_to -> init_q, then osc_shm resumes
-frankatwin-excite          # 4 s, ±5 cm z-sine, prints tracking RMS
+python -m frankatwin.doctor          # daemon ping + state stream
+python examples/move_to.py              # move_to -> init_q (home), then osc_shm resumes
+python examples/cart_impedance.py          # 4 s, ±5 cm z-sine, prints tracking RMS
 ```
 
 ## 7. IsaacLab (only for sysid / replay)

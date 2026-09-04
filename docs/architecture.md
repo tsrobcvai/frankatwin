@@ -115,7 +115,7 @@ ShmStateFrame 384 B  seq, timestamp_s, q[7], dq[7], ee_pos[3], ee_quat[4] (wxyz)
 Ordered from first to last line of defence:
 
 1. **Reference pre-flight** (Python, before anything is sent): the trajectory
-   generators and `frankatwin-excite` print peak `|ẋ|`, `|ω|` and the max
+   generators and `python examples/cart_impedance.py` print peak `|ẋ|`, `|ω|` and the max
    orientation offset and warn against the 0.30 m/s / 0.50 rad/s conventions.
 2. **Error clamp** (`error_delta_pos/rot`, per tick): when > 0, clips the
    position/orientation error coordinate-wise *and* aborts the loop if the
@@ -124,7 +124,7 @@ Ordered from first to last line of defence:
    0.05 m / 0.30 rad as the daemon's initial values; `0` disables both (pure
    impedance, what the sim does). Override at runtime with
    `set_gains(error_delta_pos=…, error_delta_rot=…)` or
-   `frankatwin-excite --err-delta-pos/--err-delta-rot`.
+   `python examples/cart_impedance.py --err-delta-pos/--err-delta-rot`.
 3. **Torque clamp** `τ_max` per joint.
 4. **Torque slew limiter** 800 N·m/s per joint (libfranka's own limit is
    1000). The Jᵀ law emits a torque *step* whenever its input jumps — a new

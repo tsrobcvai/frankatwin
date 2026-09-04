@@ -32,14 +32,15 @@ First public release, renamed from the internal `panda_control` repository.
   their compare tools). They remain on the `v0.1` branch.
 
 ### Added
-- Console scripts: `frankatwin-daemon`, `frankatwin-reset` (joint-space `--q` or
-  EE-pose `--pose`), `frankatwin-doctor`
-  (environment / connectivity check with per-line hints), `frankatwin-excite`
-  (the excitation runner, formerly `examples/cart_impedance.py`) and
-  `frankatwin-gen-{multiband,chirp}`.
-- `frankatwin.excitation` package: the reference builders moved out of
-  `scripts/` (no more `sys.path` hacks); `scripts/gen_*_traj.py` and
-  `examples/{cart_impedance,reset_home}.py` remain as thin shims.
+- `python -m frankatwin.doctor`: environment / connectivity check with a
+  hint per failing line (RT kernel, rtprio, binaries + ldd, FCI port, other
+  FCI clients, daemon ping, state stream).
+- `examples/move_to.py`: one position-control script — home (default),
+  `--target-joints`, or `--target-ee x y z qw qx qy qz` (replaces
+  `reset_home.py` / `move_to_q.py`).
+- `frankatwin.excitation` package: the reference math moved out of
+  `scripts/` (no more `sys.path` hacks); `scripts/gen_*_traj.py` are now
+  just the command line around it.
 - Tests for config resolution, excitation builders and the CLI.
 - Apache-2.0 license, third-party notices, citation metadata, CI, and the
   `docs/` set (installation, architecture, usage, sysid, data format,
