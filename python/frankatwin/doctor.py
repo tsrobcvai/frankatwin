@@ -1,7 +1,6 @@
-"""Console entry points: frankatwin-reset and frankatwin-doctor.
+"""Environment check: `python -m frankatwin.doctor [--role auto|nuc|pc]`.
 
-(`frankatwin-daemon`, `frankatwin-excite` and `frankatwin-gen-*` live next to
-the code they wrap; see ``[project.scripts]`` in pyproject.toml.)
+One line per check, a hint per failure, exit 1 on any hard failure.
 """
 
 from __future__ import annotations
@@ -22,57 +21,6 @@ from frankatwin.config import RobotConfig, load_config, resolve_config_path
 FCI_TCP_PORT = 1337  # libfranka command channel
 
 
-# =============================================================================
-# frankatwin-reset
-# =============================================================================
-def reset_main(argv: Optional[Sequence[str]] = None) -> int:
-    """Blocking position-controlled move via ``move_to``.
-
-    Default: joint-space move to ``robot.init_q`` (home). ``--q`` picks another
-    joint target; ``--pose`` does an EE-pose move instead (libfranka
-    CartesianPose, no IK on our side). Either way osc_shm is stopped for the
-    move and restarted anchored at the new pose, gains preserved.
-    """
-    import numpy as np
-
-    from frankatwin.remote_client import FrankaTwinClient
-
-    p = argparse.ArgumentParser(
-        prog="frankatwin-reset",
-        description="Position-controlled move (joint-space by default, --pose for an EE pose): "
-                    "stops osc_shm, runs move_to, restarts osc_shm at the new pose.",
-    )
-    p.add_argument("--config", "-c", default=None, help="path to robot.yaml")
-    g = p.add_mutually_exclusive_group()
-    g.add_argument("--q", type=float, nargs=7, default=None, metavar="Q",
-                   help="joint target [rad] x7 (default: robot.init_q)")
-    g.add_argument("--pose", type=float, nargs=7, default=None, metavar="P",
-                   help="EE target: x y z [m] qw qx qy qz (base frame, wxyz)")
-    p.add_argument("--speed", type=float, default=None,
-                   help="joint move: MotionGenerator speed factor (0, 0.5] (default: reset.joint_speed_factor)")
-    p.add_argument("--duration", type=float, default=None,
-                   help="pose move: seconds, [1.5, 20] (default: reset.pose_duration)")
-    args = p.parse_args(argv)
-
-    cfg = load_config(args.config)
-    with FrankaTwinClient(cfg) as robot:
-        if args.pose is not None:
-            pos, quat = np.asarray(args.pose[:3], dtype=np.float64), np.asarray(args.pose[3:], dtype=np.float64)
-            print(f"[frankatwin-reset] moving EE to pos = {pos.tolist()}, quat(wxyz) = {quat.tolist()}")
-            robot.move_to_pose(pos, quat, duration=args.duration)
-        else:
-            q = np.asarray(args.q if args.q is not None else cfg.robot.init_q, dtype=np.float64)
-            print(f"[frankatwin-reset] moving to q = {np.round(q, 4).tolist()}")
-            robot.move_to_q(q, speed_factor=args.speed)
-        s = robot.wait_for_state(timeout_s=5.0)
-    print(f"[frankatwin-reset] done; q = {np.round(s.q, 4).tolist()}")
-    print(f"[frankatwin-reset]       ee_pos = {np.round(s.ee_pos, 4).tolist()}, ee_quat(wxyz) = {np.round(s.ee_quat, 4).tolist()}")
-    return 0
-
-
-# =============================================================================
-# frankatwin-doctor
-# =============================================================================
 class _Report:
     OK, WARN, FAIL, SKIP = "ok", "!!", "XX", "--"
 
@@ -177,7 +125,7 @@ def _check_nuc(rep: _Report, cfg: RobotConfig) -> None:
     others = [l for l in procs.splitlines() if l and not l.startswith(me + " ")]
     if others:
         rep.add(_Report.WARN, "fci clients", "; ".join(o[:60] for o in others[:3]),
-                "only one FCI session at a time -- stop them unless it is your own frankatwin-daemon")
+                "only one FCI session at a time -- stop them unless it is your own frankatwin daemon")
     else:
         rep.add(_Report.OK, "fci clients", "none running")
 
@@ -186,7 +134,7 @@ def _check_nuc(rep: _Report, cfg: RobotConfig) -> None:
     if seg.exists():
         rep.add(_Report.OK, "shm segment", f"{seg} present ({seg.stat().st_size} B)")
     else:
-        rep.add(_Report.OK, "shm segment", f"{seg} absent (created by frankatwin-daemon)")
+        rep.add(_Report.OK, "shm segment", f"{seg} absent (created by the daemon)")
 
 
 def _check_pc(rep: _Report, cfg: RobotConfig) -> None:
@@ -212,7 +160,7 @@ def _check_pc(rep: _Report, cfg: RobotConfig) -> None:
                         "controller not running -- check the daemon log (-v)")
         else:
             rep.add(_Report.FAIL, "daemon", f"no reply from {url} in 2 s",
-                    "start `frankatwin-daemon` on the NUC; check network.nuc_host / firewall on the cmd port")
+                    "start `python -m frankatwin.daemon` on the NUC; check network.nuc_host / firewall on the cmd port")
             return
     finally:
         req.close()
@@ -239,10 +187,10 @@ def _check_pc(rep: _Report, cfg: RobotConfig) -> None:
         sub.close()
 
 
-def doctor_main(argv: Optional[Sequence[str]] = None) -> int:
+def main(argv: Optional[Sequence[str]] = None) -> int:
     """Check the environment and print a report; exit 1 on any hard failure."""
     p = argparse.ArgumentParser(
-        prog="frankatwin-doctor",
+        prog="python -m frankatwin.doctor",
         description="Check RT kernel, binaries, libfranka, FCI reachability, daemon and state stream.",
     )
     p.add_argument("--config", "-c", default=None, help="path to robot.yaml")
@@ -277,6 +225,5 @@ def doctor_main(argv: Optional[Sequence[str]] = None) -> int:
     return 0
 
 
-if __name__ == "__main__":  # python -m frankatwin.cli <doctor|config|reset> ...
-    _cmd = sys.argv[1] if len(sys.argv) > 1 else "doctor"
-    sys.exit({"doctor": doctor_main, "reset": reset_main}[_cmd](sys.argv[2:]))
+if __name__ == "__main__":
+    sys.exit(main())

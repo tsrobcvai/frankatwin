@@ -7,7 +7,7 @@ tick) and a **sidecar JSON** (metadata, anchor, gains, summary). All tools in
 Quaternions in CSV/JSON are **xyzw** (the `RobotState` / shm side is wxyz).
 Positions are in the robot base frame [m], angles [rad], torques [N·m].
 
-## Real CSV (`frankatwin-excite --log`)
+## Real CSV (`python examples/cart_impedance.py --log`)
 
 One row per Python tick (`--rate`, default 50 Hz). Row *k* holds the state
 observed **just after** target *k* was sent; the target is zero-order-held until
@@ -60,7 +60,7 @@ from the same configuration under the same gains.
 The generators emit a 1 kHz reference (`t_s, x_des_*, dx_des_*, quat_des_*`) plus
 a sidecar with the same anchor/gain fields and `"controller":
 "multiband_excitation_target" | "multiband_pos_only_target" |
-"v4_chirp_target"`. `frankatwin-excite` does not need them — it builds the
+"v4_chirp_target"`. `python examples/cart_impedance.py` does not need them — it builds the
 reference in-process — but they are useful for plotting the design and for
 feeding other collectors.
 

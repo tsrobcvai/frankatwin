@@ -1,4 +1,4 @@
-"""Console entry points exist and frankatwin-doctor degrades gracefully."""
+"""python -m frankatwin.doctor degrades gracefully (no daemon, bad config)."""
 
 from __future__ import annotations
 
@@ -10,23 +10,7 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "python"))
 
-from frankatwin.cli import doctor_main  # noqa: E402
-
-EXPECTED_SCRIPTS = {
-    "frankatwin-daemon", "frankatwin-reset", "frankatwin-doctor", "frankatwin-excite",
-    "frankatwin-gen-multiband", "frankatwin-gen-chirp",
-}
-
-
-def test_console_scripts_registered():
-    md = pytest.importorskip("importlib.metadata")
-    try:
-        eps = md.distribution("frankatwin").entry_points
-    except md.PackageNotFoundError:
-        pytest.skip("frankatwin not installed (pip install -e .)")
-    names = {e.name for e in eps if e.group == "console_scripts"}
-    assert EXPECTED_SCRIPTS <= names
-
+from frankatwin.doctor import main as doctor_main  # noqa: E402
 
 def test_doctor_pc_without_daemon_reports_and_exits_1(monkeypatch, tmp_path, capsys):
     # Point at an unroutable daemon so the check fails fast instead of hanging.
@@ -48,10 +32,3 @@ def test_doctor_bad_config_is_reported_not_raised(tmp_path, capsys):
     out = capsys.readouterr().out
     assert rc == 1 and "[XX] config" in out
 
-
-def test_reset_q_and_pose_are_exclusive(capsys):
-    from frankatwin.cli import reset_main
-    with pytest.raises(SystemExit) as e:
-        reset_main(["--q", "0", "0", "0", "0", "0", "0", "0", "--pose", "0", "0", "0", "1", "0", "0", "0"])
-    assert e.value.code == 2
-    assert "not allowed with" in capsys.readouterr().err

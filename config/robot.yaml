@@ -5,7 +5,7 @@
 # listens.
 #
 # Override path via the FRANKATWIN_CONFIG environment variable:
-#   FRANKATWIN_CONFIG=/path/to/local.yaml frankatwin-excite
+#   FRANKATWIN_CONFIG=/path/to/local.yaml python examples/cart_impedance.py
 
 network:
   # Hostname or IP of the NUC running frankatwin.daemon. The PC client
@@ -39,7 +39,7 @@ control:
   # it aborts the loop; same for ||e_o|| / error_delta_rot. 0 disables both
   # (pure impedance, matching the sim). Runtime override via
   # robot.set_gains(error_delta_pos=..., error_delta_rot=...) or
-  # frankatwin-excite --err-delta-pos / --err-delta-rot.
+  # python examples/cart_impedance.py --err-delta-pos / --err-delta-rot.
   error_delta_pos: 0.05    # m
   error_delta_rot: 0.30    # rad
 
@@ -103,13 +103,13 @@ load:
   #
   #   # camera only (0.15 kg, calibrated from the symmetric z signature:
   #   # m_comp=0 sagged -27 mm, 0.3 kg lifted +27 mm -> ~0.15 kg):
-  #   frankatwin-daemon \
+  #   python -m frankatwin.daemon \
   #       --load-mass 0.15 --load-com 0 0 0.05
   #
   #   # camera + 0.68 kg grasped object (object com ~0.175 m out along the
   #   # tool axis, beyond the Franka Hand grasp center z=0.1034):
   #   # mass = 0.15 + 0.68 = 0.83, com_z = (0.15*0.05 + 0.68*0.175)/0.83 ~= 0.152
-  #   frankatwin-daemon \
+  #   python -m frankatwin.daemon \
   #       --load-mass 0.83 --load-com 0 0 0.152
   #
   # com is simplified to [0, 0, z] (everything assumed roughly on the tool

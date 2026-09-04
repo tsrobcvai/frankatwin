@@ -24,9 +24,9 @@ jobs:
         run: python -m pytest tests -q
       - name: Byte-compile examples and scripts
         run: python -m py_compile examples/*.py scripts/*.py isaaclab_sysid/scripts/tools/*.py
-      - name: Console scripts
+      - name: Scripts
         run: |
-          frankatwin-excite --mode chirp --dry-run
-          frankatwin-excite --mode multiband --dry-run
-          frankatwin-gen-chirp --help > /dev/null
-          frankatwin-doctor --role pc || test $? -eq 1   # no daemon in CI -> reported, exit 1
+          python examples/cart_impedance.py --mode chirp --dry-run
+          python examples/cart_impedance.py --mode multiband --dry-run
+          python scripts/gen_chirp_traj.py --help > /dev/null
+          python -m frankatwin.doctor --role pc || test $? -eq 1   # no daemon in CI -> reported, exit 1
