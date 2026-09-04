@@ -8,7 +8,7 @@ the twin's dynamics match the real arm to within 1–3 % of joint motion range.
 
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
-  <img alt="libfranka" src="https://img.shields.io/badge/libfranka-0.9%20%E2%80%93%200.15-informational">
+  <img alt="libfranka" src="https://img.shields.io/badge/libfranka-0.13%20%E2%80%93%200.15-informational">
   <img alt="IsaacLab" src="https://img.shields.io/badge/IsaacLab-%E2%89%A5%202.3-76b900">
   <img alt="Python" src="https://img.shields.io/badge/python-%E2%89%A5%203.9-3776ab">
 </p>
