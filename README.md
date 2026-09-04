@@ -121,71 +121,97 @@ clamps, collision thresholds, payload). Override with `--config` or
 
 ### 2. Basic control
 
-Every script below uses one of the two controllers from
-[Architecture](#architecture): `move_to` for one-shot position moves, `osc_shm`
-for continuous control. With the daemon running on the NUC, everything in this
-step is <kbd>PC</kbd>.
+Three scripts, all <kbd>PC</kbd> with the daemon running on the NUC. They use
+the two controllers from [Architecture](#architecture): `move_to` for one-shot
+position moves, `osc_shm` for continuous control. Every script takes
+`--config robot.yaml`.
 
-| I want to… | run | controller | script |
-|---|---|---|---|
-| reset to the home pose | `python examples/move_to.py` | position, joint-space | [`examples/move_to.py`](examples/move_to.py) → `move_to_q(robot.init_q)` |
-| move to a joint configuration | `python examples/move_to.py --target-joints 0 -0.785 0 -2.356 0 1.571 0.785 [--speed 0.2]` | position, joint-space | same → `move_to_q` |
-| move to an EE pose | `python examples/move_to.py --target-ee 0.4 0.0 0.3  0 1 0 0 [--duration 5]` | position, Cartesian | same → `move_to_pose` |
-| hold a pose compliantly and nudge it | `python examples/lift_ee.py --height 0.02 --duration 3` | impedance | [`examples/lift_ee.py`](examples/lift_ee.py) — 70 lines, the minimal `set_ee_target` loop |
-| track a scripted EE reference + log it | `python examples/cart_impedance.py --kp-pos 500 --kp-ori 30 --log run.csv` | impedance | [`examples/cart_impedance.py`](examples/cart_impedance.py) — `--mode sine` (default, ±5 cm z at 0.5 Hz), `multiband`, `chirp`; prints tracking RMS + torque headroom |
-| run a policy closed-loop | `python examples/policy_loop.py --hz 10` | impedance | [`examples/policy_loop.py`](examples/policy_loop.py) — the rollout pattern below, with a stand-in policy |
+**[`examples/move_to.py`](examples/move_to.py)** — one-shot position control
+(`move_to`). Home by default; prints the pose `osc_shm` holds afterwards.
 
-`--target-ee` format: `x y z` in metres in the robot **base frame** (libfranka's
-`O` frame, +x forward, +z up), then the EE orientation as a **unit quaternion in
-wxyz order** — the same convention as `RobotState.ee_quat` / `set_ee_target`.
-`0 1 0 0` is 180° about x, i.e. tool pointing straight down (the Franka "ready"
-orientation). The EE frame is the one configured in Desk (Franka Hand: the TCP
-between the fingertips). Home = `robot.init_q` in `config/robot.yaml`.
-
-<kbd>PC</kbd> **a 10 Hz policy on task impedance control** — this is what every closed-loop rollout does
-
-```python
-import time, numpy as np
-from frankatwin import FrankaTwinClient, load_config
-from frankatwin.quat import from_rotvec_wxyz, mul_wxyz
-
-HZ, POS_SCALE, ROT_SCALE = 10, 0.02, 0.05        # policy rate; max |Δpos| [m] and |Δrot| [rad] per step
-
-def policy(obs):                                  # your network; 6-D action in [-1, 1]: Δxyz, Δrot (axis-angle)
-    return np.zeros(6)
-
-cfg = load_config()
-with FrankaTwinClient(cfg) as robot:
-    robot.move_to_q(cfg.robot.init_q)                       # 1. position control: blocking reset to home
-    robot.set_gains(kp_pos=500, kp_ori=30,                  # 2. impedance gains (Kd = 2*sqrt(Kp)); clamp 0.15 m
-                    error_delta_pos=0.15, error_delta_rot=0.80)   #    > one step, so it never engages (sim has no clip)
-    s = robot.wait_for_state()
-    t_next = time.monotonic()
-    for step in range(300):                                 # 3. 30 s at 10 Hz
-        obs = np.concatenate([s.q, s.dq, s.ee_pos, s.ee_quat, s.ee_linvel, s.ee_angvel])
-        a = np.clip(policy(obs), -1, 1)
-        pos  = s.ee_pos + POS_SCALE * a[:3]                 #    Δ on the measured pose, base frame (as in the sim task)
-        quat = mul_wxyz(from_rotvec_wxyz(ROT_SCALE * a[3:]), s.ee_quat)   # world-frame Δrot ⊗ current
-        robot.set_ee_target(pos, quat)                      # 4. non-blocking; osc_shm holds it at 1 kHz until next step
-        t_next += 1 / HZ
-        time.sleep(max(0.0, t_next - time.monotonic()))     # 5. fixed-rate tick, no drift
-        s = robot.get_state()                               # 6. newest frame of the 100 Hz stream (<= 10 ms old)
+```bash
+python examples/move_to.py                                                # home = robot.init_q
+python examples/move_to.py --target-joints 0 -0.785 0 -2.356 0 1.571 0.785 --speed 0.2
+python examples/move_to.py --target-ee 0.4 0.0 0.3  0 1 0 0 --duration 5
 ```
 
-What is happening underneath: the policy writes a new pose target every 100 ms;
-`osc_shm` reads it on its next 1 ms tick and applies `τ = Jᵀ[Kp e − Kd ẋ]` a
-hundred times before the next target arrives (zero-order hold). The IsaacLab
-replay reproduces exactly that staircase, which is why the sysid transfers.
-`error_delta_pos` is set above the largest single step so the controller never
-clips — matching the sim's unclipped task impedance. With `POS_SCALE = 0.02` and
-`kp_pos = 500` one step commands at most 10 N.
+| flag | meaning |
+|---|---|
+| `--target-joints J1 … J7` | 7 absolute joint angles [rad] |
+| `--target-ee x y z qw qx qy qz` | EE position [m] in the robot **base frame** (+x forward, +z up) and orientation as a **unit quaternion, wxyz** — `0 1 0 0` = tool pointing down. EE frame = the one configured in Desk (Franka Hand: TCP between the fingertips) |
+| `--speed` | joint move: speed factor (0, 0.5]; default `reset.joint_speed_factor` |
+| `--duration` | EE move: seconds in [1.5, 20]; default `reset.pose_duration` |
 
-Rules of thumb: targets are absolute poses in the base frame, quaternions
-**wxyz**; a big jump is a torque step (the slew limiter keeps it from tripping a
-reflex, but scale your actions); gains and clamps persist across `move_to_*`
-and controller restarts. Control law, safety chain and timing:
-[docs/architecture.md](docs/architecture.md); every method and config key:
-[docs/usage.md](docs/usage.md).
+**[`examples/cart_impedance.py`](examples/cart_impedance.py)** — continuous
+control (`osc_shm`) tracking a scripted EE reference at `--rate` Hz; logs a
+per-tick CSV + sidecar and prints tracking RMS and torque headroom. This is
+also the sysid data collector.
+
+```bash
+python examples/cart_impedance.py                                         # sine: ±5 cm z at 0.5 Hz for 4 s
+python examples/cart_impedance.py --mode chirp --kp-pos 500 --kp-ori 30 \
+    --err-delta-pos 0.15 --err-delta-rot 0.80 --log data/run.csv        # sysid v4 chirp, logged
+python examples/cart_impedance.py --mode multiband --dry-run              # build + check the reference, no robot
+```
+
+| flag | meaning |
+|---|---|
+| `--mode sine \| multiband \| chirp` | reference: z-sine (default), sysid v3 multi-band, sysid v4 chirp |
+| `--kp-pos`, `--kp-ori` | impedance gains; default `control.*` in `robot.yaml` |
+| `--err-delta-pos`, `--err-delta-rot` | `osc_shm` error clamps; the chirp needs `0.15` / `0.80` |
+| `--rate`, `--duration` | loop rate [Hz] (50) and run time [s] (4 / 12 / 8 by mode) |
+| `--amp`, `--freq` · `--amp-x/y/z`, `--amp-yaw`, `--amp-roll` · `--f0`, `--f1`, `--amp-rx/ry/rz` | reference shape for sine · multiband · chirp |
+| `--log run.csv [--sidecar run.json]` | write the CSV + metadata ([format](docs/data_format.md)) |
+| `--dry-run` | build the reference and print peak rates without a robot |
+
+**[`examples/policy_loop.py`](examples/policy_loop.py)** — continuous control
+driven by a policy at a fixed rate. Ships with a stand-in policy that moves the
+EE up 10 cm and back down every 4 s for 16 s; swap in your network.
+
+```bash
+python examples/policy_loop.py                          # demo policy, 10 Hz, 16 s
+python examples/policy_loop.py --hz 20 --pos-scale 0.0025 --no-reset
+```
+
+| flag | meaning |
+|---|---|
+| `--hz`, `--duration` | policy rate [Hz] (10) and run time [s] (16) |
+| `--pos-scale`, `--rot-scale` | action → Δpos [m/step] (0.005) and Δrot [rad/step] (0.02) |
+| `--kp-pos`, `--kp-ori`, `--err-delta-pos`, `--err-delta-rot` | impedance gains (500 / 30) and clamps (0.15 / 0.80) |
+| `--no-reset` | skip the initial `move_to` home |
+
+The whole loop, which is the pattern every closed-loop rollout uses:
+
+```python
+def demo_policy(t, obs):                      # stand-in for a network; 6-D action in [-1, 1]
+    a = np.zeros(6)                           # a[0:3] = Δxyz, a[3:6] = Δrot (axis-angle), base frame
+    a[2] = 1.0 if t % 4.0 < 2.0 else -1.0     # up for 2 s, down for 2 s: 10 cm at 0.005 m/step, 10 Hz
+    return a
+
+with FrankaTwinClient(cfg) as robot:
+    robot.move_to_q(cfg.robot.init_q)                         # 1. position control: reset to home
+    robot.set_gains(kp_pos=500, kp_ori=30,                    # 2. impedance gains (Kd = 2*sqrt(Kp));
+                    error_delta_pos=0.15, error_delta_rot=0.80)   #    clamp > one step, so it never engages
+    s = robot.wait_for_state()
+    t0 = time.monotonic()
+    for k in range(int(16 * 10)):                             # 3. 16 s at 10 Hz
+        obs = np.concatenate([s.q, s.dq, s.ee_pos, s.ee_quat, s.ee_linvel, s.ee_angvel])
+        a = np.clip(demo_policy(k / 10, obs), -1, 1)
+        pos  = s.ee_pos + 0.005 * a[:3]                       # 4. Δ on the measured pose (as in the sim task)
+        quat = mul_wxyz(from_rotvec_wxyz(0.02 * a[3:]), s.ee_quat)
+        robot.set_ee_target(pos, quat)                        # 5. non-blocking; osc_shm holds it at 1 kHz
+        time.sleep(max(0.0, t0 + (k + 1) / 10 - time.monotonic()))   # 6. fixed-rate tick
+        s = robot.get_state()                                 # 7. newest frame of the 100 Hz stream
+```
+
+Between two policy steps `osc_shm` applies `τ = Jᵀ[Kp e − Kd ẋ]` a hundred times
+to the held target (zero-order hold); the IsaacLab replay reproduces exactly that
+staircase, which is why the sysid transfers. `error_delta_pos` is set above the
+largest single step so the controller never clips — the sim's task impedance has
+no clip either. Targets are absolute poses in the base frame, quaternions
+**wxyz**; gains and clamps persist across `move_to` and controller restarts.
+Control law, safety chain and timing: [docs/architecture.md](docs/architecture.md);
+every client method and config key: [docs/usage.md](docs/usage.md).
 
 ### 3. System identification
 
@@ -226,7 +252,7 @@ Everything you can talk to, from highest to lowest level:
 
 | interface | where | what | reference |
 |---|---|---|---|
-| **Scripts** | <kbd>NUC</kbd> `python -m frankatwin.daemon`, `python -m frankatwin.doctor` · <kbd>PC</kbd> `examples/move_to.py`, `examples/lift_ee.py`, `examples/cart_impedance.py`, `scripts/gen_*_traj.py`, `scripts/compare_sim_real.py`, `scripts/check_torque_limits.py`, `python -m frankatwin.doctor` | plain Python files, one job each; read them | [usage.md → Scripts](docs/usage.md#scripts) |
+| **Scripts** | <kbd>NUC</kbd> `python -m frankatwin.daemon`, `python -m frankatwin.doctor` · <kbd>PC</kbd> `examples/move_to.py`, `examples/cart_impedance.py`, `examples/policy_loop.py`, `scripts/gen_*_traj.py`, `scripts/compare_sim_real.py`, `scripts/check_torque_limits.py`, `python -m frankatwin.doctor` | plain Python files, one job each; read them | [usage.md → Scripts](docs/usage.md#scripts) |
 | **Python client** `FrankaTwinClient` | <kbd>PC</kbd> | `set_ee_target(pos, quat_wxyz)`, `set_gains(kp_pos, kp_ori, kd_pos, kd_ori, error_delta_pos, error_delta_rot)`, `enable()` / `disable()`, `get_state(fresh=False)`, `get_state_history()`, `wait_for_state()`, `move_to_q(q, speed_factor)`, `move_to_pose(pos, quat, duration)` | [usage.md → Client API](docs/usage.md#client-api-pc) |
 | **`LocalController`** | <kbd>NUC</kbd> | same methods as the client, in-process (no ZMQ) | [usage.md → Client API](docs/usage.md#client-api-pc) |
 | **`RobotState`** | both | `timestamp_s, q[7], dq[7], ee_pos[3], ee_quat[4] (wxyz), ee_linvel[3], ee_angvel[3], tau[7]` (commanded), `tau_J[7]` (measured, gravity incl.), `seq` | [usage.md](docs/usage.md#client-api-pc) |
@@ -282,7 +308,7 @@ src/                 C++: osc_shm (1 kHz controller), move_to (reset), read_* ut
 python/frankatwin/   daemon, FrankaTwinClient (PC), LocalController (NUC), config, shm_layout,
                      doctor, excitation/ (multiband + chirp reference math)
 config/robot.yaml    network, robot IP, gains, safety clamps, collision thresholds, payload
-examples/            move_to (home / joints / EE pose), lift_ee, cart_impedance (sine / multiband / chirp)
+examples/            move_to (home / joints / EE pose), cart_impedance (sine / multiband / chirp), policy_loop
 scripts/             gen_*_traj (write references), compare_sim_real, check_torque_limits, plot_ee_tracking
 isaaclab_sysid/      self-contained IsaacLab extension: tasks, robot USD, sysid/replay scripts
 tests/               shm ABI pinning test (C++ offsets vs numpy dtype)
