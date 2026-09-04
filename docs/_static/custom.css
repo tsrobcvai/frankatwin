@@ -10,3 +10,11 @@ kbd {
   color: var(--pst-color-text-base);
 }
 table.table td, table.table th { vertical-align: top; }
+
+/* Header buttons: the repository icon lacks Font Awesome's fa-lg that the
+   light/dark toggle uses; give it the same size and baseline. */
+.article-header-buttons .btn-source-repository-button .fab {
+  font-size: 1.25em;
+  line-height: 0.75em;
+  vertical-align: -0.0667em;
+}

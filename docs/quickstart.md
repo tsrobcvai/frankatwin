@@ -49,7 +49,9 @@ Four steps: bring the controller up on the NUC, then drive the arm from the PC
 with three scripts (each takes `--config robot.yaml`; the two controllers they
 use are described in [Architecture](architecture.md)).
 
-### Step 1 · <kbd>NUC</kbd> Start the daemon
+### Step 1 · Start the daemon
+
+<kbd>NUC</kbd>
 
 ```bash
 python -m frankatwin.daemon -v
@@ -62,7 +64,9 @@ then `daemon ready`. All flags (`--config`, payload overrides), the banner line
 by line, what it logs while running, how to stop it and when to restart it:
 [docs/usage.md → Daemon](usage.md#daemon-nuc).
 
-### Step 2 · <kbd>PC</kbd> Reset the arm — [`examples/move_to.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/move_to.py)
+### Step 2 · Reset the arm
+
+<kbd>PC</kbd> · script: [`examples/move_to.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/move_to.py)
 
 One-shot position control (`move_to`). Home by default; prints the pose
 `osc_shm` holds afterwards.
@@ -80,7 +84,9 @@ python examples/move_to.py --target-ee 0.4 0.0 0.3  0 1 0 0 --duration 5
 | `--speed` | joint move: speed factor (0, 0.5]; default `reset.joint_speed_factor` |
 | `--duration` | EE move: seconds in [1.5, 20]; default `reset.pose_duration` |
 
-### Step 3 · <kbd>PC</kbd> Track a scripted reference — [`examples/cart_impedance.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/cart_impedance.py)
+### Step 3 · Track a scripted reference
+
+<kbd>PC</kbd> · script: [`examples/cart_impedance.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/cart_impedance.py)
 
 Continuous control (`osc_shm`) following a scripted EE reference at `--rate` Hz.
 Logs a per-tick CSV + sidecar and prints tracking RMS and torque headroom. This
@@ -103,7 +109,9 @@ python examples/cart_impedance.py --mode multiband --dry-run              # buil
 | `--log run.csv [--sidecar run.json]` | write the CSV + metadata ([format](data_format.md)) |
 | `--dry-run` | build the reference and print peak rates without a robot |
 
-### Step 4 · <kbd>PC</kbd> Run a policy closed-loop — [`examples/policy_loop.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/policy_loop.py)
+### Step 4 · Run a policy closed-loop
+
+<kbd>PC</kbd> · script: [`examples/policy_loop.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/policy_loop.py)
 
 Continuous control driven by a policy at a fixed rate. Ships with a stand-in
 policy that moves the EE up 10 cm and back down every 4 s for 16 s; swap in

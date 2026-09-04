@@ -1,5 +1,8 @@
 # FrankaTwin
 
+**Current version: v0.2** — package `frankatwin` 0.2.0, git branch `v0.2`. This
+documentation describes v0.2; what changed is in the [changelog](changelog.md).
+
 ```{image} images/logo.png
 :width: 420px
 :align: center
