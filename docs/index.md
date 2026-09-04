@@ -63,8 +63,6 @@ contributing, changelog) is in the sidebar.
 installation
 usage
 sysid
-data_format
-troubleshooting
 ```
 
 ```{toctree}
@@ -74,6 +72,8 @@ troubleshooting
 architecture
 interfaces
 api
+data_format
+troubleshooting
 contributing
 changelog
 ```
