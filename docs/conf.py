@@ -44,12 +44,15 @@ napoleon_numpy_docstring = True
 # --- HTML ---------------------------------------------------------------
 html_theme = "pydata_sphinx_theme"
 html_title = "FrankaTwin"
+html_logo = "images/logo.svg"
+html_favicon = "images/favicon.svg"
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
 html_last_updated_fmt = "%Y-%m-%d"
 html_theme_options = {
     "github_url": "https://github.com/tsrobcvai/frankatwin",
     "navbar_start": ["navbar-logo"],
+    "logo": {"text": "FrankaTwin"},
     "navbar_end": ["theme-switcher", "navbar-icon-links"],
     "show_toc_level": 2,
     "navigation_with_keys": True,

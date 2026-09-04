@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/images/logo.svg" width="520" alt="FrankaTwin — a panda lying across the sim | real split">
+</p>
+
 <h1 align="center">FrankaTwin</h1>
 
 <p align="center">
