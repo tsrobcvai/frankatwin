@@ -62,7 +62,6 @@ contributing, changelog) is in the sidebar.
 
 installation
 usage
-architecture
 sysid
 data_format
 troubleshooting
@@ -72,6 +71,7 @@ troubleshooting
 :hidden:
 :caption: Reference
 
+architecture
 interfaces
 api
 contributing
