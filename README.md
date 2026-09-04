@@ -21,9 +21,11 @@
   arm to a joint-position MSE of 4.8 × 10⁻⁴ rad² (1–3 % of joint range) on
   held-out motions.
 
-Built for training and evaluating policies that transfer — the controller is
-the one sim-to-real work such as [IndustReal](https://arxiv.org/abs/2305.17110)
-and [OmniReset](https://weirdlabuw.github.io/omnireset/) builds on.
+Built for training and evaluating policies that transfer. The control scheme
+matches the task-space impedance used by sim-to-real work such as
+[IndustReal](https://arxiv.org/abs/2305.17110) and
+[OmniReset](https://weirdlabuw.github.io/omnireset/), so their pipelines can be
+reproduced on a Franka with this stack.
 
 ## Documentation
 
