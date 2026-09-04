@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="docs/images/logo.svg" width="520" alt="FrankaTwin — a panda lying across the sim | real split">
+  <img src="docs/images/logo.png" width="440" alt="FrankaTwin — sim ↔ real">
 </p>
-
-<h1 align="center">FrankaTwin</h1>
 
 <p align="center">
 A 1 kHz task impedance controller for the <b>Franka Research 3 / Panda</b> whose

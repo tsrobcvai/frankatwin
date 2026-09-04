@@ -1,9 +1,9 @@
 # FrankaTwin
 
-```{image} images/logo.svg
-:width: 560px
+```{image} images/logo.png
+:width: 420px
 :align: center
-:alt: FrankaTwin — a panda lying across the sim | real split
+:alt: FrankaTwin — sim ↔ real
 ```
 
 A 1 kHz task impedance controller for the **Franka Research 3 / Panda** whose
