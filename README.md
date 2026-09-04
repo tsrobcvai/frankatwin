@@ -124,10 +124,16 @@ clamps, collision thresholds, payload). Override with `--config` or
 
 ### 2. Basic control
 
-Three scripts, all <kbd>PC</kbd> with the daemon running on the NUC. They use
-the two controllers from [Architecture](#architecture): `move_to` for one-shot
-position moves, `osc_shm` for continuous control. Every script takes
-`--config robot.yaml`.
+<kbd>NUC</kbd> start the daemon. It launches `osc_shm` (the arm now holds its
+current pose under impedance control) and keeps it alive; leave this terminal open.
+
+```bash
+python -m frankatwin.daemon -v     # banner: RT = SCHED_FIFO, tau_rate = 800 Nm/s, load, collision … "daemon ready"
+```
+
+<kbd>PC</kbd> everything else happens here, through three scripts (each takes
+`--config robot.yaml`; the controllers they drive are described in
+[Architecture](#architecture)):
 
 **[`examples/move_to.py`](examples/move_to.py)** — one-shot position control
 (`move_to`). Home by default; prints the pose `osc_shm` holds afterwards.
