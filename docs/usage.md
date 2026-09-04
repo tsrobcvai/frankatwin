@@ -22,7 +22,7 @@ Installed by `pip install -e .`:
 |---|---|
 | `frankatwin-daemon [-c robot.yaml] [-v] [--load-mass …]` | NUC daemon (below). |
 | `frankatwin-doctor [--role auto\|nuc\|pc]` | Environment check: RT kernel, rtprio, binaries + `ldd` (libfranka / pinocchio), FCI port, competing FCI clients, daemon ping, state stream. Exit 1 on a hard failure, with a hint per line. Run it first on both machines. |
-| `frankatwin-reset [--speed 0.2] [--q q1..q7]` | Joint-space reset to `robot.init_q` (or `--q`). |
+| `frankatwin-reset [--q q1..q7 --speed 0.2 \| --pose x y z qw qx qy qz --duration 5]` | Position-controlled move via `move_to`: joint-space to `robot.init_q` (default) or `--q`; EE-pose with `--pose` (wxyz). |
 | `frankatwin-excite --mode {sine,multiband,chirp} …` | Run a scripted Cartesian reference at `--rate` Hz, log CSV + sidecar, print tracking RMS and torque headroom. `--dry-run` needs no robot. |
 | `frankatwin-gen-multiband` / `frankatwin-gen-chirp --base-sidecar ref.json` | Write a 1 kHz reference CSV + sidecar (for plotting / other collectors). |
 
@@ -94,9 +94,8 @@ Things that bite:
 
 | script | what it does |
 |---|---|
-| `examples/move_to_q.py --q q1..q7 [--speed]` | Move to an arbitrary joint configuration and read back. |
 | `examples/lift_ee.py [--height 0.01] [--duration 2]` | Ramp the z-target up from the current pose. Good first motion test. |
-| `examples/reset_home.py`, `examples/cart_impedance.py` | Thin shims for `frankatwin-reset` / `frankatwin-excite`. |
+| `examples/move_to_q.py`, `examples/reset_home.py`, `examples/cart_impedance.py` | Thin wrappers / shims for `frankatwin-reset --q`, `frankatwin-reset`, `frankatwin-excite`. |
 
 `frankatwin-excite` modes:
 

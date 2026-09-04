@@ -115,19 +115,30 @@ clamps, collision thresholds, payload). Override with `--config` or
 
 ### 2. Basic control
 
-Two motions exist: a blocking **joint-space reset** (`move_to`, libfranka
-min-jerk) and streaming **Cartesian impedance targets** (`osc_shm`, 1 kHz). With
-the daemon running on the NUC, everything in this step is <kbd>PC</kbd>.
+Two controllers exist, and every script below uses one of them:
 
-<kbd>PC</kbd> try them from the shell
+- **Position control** — `move_to` (C++): blocking, min-jerk, either joint-space
+  (libfranka `MotionGenerator`) or EE-pose (libfranka `CartesianPose`, no IK on
+  our side). Used for resets. `osc_shm` is stopped for the move and restarted
+  at the new pose.
+- **EE task impedance** — `osc_shm` (C++, 1 kHz): `τ = Jᵀ[Kp e − Kd ẋ] + C q̇`,
+  streams targets from shm. Used for everything else: policies, teleop, sysid.
 
-```bash
-frankatwin-reset                          # move_to -> robot.init_q, osc_shm resumes anchored there
-frankatwin-excite                         # 4 s, ±5 cm z-sine at 50 Hz; prints tracking RMS + torque headroom
-python examples/lift_ee.py --height 0.02  # ramp the z-target up by 2 cm
-```
+With the daemon running on the NUC, everything in this step is <kbd>PC</kbd>.
 
-<kbd>PC</kbd> from Python — this is the whole API you need for a policy loop
+| I want to… | run | controller | code |
+|---|---|---|---|
+| reset to the home pose (joint-space) | `frankatwin-reset` | position, joint | [`cli.py`](python/frankatwin/cli.py) → `move_to_q(robot.init_q)` |
+| move to any joint configuration | `frankatwin-reset --q 0 -0.785 0 -2.356 0 1.571 0.785 --speed 0.2` | position, joint | same |
+| move to an EE pose (position control) | `frankatwin-reset --pose 0.4 0.0 0.3 0 1 0 0 --duration 5` | position, Cartesian | same → `move_to_pose` |
+| hold a pose compliantly and nudge it | `python examples/lift_ee.py --height 0.02 --duration 3` | impedance | [`examples/lift_ee.py`](examples/lift_ee.py) — 70 lines, the minimal `set_ee_target` loop |
+| track a scripted EE reference + log it | `frankatwin-excite --kp-pos 500 --kp-ori 30 --log run.csv` | impedance | [`tools/cart_impedance.py`](python/frankatwin/tools/cart_impedance.py) — `--mode sine` (default, ±5 cm z at 0.5 Hz), `multiband`, `chirp`; prints tracking RMS + torque headroom |
+| write my own controller loop | Python below | impedance | `FrankaTwinClient` |
+
+Home pose = `robot.init_q` in `config/robot.yaml`; `--pose` quaternions are
+**wxyz** in the base frame.
+
+<kbd>PC</kbd> a complete impedance-control loop — this is the whole API you need for a policy
 
 ```python
 import numpy as np, time
@@ -135,13 +146,13 @@ from frankatwin import FrankaTwinClient, load_config
 
 cfg = load_config()
 with FrankaTwinClient(cfg) as robot:
-    robot.move_to_q(cfg.robot.init_q)                 # blocking reset (optional)
+    robot.move_to_q(cfg.robot.init_q)                 # position control: blocking reset (optional)
     s = robot.wait_for_state()                        # RobotState: q, dq, ee_pos, ee_quat (wxyz), tau, tau_J, ...
     p0, q0 = s.ee_pos.copy(), s.ee_quat.copy()
 
     robot.set_gains(kp_pos=500, kp_ori=30,            # Kd = 2*sqrt(Kp) unless given
                     error_delta_pos=0.15, error_delta_rot=0.80)
-    for k in range(200):                              # 4 s at 50 Hz
+    for k in range(200):                              # impedance control: 4 s at 50 Hz
         target = p0 + [0, 0, 0.05 * np.sin(2 * np.pi * 0.5 * k / 50)]
         robot.set_ee_target(target, q0)               # non-blocking; held until the next call
         s = robot.get_state()                         # cached 100 Hz stream, non-blocking
