@@ -80,25 +80,15 @@ sudo apt install libfranka-dev        # or build from source and `cmake --instal
 cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/deoxys/build/libfranka
 ```
 
-### Match libfranka to the robot system version first
+### Match libfranka to the robot system version
 
-**Do this before building anything.** libfranka and the robot negotiate an FCI
-protocol version, and a mismatch is fatal — there is no backward compatibility:
-
-```
-franka::Exception: libfranka: Incompatible library version
-(server version: 10, library version: 7)
-```
-
-Ask the robot what it runs:
+libfranka and the robot negotiate an FCI protocol version; a mismatch is fatal
+(`Incompatible library version (server version: 10, library version: 7)`).
+Check the robot first:
 
 ```bash
 curl -sk https://172.16.0.2/admin/api/system-version    # e.g. "5.9.2"
 ```
-
-Then pick a libfranka whose protocol matches. The protocol number lives in
-`common/include/research_interface/robot/service_types.h` (`kVersion`) of the
-libfranka source, per tag:
 
 | libfranka | FCI protocol |
 |---|---|
@@ -107,56 +97,38 @@ libfranka source, per tag:
 | 0.15.0 – 0.17.0 | 9 |
 | 0.18.0 – 0.21.x | 10 |
 
-A robot on system 5.9.2 answers protocol 10, so it needs libfranka ≥ 0.18.0.
-Building an older libfranka against it succeeds and installs cleanly — it only
-fails when `osc_shm` actually opens a session. **A successful build proves
-nothing about compatibility;** confirm with a read-only binary:
+System 5.9.2 speaks protocol 10, so it needs libfranka ≥ 0.18. A wrong version
+still builds and installs cleanly — it only fails when `osc_shm` opens a session,
+so always confirm against the robot:
 
 ```bash
 ./build/read_current_q 172.16.0.2      # prints joint angles, does not move the arm
 ```
 
-### Reusing a libfranka ≥ 0.14 already on the machine
+### Reusing a libfranka already on the machine
 
-If another project (deoxys, an earlier panda build) already has a matching
-libfranka installed with headers and CMake config, point at it rather than
-building your own. This is the setup in use on the lab NUC:
+If another project has a matching libfranka with headers and CMake config, point
+at it instead of building one. This is the lab NUC's setup — deoxys' 0.20.0 plus
+a system-urdfdom Pinocchio:
 
 ```bash
-conda activate base          # NOT the frankatwin env -- see the caveat below
+conda activate base          # not the frankatwin env -- see below
 cmake -S . -B build \
     -DCMAKE_C_COMPILER=/usr/bin/gcc -DCMAKE_CXX_COMPILER=/usr/bin/g++ \
     -DCMAKE_PREFIX_PATH="/path/to/deoxys_control/deoxys;/path/to/pinocchio;$CONDA_PREFIX"
 cmake --build build -j$(nproc)
+ldd build/osc_shm | grep franka        # several copies usually coexist -- check
 ```
 
-Check what you actually linked — several libfranka copies usually coexist on a
-robot workstation, and the one on `CMAKE_PREFIX_PATH` is not always the one the
-loader picks:
+Build this with the system compiler. Under conda's `cxx-compiler`
+`CMAKE_LIBRARY_ARCHITECTURE` is empty, so CMake never searches
+`/usr/lib/x86_64-linux-gnu` and cannot find the system urdfdom and Poco such a
+build needs. Use the conda env for Python, the system toolchain for C++.
 
-```bash
-ldd build/osc_shm | grep franka
-```
+### Self-contained conda environment (libfranka ≤ 0.13 only)
 
-Three prefixes are needed because such a build is typically a hybrid: libfranka
-itself and Pinocchio from their own trees, `fmt`/`boost`/`tinyxml2` from conda,
-and Poco/urdfdom from the system.
-
-**Build this configuration with the system compiler, not the conda env's.**
-Under conda's `cxx-compiler`, `CMAKE_LIBRARY_ARCHITECTURE` is empty, so CMake
-never searches `/usr/lib/x86_64-linux-gnu` and cannot find the system urdfdom
-and Poco that a hybrid libfranka needs. Forcing past that
-(`-DCMAKE_LIBRARY_ARCHITECTURE=x86_64-linux-gnu`) just moves the failure to
-`libtinyxml`, then to `GLIBCXX_3.4.29`. Use the frankatwin conda env for the
-Python side; build the C++ with `/usr/bin/g++` and base conda active so the
-`CONDA_PREFIX` workarounds above supply the newer `libstdc++`.
-
-### Conda environment, self-contained (libfranka ≤ 0.13 only)
-
-Only for robot systems old enough to speak protocol 7. It keeps everything in
-one env — conda's Poco and Eigen, no system dependency — but cannot reach a
-5.7+ robot, and the ≥ 0.14 Pinocchio path does not work under the conda
-compiler (previous subsection).
+Everything in one env, but it cannot reach a 5.7+ robot, and the ≥ 0.14
+Pinocchio path does not work under the conda compiler.
 
 ```bash
 conda create -n frankatwin -c conda-forge python=3.11 poco "eigen=3.4" \
@@ -168,43 +140,20 @@ cmake -S libfranka -B libfranka/build -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX \
     -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF \
     -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 cmake --build libfranka/build -j$(nproc) && cmake --install libfranka/build
-
-ls $CONDA_PREFIX/lib/libfranka.so.*     # libfranka.so.0.13  libfranka.so.0.13.3
 ```
 
-**Pin `sysroot_linux-64` in the `conda create` line.** conda's compiler links
-against the *sysroot's* glibc, not the host's, and the sysroot conda-forge picks
-by default (2.12) is older than what the rest of the env needs:
+Pin `sysroot_linux-64` in the `conda create` line: conda's compiler links against
+the sysroot's glibc, and the 2.12 default is older than `libstdc++` (needs 2.17)
+and Poco (needs 2.28). 2.17 is not enough — libfranka still builds, then the
+executables fail to link with `fcntl64@GLIBC_2.28`. Any value from 2.28 up to
+your host glibc works (`ldd --version`); above it, the binaries will not run.
 
-| library | needs | symptom with the default 2.12 sysroot |
-|---|---|---|
-| `libstdc++.so.6` | `GLIBC_2.17` | `undefined reference to memcpy@GLIBC_2.14` / `secure_getenv@GLIBC_2.17`; CMake reports *"The C++ compiler is not able to compile a simple test program"* |
-| `libPocoNet`, `libPocoFoundation` | `GLIBC_2.28` | `undefined reference to fcntl64@GLIBC_2.28` when linking `osc_shm` |
+Pin it in `conda create`, not a follow-up `conda install` — one fresh solve beats
+an incremental one by ~2x. If conda reports `conda-libmamba-solver` failing to
+load it has fallen back to the slow classic solver; `micromamba install -p
+$CONDA_PREFIX -c conda-forge "sysroot_linux-64=2.28"` does the same in seconds.
 
-2.28 covers both. 2.17 is *not* enough: it gets libfranka itself to build (a
-shared library tolerates unresolved symbols in its own dependencies) and only
-fails later, when the FrankaTwin executables are linked. Any sysroot from 2.28
-up to your host glibc works — check with `ldd --version` (Ubuntu 20.04 → 2.31,
-22.04 → 2.35). Choosing one *above* the host glibc produces binaries that will
-not run.
-
-Pin it in `conda create` rather than a follow-up `conda install`: one fresh solve
-took 4.5 min on a test NUC, versus 11 min for `conda create` plus a separate
-`conda install sysroot_linux-64=...`, because an incremental solve has to keep
-60+ already-installed packages consistent. If conda prints `Error while loading
-conda entry point: conda-libmamba-solver`, it has fallen back to the slow classic
-solver; `micromamba` does the same job in seconds:
-
-```bash
-micromamba install -p $CONDA_PREFIX -c conda-forge "sysroot_linux-64=2.28"
-```
-
-If a build directory survives from a failed attempt, delete it before retrying —
-CMake caches "the compiler is broken" and will not retest it:
-
-```bash
-rm -rf libfranka/build build
-```
+Delete stale build dirs before retrying — CMake caches "the compiler is broken".
 
 ### libfranka ≥ 0.14 needs Pinocchio
 
