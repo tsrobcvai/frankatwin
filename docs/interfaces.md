@@ -31,6 +31,7 @@ The walkthrough is in [Usage](usage.md).
 | `examples/move_to.py [--target-joints J1..J7 \| --target-ee x y z qw qx qy qz] [--speed] [--duration]` | PC | Position-controlled move via `move_to`: home (`robot.init_q`) by default, a joint configuration, or an EE pose (base frame, quaternion **wxyz**). Prints the held pose afterwards. |
 | `examples/policy_loop.py [--hz 10] [--duration 16] [--pos-scale 0.005] [--rot-scale 0.02]` | PC | Fixed-rate policy on top of task impedance: read state → policy → Δpose target → `set_ee_target`. Ships a stand-in policy (10 cm up/down every 4 s). The closed-loop rollout skeleton. |
 | `examples/cart_impedance.py --mode {sine,multiband,chirp} …` | PC | Run a scripted Cartesian reference at `--rate` Hz, log CSV + sidecar, print tracking RMS and torque headroom. `--dry-run` needs no robot. |
+| `examples/gripper.py --open [--width FRAC \| --width-m M] \| --close [--force N] [--close-width M] \| --homing \| --stop \| --state` | PC | Franka Hand via the daemon; the arm controller keeps running. `--width` is a fraction of the stroke (0.42 → 33.6 mm). Closing is a libfranka *grasp*: the object sets the width, `--force` (default 70 N) sets the hold. |
 | `scripts/gen_excitation_traj.py` / `scripts/gen_chirp_traj.py --base-sidecar ref.json` | PC | Write a 1 kHz reference CSV + sidecar (for plotting / other collectors). The math is `frankatwin.excitation`. |
 | `scripts/compare_sim_real.py --real-csv a.csv --sim-csv a_sim.csv [--save] [--show]` | PC | Overlay target / real / sim EE pose and per-joint q, dq; print RMS. |
 | `scripts/check_torque_limits.py run.csv` | PC | Per-joint max `\|tau_J\|` vs 87/87/87/87/12/12/12 N·m from a `cart_impedance.py` log. |
@@ -60,6 +61,12 @@ NUC (no ZMQ); scripts written against one run against the other.
 | `wait_for_state(timeout_s=3.0)` → `RobotState` | until a frame arrives | Use once after connecting / resetting. |
 | `move_to_q(q[7], speed_factor=None)` | yes (≤ 60 s) | Joint-space position move via `move_to`; `osc_shm` restarts at the new pose with gains preserved. `speed_factor ∈ (0, 0.5]`. |
 | `move_to_pose(pos[3], quat[4], duration=None)` | yes | Cartesian position move via libfranka `CartesianPose`; `duration ∈ [1.5, 20]` s. |
+| `gripper_open(width=None, speed=None, *, wait=True)` | yes (< 2 s) | `Gripper::move` to `width` [m], default `gripper.max_width`. `osc_shm` keeps running (the hand has its own connection). |
+| `gripper_close(width=None, speed=None, force=None, epsilon_inner=None, epsilon_outer=None, *, wait=True)` (= `gripper_grasp`) | yes (< 2 s) | `Gripper::grasp`: fingers drive towards `width` (default −0.01 = past closure, so the object sets the resting width) and squeeze with `force` (default 70 N). Returns `{"result": is-within-epsilon, "state": {...}}`. |
+| `gripper_homing(*, wait=True)` | yes (~6 s) | Calibrate the stroke; once after power-up or a finger change. |
+| `gripper_stop()` | yes (quick) | Abort the motion in flight. |
+| `gripper_state()` → dict | yes (one round trip to the hand) | `{"width", "max_width", "is_grasped", "temperature"}`. |
+| `gripper_wait(seq=None, timeout_s=20)` → dict | until the command finished | Collect the output of a `wait=False` command. |
 | `close()` | — | Also on `__exit__`. |
 
 `RobotState` (dataclass):
@@ -110,7 +117,19 @@ Request `{"op": "<name>", ...}`; reply `{"ok": true, ...}` or
 | `get_state` | — | `state`: object (fields as below) or `null` | no |
 | `move_to_q` | `q: [7]`, optional `speed_factor` | — | yes |
 | `move_to_pose` | `pos: [3]`, `quat: [4] wxyz`, optional `duration` | — | yes |
+| `gripper_homing` | — | `started: true`, `seq` | no — runs on a daemon thread |
+| `gripper_move` | `width` [m], optional `speed` | `started: true`, `seq` | no — runs on a daemon thread |
+| `gripper_grasp` | optional `width`, `speed`, `force`, `epsilon_inner`, `epsilon_outer` (defaults: `robot.yaml → gripper`) | `started: true`, `seq` | no — runs on a daemon thread |
+| `gripper_stop` | — | `result` | yes (quick) |
+| `gripper_state` | optional `fresh: true` | `busy`, `last` (output of the last finished command: `ok`, `cmd`, `result`, `stopped`, `state`, `seq`, or `error`), `state` (live readOnce, only with `fresh` and not busy) | `fresh`: one round trip to the hand |
 | `shutdown` | — | `shutting_down: true` | no (daemon exits after replying) |
+
+Gripper commands return as soon as the daemon has started them, so a policy
+loop's `set_ee_target` is never held behind a 2 s grasp on the serial REQ/REP
+socket. Poll `gripper_state` (without `fresh`) until `busy` is false and
+`last.seq` matches — that is what the Python client's `wait=True` does. A
+second command while one is running is refused (`gripper busy`); `gripper_stop`
+aborts it.
 
 **State — PUB, JSON, 100 Hz** (sent whenever a new 1 kHz frame exists):
 
@@ -161,8 +180,8 @@ to check they do. Any field change bumps `FRANKATWIN_SHM_VERSION`.
 
 ## C++ binaries
 
-Built by CMake into `build/`; each needs the sole FCI session (stop the daemon
-first when running them by hand).
+Built by CMake into `build/`; all but `gripper_cmd` need the sole FCI session
+(stop the daemon first when running them by hand).
 
 | binary | usage | notes |
 |---|---|---|
@@ -171,13 +190,15 @@ first when running them by hand).
 | `read_current_q` | `read_current_q <robot_ip>` | Print `q` once. |
 | `read_current_pose` | `read_current_pose <robot_ip> [out.json]` | EE pose as a sidecar for `--base-sidecar`. |
 | `read_load` | `read_load <robot_ip>` | Print `m_ee / m_load / m_total` as configured. |
+| `gripper_cmd` | `gripper_cmd <robot_ip> homing \| move --width W [--speed S] \| grasp --width W [--speed S] [--force F] [--eps-in E] [--eps-out E] \| stop \| state` | Franka Hand over libfranka's gripper server (port 1338 — independent of the FCI session, so it runs alongside `osc_shm`). Prints one JSON object: `ok`, `cmd`, `result` (libfranka's return), `stopped`, `state {width, max_width, is_grasped, temperature}`. SIGINT/SIGTERM in flight → `Gripper::stop()`. Exit 0 ran, 1 bad CLI, 10 `franka::Exception`. |
 
 ## Configuration
 
 One file, `config/robot.yaml`, read by every process: `network` (daemon
 address, ports, client cache), `robot` (FCI IP, home `init_q`), `control`
 (initial gains and error clamps), `collision` (reflex thresholds), `paths`
-(build dir, shm name), `reset` (move speeds), `load` (payload for `setLoad`).
+(build dir, shm name), `reset` (move speeds), `gripper` (Franka Hand speeds,
+grasp force and width), `load` (payload for `setLoad`).
 Override with `--config` or `$FRANKATWIN_CONFIG`. Key-by-key reference:
 [Configuration](configuration.md).
 

@@ -73,9 +73,26 @@ reset:
   # Default duration (s) for move_to --pose.
   pose_duration: 5.0
 
-# Reserved for future gripper integration. Not used by the current daemon.
+# Franka Hand, driven through `gripper_cmd` (libfranka Gripper, port 1338 -- its own
+# connection, so it works while osc_shm holds the arm). Client: FrankaTwinClient
+# .gripper_open() / .gripper_close() / .gripper_homing() / .gripper_state();
+# script: python examples/gripper.py --open | --close.
+#
+# Closing is a libfranka GRASP, not a width command: the fingers drive towards
+# grasp_width and squeeze with grasp_force once they stall on the object, so the
+# object sets the resting width and grasp_force sets how hard it is held.
+# grasp_width -0.01 (past full closure) = "close as far as you can and hold".
+# epsilon_* is the band around grasp_width in which libfranka reports is_grasped;
+# 0.08 (whole stroke) makes every stall count as grasped (deoxys behaviour).
 gripper:
-  enabled: false
+  enabled: true
+  move_speed: 0.1        # m/s, open (Gripper::move)
+  grasp_speed: 0.5       # m/s, close (Gripper::grasp)
+  grasp_force: 70.0      # N, (0, 70] -- 70 is the Franka Hand's rated continuous maximum
+  grasp_width: -0.01     # m
+  epsilon_inner: 0.08    # m
+  epsilon_outer: 0.08    # m
+  max_width: 0.08        # m, full stroke; gripper_open() default and the reference for width fractions
 
 # End-effector payload for libfranka gravity/inertia compensation.
 # osc_shm calls robot.setLoad(mass, com, inertia) at startup when mass > 0;

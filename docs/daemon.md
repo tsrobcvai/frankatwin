@@ -63,6 +63,10 @@ inertia tensor); `RT = non-RT` means the loop runs without real-time priority.
 - Client commands (`set_ee_target`, `set_gains`, `move_to_*`, …) are executed
   one at a time; a `move_to_*` stops `osc_shm`, runs `move_to`, and restarts
   `osc_shm` at the new pose with the previous gains.
+- `gripper_*` commands run `gripper_cmd` on a separate thread — the Franka Hand
+  has its own connection, so `osc_shm` is untouched and the command loop stays
+  free for `set_ee_target` while the fingers move. One gripper command at a
+  time; `gripper_stop` aborts it (SIGINT → `Gripper::stop()`).
 - Lines worth grepping for in the log:
   `watchdog: osc_shm restarted` (the controller died — a reflex, an RT overrun —
   and was relaunched; the preceding `osc_shm exited unexpectedly (code=…)`
@@ -81,7 +85,7 @@ exits; the daemon unlinks the shm segment and releases the ports. Don't
 
 - After editing `robot.yaml` (gains, clamps, collision thresholds, payload) —
   the daemon reads it once at start; no rebuild needed.
-- After rebuilding `osc_shm` / `move_to` (`cmake --build build`).
+- After rebuilding `osc_shm` / `move_to` / `gripper_cmd` (`cmake --build build`).
 - One daemon per robot: a second one fails to bind the ports. Stop any other
   FCI client (`franka-interface`, `franka_ros*`, `read_*` utilities) first —
   libfranka allows one session at a time (`python -m frankatwin.doctor` flags them).

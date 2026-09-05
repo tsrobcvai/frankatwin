@@ -7,6 +7,9 @@ Responsibilities:
 - For one-shot resets, stop `osc_shm`, spawn `move_to`, wait, restart `osc_shm`.
   Mutual exclusion is required because libfranka grants only one TCP session
   to the FCI port at a time.
+- Drive the Franka Hand through `gripper_cmd` (`gripper_open`, `gripper_grasp`,
+  `gripper_homing`, `gripper_stop`, `gripper_state`). The gripper server is a
+  separate connection (port 1338), so these run while `osc_shm` is up.
 
 This class is intended to be used either standalone on the NUC for local
 testing, or composed inside `frankatwin.daemon.FrankaTwinDaemon` for the
@@ -15,6 +18,7 @@ PC-driven remote use case.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import signal
@@ -22,11 +26,11 @@ import subprocess
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-from frankatwin.config import ControlConfig, RobotConfig
+from frankatwin.config import ControlConfig, GripperConfig, RobotConfig
 from frankatwin.shm_layout import (
     FRANKATWIN_SHM_STATE_FRAMES,
     STATE_FRAME_DTYPE,
@@ -38,6 +42,10 @@ logger = logging.getLogger(__name__)
 _OSC_STARTUP_TIMEOUT_S = 10.0
 _OSC_SHUTDOWN_TIMEOUT_S = 3.0
 _MOVE_TO_TIMEOUT_S = 30.0
+# homing sweeps the full stroke twice (~6 s); move/grasp finish in < 2 s. The
+# margin covers the TCP connect to the gripper server on a loaded NUC.
+_GRIPPER_TIMEOUT_S = 30.0
+_GRIPPER_STOP_WAIT_S = 5.0
 # osc_shm's first robot.control() can be rejected with libfranka
 # "Move command aborted!" (Move::Status::kAborted) when it is relaunched right
 # after move_to -- a transient FCI session / controller-mode transition race as
@@ -114,6 +122,63 @@ def restore_gains(view: ShmView, gains: Dict[str, float]) -> None:
         error_delta_rot=float(gains["error_delta_rot"]),
         enabled=bool(gains["enabled"]),
     )
+
+
+# ---------------------------------------------------------------------------
+# gripper_cmd argument builder (pure; exercised by tests/test_gripper.py)
+# ---------------------------------------------------------------------------
+def gripper_command_args(
+    grip: GripperConfig,
+    cmd: str,
+    *,
+    width: Optional[float] = None,
+    speed: Optional[float] = None,
+    force: Optional[float] = None,
+    epsilon_inner: Optional[float] = None,
+    epsilon_outer: Optional[float] = None,
+) -> List[str]:
+    """Arguments after `<robot_ip>` for `gripper_cmd`; None falls back to robot.yaml."""
+    if cmd in ("homing", "stop", "state"):
+        return [cmd]
+    if cmd == "move":
+        w = grip.max_width if width is None else float(width)
+        if not (0.0 <= w <= grip.max_width):
+            raise ValueError(f"gripper move width must be in [0, {grip.max_width}] m, got {w}")
+        sp = grip.move_speed if speed is None else float(speed)
+        if sp <= 0.0:
+            raise ValueError(f"gripper speed must be > 0, got {sp}")
+        return ["move", "--width", f"{w:.5f}", "--speed", f"{sp:.4f}"]
+    if cmd == "grasp":
+        w = grip.grasp_width if width is None else float(width)
+        if w > grip.max_width:
+            raise ValueError(f"gripper grasp width must be <= {grip.max_width} m, got {w}")
+        sp = grip.grasp_speed if speed is None else float(speed)
+        f = grip.grasp_force if force is None else float(force)
+        ei = grip.epsilon_inner if epsilon_inner is None else float(epsilon_inner)
+        eo = grip.epsilon_outer if epsilon_outer is None else float(epsilon_outer)
+        if sp <= 0.0:
+            raise ValueError(f"gripper speed must be > 0, got {sp}")
+        if not (0.0 < f <= 70.0):
+            raise ValueError(f"gripper force must be in (0, 70] N, got {f}")
+        if ei < 0.0 or eo < 0.0:
+            raise ValueError("gripper epsilons must be >= 0")
+        return ["grasp", "--width", f"{w:.5f}", "--speed", f"{sp:.4f}", "--force", f"{f:.2f}",
+                "--eps-in", f"{ei:.4f}", "--eps-out", f"{eo:.4f}"]
+    raise ValueError(f"unknown gripper command {cmd!r}")
+
+
+def parse_gripper_output(stdout: str) -> Dict[str, Any]:
+    """The JSON object `gripper_cmd` prints (last non-empty stdout line)."""
+    lines = [l for l in stdout.splitlines() if l.strip()]
+    if not lines:
+        raise RuntimeError("gripper_cmd printed nothing")
+    try:
+        out = json.loads(lines[-1])
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"gripper_cmd output is not JSON: {lines[-1]!r}") from e
+    if not isinstance(out, dict):
+        raise RuntimeError(f"gripper_cmd output is not an object: {out!r}")
+    return out
 
 
 def _wxyz_from(quat: np.ndarray) -> np.ndarray:
@@ -197,6 +262,11 @@ class LocalController:
 
         self._osc_shm_bin = cfg.paths.build_dir / "osc_shm"
         self._move_to_bin = cfg.paths.build_dir / "move_to"
+        # Optional: checked when a gripper_* method is called, not here, so an
+        # arm-only build keeps working.
+        self._gripper_bin = cfg.paths.build_dir / "gripper_cmd"
+        self._gripper_proc: Optional[subprocess.Popen] = None
+        self._gripper_lock = threading.Lock()
         for b in (self._osc_shm_bin, self._move_to_bin):
             if not b.is_file():
                 raise FileNotFoundError(
@@ -645,3 +715,96 @@ class LocalController:
                 # Re-seed: osc_shm captures the new anchor pose on startup so
                 # the impedance setpoint matches where the robot now is.
                 self.start_controller()
+
+    # ------------------------------------------------------------------ gripper
+    # All blocking (homing ~6 s, move/grasp < 2 s). They do NOT stop osc_shm: the
+    # Franka Hand is served on its own port (1338), independent of the FCI
+    # session. The daemon wraps them in a thread so its REP loop stays responsive.
+    def gripper_homing(self) -> Dict[str, Any]:
+        """Calibrate the finger stroke (`max_width`). Once after power-up / finger change."""
+        return self._run_gripper(gripper_command_args(self.cfg.gripper, "homing"))
+
+    def gripper_move(self, width: float, speed: Optional[float] = None) -> Dict[str, Any]:
+        """Fingers to `width` [m] at `speed` [m/s] -- position only, no force."""
+        return self._run_gripper(gripper_command_args(self.cfg.gripper, "move", width=width, speed=speed))
+
+    def gripper_open(self, width: Optional[float] = None, speed: Optional[float] = None) -> Dict[str, Any]:
+        """`gripper_move` to `width` (default `gripper.max_width` = fully open)."""
+        return self.gripper_move(self.cfg.gripper.max_width if width is None else width, speed)
+
+    def gripper_grasp(
+        self,
+        width: Optional[float] = None,
+        speed: Optional[float] = None,
+        force: Optional[float] = None,
+        epsilon_inner: Optional[float] = None,
+        epsilon_outer: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Close on an object: drive towards `width`, squeeze with `force` [N] on stall.
+
+        Defaults from robot.yaml `gripper:` (width -0.01 = past closure, force 70).
+        `result` in the returned dict is libfranka's is-within-epsilon verdict;
+        `state.width` is where the fingers actually stopped.
+        """
+        return self._run_gripper(gripper_command_args(
+            self.cfg.gripper, "grasp", width=width, speed=speed, force=force,
+            epsilon_inner=epsilon_inner, epsilon_outer=epsilon_outer,
+        ))
+
+    gripper_close = gripper_grasp
+
+    def gripper_stop(self) -> Dict[str, Any]:
+        """Abort the gripper motion in flight.
+
+        If this process is running a `gripper_cmd`, signal it (it turns SIGINT
+        into `Gripper::stop()` on its own connection) and return that command's
+        final output; otherwise send a standalone `stop`.
+        """
+        with self._gripper_lock:
+            proc = self._gripper_proc
+        if proc is not None and proc.poll() is None:
+            proc.send_signal(signal.SIGINT)
+            try:
+                proc.wait(timeout=_GRIPPER_STOP_WAIT_S)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                raise RuntimeError("gripper_cmd did not stop within %.0fs; killed" % _GRIPPER_STOP_WAIT_S)
+            return {"ok": True, "cmd": "stop", "result": True, "stopped": True}
+        return self._run_gripper(gripper_command_args(self.cfg.gripper, "stop"))
+
+    def gripper_state(self) -> Dict[str, Any]:
+        """`{"width", "max_width", "is_grasped", "temperature"}` from one readOnce()."""
+        return self._run_gripper(gripper_command_args(self.cfg.gripper, "state"))["state"]
+
+    def _run_gripper(self, args: List[str]) -> Dict[str, Any]:
+        if not self.cfg.gripper.enabled:
+            raise RuntimeError("gripper disabled in robot.yaml (gripper.enabled: false)")
+        if not self._gripper_bin.is_file():
+            raise FileNotFoundError(
+                f"gripper_cmd not found at {self._gripper_bin}. Build the C++ side "
+                "(`cmake --build build`, docs/installation.md) or point paths.build_dir at it."
+            )
+        with self._gripper_lock:
+            if self._gripper_proc is not None and self._gripper_proc.poll() is None:
+                raise RuntimeError("a gripper command is already running; gripper_stop() first")
+            cmd = [str(self._gripper_bin), self.cfg.robot.ip, *args]
+            if self.verbose:
+                logger.info("running %s", " ".join(cmd))
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            self._gripper_proc = proc
+        try:
+            out, err = proc.communicate(timeout=_GRIPPER_TIMEOUT_S)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.communicate()
+            raise RuntimeError(f"gripper_cmd {args[0]} timed out after {_GRIPPER_TIMEOUT_S:.0f}s")
+        finally:
+            with self._gripper_lock:
+                self._gripper_proc = None
+        result = parse_gripper_output(out.decode(errors="replace"))
+        if proc.returncode != 0 or not result.get("ok"):
+            raise RuntimeError(
+                f"gripper_cmd {args[0]} failed (exit {proc.returncode}): "
+                f"{result.get('error') or err.decode(errors='replace').strip()[:512]}"
+            )
+        return result

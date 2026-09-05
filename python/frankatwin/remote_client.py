@@ -27,6 +27,9 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_REQ_TIMEOUT_S = 5.0
 MOVE_TO_REQ_TIMEOUT_S = 60.0
+GRIPPER_REQ_TIMEOUT_S = 10.0      # stop / fresh state do a TCP round trip to the hand
+GRIPPER_WAIT_S = 20.0             # move/grasp < 2 s; homing ~6 s
+GRIPPER_POLL_S = 0.05
 SOCKET_LINGER_MS = 200
 
 
@@ -254,6 +257,93 @@ class FrankaTwinClient:
         if duration is not None:
             payload["duration"] = float(duration)
         self._call(payload, timeout_s=MOVE_TO_REQ_TIMEOUT_S)
+
+    # ----------------------------------------------------------------- gripper
+    # Same names as LocalController. The daemon runs the hardware call on its
+    # own thread; with wait=True (default) these block until it finished and
+    # return its output: {"ok", "cmd", "result", "stopped", "state": {"width",
+    # "max_width", "is_grasped", "temperature"}, "seq"}. wait=False returns
+    # {"started": true, "seq"} at once; collect with gripper_wait(seq).
+    def gripper_homing(self, *, wait: bool = True) -> Dict[str, Any]:
+        """Calibrate the finger stroke. Once after power-up or a finger change (~6 s)."""
+        return self._gripper_cmd({"op": "gripper_homing"}, wait)
+
+    def gripper_move(
+        self, width: float, speed: Optional[float] = None, *, wait: bool = True
+    ) -> Dict[str, Any]:
+        """Fingers to `width` [m] (position only, no force)."""
+        payload: Dict[str, Any] = {"op": "gripper_move", "width": float(width)}
+        if speed is not None:
+            payload["speed"] = float(speed)
+        return self._gripper_cmd(payload, wait)
+
+    def gripper_open(
+        self, width: Optional[float] = None, speed: Optional[float] = None, *, wait: bool = True
+    ) -> Dict[str, Any]:
+        """Open to `width` [m]; default `gripper.max_width` (0.08 = fully open)."""
+        w = self.cfg.gripper.max_width if width is None else width
+        return self.gripper_move(w, speed, wait=wait)
+
+    def gripper_grasp(
+        self,
+        width: Optional[float] = None,
+        speed: Optional[float] = None,
+        force: Optional[float] = None,
+        epsilon_inner: Optional[float] = None,
+        epsilon_outer: Optional[float] = None,
+        *,
+        wait: bool = True,
+    ) -> Dict[str, Any]:
+        """Close on an object: drive towards `width`, squeeze with `force` [N] on stall.
+
+        None = robot.yaml `gripper:` defaults (width -0.01 = past closure, so the
+        object sets the resting width; force 70 N). `result` is libfranka's
+        within-epsilon verdict, `state.width` where the fingers stopped.
+        """
+        payload: Dict[str, Any] = {"op": "gripper_grasp"}
+        for k, v in (("width", width), ("speed", speed), ("force", force),
+                     ("epsilon_inner", epsilon_inner), ("epsilon_outer", epsilon_outer)):
+            if v is not None:
+                payload[k] = float(v)
+        return self._gripper_cmd(payload, wait)
+
+    gripper_close = gripper_grasp
+
+    def gripper_stop(self) -> Dict[str, Any]:
+        """Abort the gripper motion in flight."""
+        return self._call({"op": "gripper_stop"}, timeout_s=GRIPPER_REQ_TIMEOUT_S)
+
+    def gripper_state(self) -> Dict[str, Any]:
+        """Live `{"width", "max_width", "is_grasped", "temperature"}` (one round trip
+        to the hand). Raises if a command is running; use gripper_wait first."""
+        reply = self._call({"op": "gripper_state", "fresh": True}, timeout_s=GRIPPER_REQ_TIMEOUT_S)
+        if reply.get("busy"):
+            raise RuntimeError("gripper busy; gripper_wait() before reading a live state")
+        return reply["state"]
+
+    def gripper_wait(self, seq: Optional[int] = None, timeout_s: float = GRIPPER_WAIT_S) -> Dict[str, Any]:
+        """Block until the running gripper command (or the one with `seq`) finished.
+
+        Returns its output dict; raises RuntimeError if it failed.
+        """
+        deadline = time.monotonic() + timeout_s
+        while True:
+            reply = self._call({"op": "gripper_state", "fresh": False})
+            last = reply.get("last") or {}
+            done = not reply.get("busy") and (seq is None or last.get("seq") == seq)
+            if done:
+                if not last.get("ok", False):
+                    raise RuntimeError(f"gripper {last.get('cmd')} failed: {last.get('error', 'unknown error')}")
+                return last
+            if time.monotonic() > deadline:
+                raise TimeoutError(f"gripper command still running after {timeout_s:.0f}s")
+            time.sleep(GRIPPER_POLL_S)
+
+    def _gripper_cmd(self, payload: Dict[str, Any], wait: bool) -> Dict[str, Any]:
+        reply = self._call(payload)
+        if not wait:
+            return {"started": True, "seq": reply.get("seq")}
+        return self.gripper_wait(seq=reply.get("seq"))
 
     # ----------------------------------------------------------------- helpers
     def wait_for_state(self, timeout_s: float = 3.0) -> RobotState:

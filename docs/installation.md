@@ -90,11 +90,11 @@ conda list | grep -E "^(libfranka|libpinocchio) "    # check: libfranka 0.20.x +
 conda activate frankatwin
 git clone git@github.com:tsrobcvai/frankatwin.git && cd frankatwin
 cmake -S . -B build -DCMAKE_PREFIX_PATH=$CONDA_PREFIX && cmake --build build -j$(nproc)
-ls build/osc_shm build/move_to build/read_current_q build/read_current_pose build/read_load
+ls build/osc_shm build/move_to build/gripper_cmd build/read_current_q build/read_current_pose build/read_load
 ./build/read_current_q 172.16.0.2                  # read-only; proves the libfranka version matches the robot
 
 pip install -e ".[test]"                           # numpy, pyyaml, pyzmq (+ pytest)
-python -m pytest tests -q                          # shm ABI, config, excitation, cli
+python -m pytest tests -q                          # shm ABI, config, excitation, cli, gripper
 python -m frankatwin.doctor                                  # RT kernel, rtprio, binaries, libfranka, FCI link
 ```
 
