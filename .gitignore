@@ -41,3 +41,6 @@ logs/
 
 # Sphinx
 docs/_build/
+
+# libfranka source tree, when built inside a conda env (docs/installation.md).
+libfranka/

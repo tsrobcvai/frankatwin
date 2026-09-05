@@ -60,7 +60,7 @@ ping -c1 172.16.0.2                  # FCI reachable
 
 ## 2. libfranka
 
-FrankaTwin links against whatever `find_package(Franka)` finds. Two common setups:
+FrankaTwin links against whatever `find_package(Franka)` finds. Three common setups:
 
 **System install** (recommended):
 
@@ -73,6 +73,69 @@ sudo apt install libfranka-dev        # or build from source and `cmake --instal
 
 ```bash
 cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/deoxys/build/libfranka
+```
+
+### Conda environment (libfranka from source)
+
+No root on the NUC, or you want 0.13.x pinned alongside a newer system copy?
+Build libfranka inside a conda env and install it into `$CONDA_PREFIX`. Pinning
+0.13.3 also keeps you on the pre-Pinocchio dynamics model (see below).
+
+```bash
+conda create -n frankatwin -c conda-forge python=3.11 poco "eigen=3.4" \
+    cmake cxx-compiler pkg-config make "sysroot_linux-64=2.28"
+conda activate frankatwin
+
+git clone --recursive --branch 0.13.3 https://github.com/frankaemika/libfranka.git
+cmake -S libfranka -B libfranka/build -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX \
+    -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF \
+    -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+cmake --build libfranka/build -j$(nproc) && cmake --install libfranka/build
+
+ls $CONDA_PREFIX/lib/libfranka.so.*     # libfranka.so.0.13  libfranka.so.0.13.3
+```
+
+Then build FrankaTwin against it, with the env still active:
+
+```bash
+cmake -S . -B build -DCMAKE_PREFIX_PATH=$CONDA_PREFIX
+cmake --build build -j$(nproc)
+```
+
+**Pin `sysroot_linux-64` in the `conda create` line — this is the part that
+bites.** conda's compiler links against the *sysroot's* glibc, not the host's,
+and the sysroot conda-forge picks by default (2.12) is older than what the rest
+of the env needs:
+
+| library | needs | symptom with the default 2.12 sysroot |
+|---|---|---|
+| `libstdc++.so.6` | `GLIBC_2.17` | `undefined reference to memcpy@GLIBC_2.14` / `secure_getenv@GLIBC_2.17`; CMake reports *"The C++ compiler is not able to compile a simple test program"* |
+| `libPocoNet`, `libPocoFoundation` | `GLIBC_2.28` | `undefined reference to fcntl64@GLIBC_2.28` when linking `osc_shm` |
+
+2.28 covers both. Note that 2.17 is *not* enough: it gets libfranka itself to
+build (a shared library tolerates unresolved symbols in its own dependencies)
+and only fails later, when the FrankaTwin executables are linked.
+
+Any sysroot from 2.28 up to your host glibc works — check with `ldd --version`
+(Ubuntu 20.04 → 2.31, 22.04 → 2.35). Choosing one *above* the host glibc
+produces binaries that will not run.
+
+Pin it in `conda create` rather than a follow-up `conda install`: one fresh
+solve took 4.5 min on a test NUC, versus 11 min for `conda create` plus a
+separate `conda install sysroot_linux-64=...`, because an incremental solve has
+to keep 60+ already-installed packages consistent. If conda prints
+`Error while loading conda entry point: conda-libmamba-solver`, it has fallen
+back to the slow classic solver; `micromamba` does the same job in seconds:
+
+```bash
+micromamba install -p $CONDA_PREFIX -c conda-forge "sysroot_linux-64=2.28"
+```
+
+If a build directory survives from a failed attempt, delete it before retrying —
+CMake caches "the compiler is broken" and will not retest it:
+
+```bash
+rm -rf libfranka/build build
 ```
 
 ### libfranka ≥ 0.14 needs Pinocchio
