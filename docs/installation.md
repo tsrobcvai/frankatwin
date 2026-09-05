@@ -91,12 +91,25 @@ conda activate frankatwin
 git clone git@github.com:tsrobcvai/frankatwin.git && cd frankatwin
 cmake -S . -B build -DCMAKE_PREFIX_PATH=$CONDA_PREFIX && cmake --build build -j$(nproc)
 ls build/osc_shm build/move_to build/gripper_cmd build/read_current_q build/read_current_pose build/read_load
-./build/read_current_q 172.16.0.2                  # read-only; proves the libfranka version matches the robot
 
 pip install -e ".[test]"                           # numpy, pyyaml, pyzmq (+ pytest)
 python -m pytest tests -q                          # shm ABI, config, excitation, cli, gripper
-python -m frankatwin.doctor                                  # RT kernel, rtprio, binaries, libfranka, FCI link
 ```
+
+### Verify
+
+1. **Robot**: switch FCI mode on in Desk ([Robot](#robot) above).
+2. **NUC**, in the env:
+
+```bash
+python -m frankatwin.doctor          # RT kernel, rtprio, binaries + ldd, FCI reachable, competing clients
+./build/read_current_q 172.16.0.2    # opens one libfranka session and prints q -- read-only, the arm does not move
+```
+
+`doctor` must end with `all good.` and `read_current_q` must print seven joint
+angles: together they show libfranka is installed, linked and speaks the robot's
+protocol. Anything else — `[XX]` lines or `Incompatible library version` — is in
+[Troubleshooting](troubleshooting.md).
 
 ## PC
 
@@ -113,6 +126,19 @@ pip install -e ".[analysis]"      # + pandas/matplotlib for scripts/compare_*.py
 Edit `config/robot.yaml → network.nuc_host` to the NUC's address on the PC-facing
 interface (the default `172.16.0.1` assumes the PC sits on the FCI subnet; use
 the NUC's LAN IP otherwise). Ports 5555 (REQ/REP) and 5556 (PUB) must be open.
+
+### Verify
+
+1. **NUC**, in its env: `python -m frankatwin.daemon` (robot in FCI mode, as above).
+2. **PC**, in its env:
+
+```bash
+python -m frankatwin.doctor          # daemon ping on 5555, state stream on 5556
+```
+
+`doctor` must end with `all good.` — the PC sees the daemon and receives the
+100 Hz state stream. If it fails, `network.nuc_host` in `config/robot.yaml` is
+the usual culprit ([Troubleshooting](troubleshooting.md)).
 
 ## SIM
 
