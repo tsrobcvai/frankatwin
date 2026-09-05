@@ -93,7 +93,9 @@ Design notes:
 
 ### 0. One-time IsaacLab setup
 
-<kbd>SIM</kbd>
+<kbd>SIM</kbd> — needs [IsaacLab](https://github.com/isaac-sim/IsaacLab) ≥ 2.3.0
+(the dynamic/viscous joint-friction API landed in 2.3). Deploy the shipped
+extension once into your checkout; no IsaacLab source edits.
 
 ```bash
 ./isaaclab_sysid/install_into_isaaclab.sh /path/to/IsaacLab
@@ -111,6 +113,7 @@ the task configs reference the USD relative to it.
 <kbd>PC</kbd> with the daemon running on the NUC.
 
 ```bash
+conda activate frankatwin
 python examples/move_to.py
 python examples/cart_impedance.py --mode chirp --rate 50 --kp-pos 500 --kp-ori 30 \
     --err-delta-pos 0.15 --err-delta-rot 0.80 \
@@ -152,9 +155,10 @@ python scripts/tools/apply_sysid_params.py \
 
 ### 4. Compare
 
-<kbd>PC</kbd>, needs `pip install -e ".[analysis]"`.
+<kbd>PC</kbd>, in the `frankatwin` env (installed with `".[analysis]"`).
 
 ```bash
+conda activate frankatwin
 python scripts/compare_sim_real.py --real-csv /data/heldout.csv \
     --sim-csv /data/heldout_sim_sysid.csv --save
 ```

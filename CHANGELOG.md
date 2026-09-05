@@ -3,6 +3,14 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+- Installation is conda-only: one `frankatwin` env per machine, libfranka from
+  conda-forge matched to the robot's FCI protocol (system 5.9 → `libfranka=0.20`;
+  a mismatch only shows up when a session is opened). `CMakeLists.txt` finds
+  conda's boost of any version and only when Pinocchio is linked.
+
 ## [0.2.0] — 2026-09-03
 
 First public release, renamed from the internal `panda_control` repository.

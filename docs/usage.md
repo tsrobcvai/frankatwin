@@ -3,6 +3,8 @@
 ## Basic control
 
 Two steps: bring the controller up on the NUC, then drive the arm from the PC.
+Every command below runs inside the `frankatwin` conda env of that machine
+([Installation](installation.md)).
 Step 2 shows three usage examples (each script takes `--config robot.yaml`; the
 two controllers they use are described in [Architecture](architecture.md)).
 
@@ -11,10 +13,14 @@ two controllers they use are described in [Architecture](architecture.md)).
 <kbd>NUC</kbd>
 
 ```bash
+conda activate frankatwin
+python -m frankatwin.doctor          # other FCI clients, missing binaries, unreachable FCI
 python -m frankatwin.daemon -v
 ```
 
-It launches `osc_shm` — the arm now holds its current pose under impedance
+`doctor` is optional but cheap: it flags the things that make the daemon fail to
+start (another libfranka session, a missing `build/osc_shm`, FCI not reachable).
+The daemon launches `osc_shm` — the arm now holds its current pose under impedance
 control — and keeps it alive. Leave the terminal open; the banner should show
 `RT = SCHED_FIFO`, `tau_rate = 800 Nm/s`, the payload and collision settings,
 then `daemon ready`. All flags (`--config`, payload overrides), the banner line
@@ -23,10 +29,19 @@ by line, what it logs while running, how to stop it and when to restart it:
 
 ### Step 2 · Drive the arm from the PC
 
-<kbd>PC</kbd> — three usage examples, from a one-shot move to a closed-loop policy.
-Each one says what the arm will do before you run it. Examples 2 and 3 run under
-impedance control (the arm is compliant — you can push it and it springs back);
-Example 1 is stiff position control, see its safety note.
+<kbd>PC</kbd> — first confirm the PC sees the daemon:
+
+```bash
+conda activate frankatwin
+python -m frankatwin.doctor          # daemon ping on 5555, state stream on 5556
+```
+
+If it fails, `network.nuc_host` in `config/robot.yaml` is the usual culprit
+([Troubleshooting](troubleshooting.md)). Then three usage examples, from a one-shot
+move to a closed-loop policy. Each one says what the arm will do before you run
+it. Examples 2 and 3 run under impedance control (the arm is compliant — you can
+push it and it springs back); Example 1 is stiff position control, see its safety
+note.
 
 #### Example 1 · Reset the arm
 

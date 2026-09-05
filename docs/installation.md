@@ -1,58 +1,50 @@
 # Installation
 
-Three machines can be involved. Every command below is tagged with where it runs:
+Three machines can be involved; one section per machine below. Elsewhere in these
+docs every command carries the tag of the machine it runs on:
 
 | tag | machine | runs | software (tested) |
 |---|---|---|---|
-| — | **Robot** | — | Franka Research 3 (system ≥ 5.7) or Panda, Franka Hand attached, FCI enabled in Desk |
-| <kbd>NUC</kbd> | real-time PC wired to the robot (FCI) | `python -m frankatwin.daemon` → `osc_shm` / `move_to` | Ubuntu 20.04 / 22.04 with `PREEMPT_RT` kernel · libfranka matched to the robot system version (see section 2); ≥ 0.14 needs Pinocchio, handled by CMake · Eigen3, CMake ≥ 3.10 · Python ≥ 3.9 |
-| <kbd>PC</kbd> | your workstation | `examples/*.py`, analysis scripts | Python ≥ 3.9 (numpy, pyyaml, pyzmq; pandas + matplotlib for the analysis scripts) |
+| — | **Robot** | — | Franka Research 3 or Panda, Franka Hand attached, FCI enabled in Desk; libfranka is chosen from the robot system version (see NUC) |
+| <kbd>NUC</kbd> | real-time PC wired to the robot (FCI) | `python -m frankatwin.daemon` → `osc_shm` / `move_to` | Ubuntu 20.04 / 22.04 with `PREEMPT_RT` kernel · conda env `frankatwin` (all conda-forge): libfranka matched to the robot system (0.20 for system 5.9), Eigen3, CMake, C++ compiler, Python 3.11 |
+| <kbd>PC</kbd> | your workstation | `examples/*.py`, analysis scripts | conda env `frankatwin`: Python 3.11 (numpy, pyyaml, pyzmq; pandas + matplotlib for the analysis scripts) |
 | <kbd>SIM</kbd> | any GPU box with IsaacLab (can be the PC) | sysid fit, sim replay | IsaacLab 2.3.0 (≥ 2.3 for the dynamic/viscous joint-friction API) · `cmaes` |
 
-## At a glance
+![Deployment: Robot ↔ NUC over FCI/libfranka at 1 kHz, NUC ↔ PC over ZMQ 5555/5556, PC ↔ SIM by copying CSV/JSON files. IPs shown are the config/robot.yaml defaults.](images/deployment.svg)
 
-The whole installation in two blocks; the sections below explain each line.
+:::{admonition} [TODO, checklist]
+:class: warning
 
-Full prerequisites (RT kernel, FCI, libfranka ≥ 0.14 + Pinocchio, conda caveats):
-[docs/installation.md](installation.md).
+NUC and PC read the same `config/robot.yaml` from their checkout (`pip install -e .`
+is the intended install mode): `robot.ip` for the robot, `network.nuc_host` for
+the NUC, plus gains, safety clamps and payload. Override with `--config` on any
+command or `FRANKATWIN_CONFIG=/path/to/local.yaml`; keys are documented inline in
+the file and in [Configuration](configuration.md).
+:::
 
-<kbd>NUC</kbd> build the 1 kHz controller, install the Python side, start the daemon
+## Robot
 
-```bash
-git clone git@github.com:tsrobcvai/frankatwin.git && cd frankatwin
-cmake -S . -B build && cmake --build build -j      # libfranka + Eigen3 (+ Pinocchio for libfranka >= 0.14)
-pip install -e .
-python -m frankatwin.doctor        # RT kernel, rtprio, binaries, libfranka/pinocchio, FCI link, other FCI clients
-python -m frankatwin.daemon        # binds 5555 (commands) / 5556 (state), launches osc_shm
-```
+Nothing to install. The FCI feature has to be present on the controller and the
+robot switched into FCI mode from Desk — the web UI you open from the PC (or the
+NUC) at the robot's address, `172.16.0.2` by default. Franka's guide covers it:
 
-<kbd>PC</kbd> Python only
+- [Installing the FCI Feature](https://frankarobotics.github.io/docs/doc/libfranka/docs/getting_started.html#installing-the-fci-feature)
+  — one-time, needs the feature file from Franka.
+- [Preparing the Robot for FCI in Desk](https://frankarobotics.github.io/docs/doc/libfranka/docs/getting_started.html#preparing-the-robot-for-fci-in-desk)
+  and [Activating FCI Mode](https://frankarobotics.github.io/docs/doc/libfranka/docs/getting_started.html#activating-fci-mode)
+  — every session: unlock the joints, then enable FCI (FR3 and FER differ slightly;
+  both are on that page).
 
-```bash
-git clone git@github.com:tsrobcvai/frankatwin.git && cd frankatwin
-pip install -e ".[analysis]"          # analysis: pandas + matplotlib for the compare/plot scripts
-vim config/robot.yaml                 # network.nuc_host = the NUC's address as seen from here
-python -m frankatwin.doctor                     # daemon reachable? state stream flowing?
-```
+## NUC
 
-<kbd>SIM</kbd> only if you will run the sysid loop — see [System identification](sysid.md).
+### Ubuntu kernel
 
-The repository is private, so `git clone` needs SSH (`git@github.com:...`) with a
-key on your GitHub account. The `https://` URL only works if you have a credential
-helper or a personal access token configured.
-
-`config/robot.yaml` is shared by all sides (network, robot IP, gains, safety
-clamps, collision thresholds, payload). Override with `--config` or
-`$FRANKATWIN_CONFIG`.
-
-## 1. NUC prerequisites
-
-You need what every libfranka user needs: a `PREEMPT_RT` kernel, the FCI feature
-enabled in Desk, a user in the `realtime` group, and the robot reachable on
-`172.16.0.2` (default). Franka's own guide is the reference:
-<https://frankaemika.github.io/docs/installation_linux.html>. The
+You need what every libfranka user needs: Ubuntu 22.04 (20.04 also works) with a
+`PREEMPT_RT` kernel, a user in the `realtime` group, and the robot
+reachable on `172.16.0.2` (default). Franka's own guide is the reference:
+<https://frankarobotics.github.io/docs/doc/libfranka/docs/real_time_kernel.html>. The
 [deoxys prerequisites page](https://zhuyifengzju.github.io/deoxys_docs/html/installation/system_prerequisite.html)
-is a good condensed walkthrough of the same steps.
+is a good condensed walkthrough of similar steps.
 
 Check before continuing:
 
@@ -62,161 +54,58 @@ ulimit -r                            # >= 99 (rtprio)
 ping -c1 172.16.0.2                  # FCI reachable
 ```
 
-## 2. libfranka
+### conda environment (libfranka)
 
-FrankaTwin links against whatever `find_package(Franka)` finds. The version must
-match your robot's system version — start with the next subsection.
-
-**System install** (recommended):
-
-```bash
-# pick the version that matches your robot system version -- see below
-sudo apt install libfranka-dev        # or build from source and `cmake --install`
-```
-
-**Reuse a conda / deoxys build:**
-
-```bash
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/deoxys/build/libfranka
-```
-
-### Match libfranka to the robot system version
-
-libfranka and the robot negotiate an FCI protocol version; a mismatch is fatal
-(`Incompatible library version (server version: 10, library version: 7)`).
-Check the robot first:
+libfranka and the robot negotiate an FCI protocol version with no backward
+compatibility — a wrong version builds and installs fine and fails only when
+`osc_shm` opens a session (`Incompatible library version (server version: 10,
+library version: 7)`). Read the robot's system version first and pick libfranka
+from it:
 
 ```bash
 curl -sk https://172.16.0.2/admin/api/system-version    # e.g. "5.9.2"
 ```
 
-| libfranka | FCI protocol |
-|---|---|
-| 0.13.x | 7 |
-| 0.14.x | 8 |
-| 0.15.0 – 0.17.0 | 9 |
-| 0.18.0 – 0.21.x | 10 |
+| robot system | FCI protocol | libfranka | conda-forge package |
+|---|---|---|---|
+| ≥ 5.9.0 | 10 | 0.18 – 0.21 | `libfranka=0.20` |
+| 5.7.2 – 5.8.x | 9 | 0.15 – 0.17 | `libfranka=0.15` |
+| 5.7.0 – 5.7.1 | 8 | 0.14.x | — (build from source) |
+| 5.5 – 5.6 | 7 | 0.13.x | — (build from source) |
 
-System 5.9.2 speaks protocol 10, so it needs libfranka ≥ 0.18. A wrong version
-still builds and installs cleanly — it only fails when `osc_shm` opens a session,
-so always confirm against the robot:
-
-```bash
-./build/read_current_q 172.16.0.2      # prints joint angles, does not move the arm
-```
-
-### Reusing a libfranka already on the machine
-
-If another project has a matching libfranka with headers and CMake config, point
-at it instead of building one. This is the lab NUC's setup — deoxys' 0.20.0 plus
-a system-urdfdom Pinocchio:
+Everything on the NUC — libfranka, the C++ build and the Python package — lives in
+one conda env called `frankatwin`; activate it in every terminal that builds or
+runs FrankaTwin. Our FR3 is on system 5.9.2:
 
 ```bash
-conda activate base          # not the frankatwin env -- see below
-cmake -S . -B build \
-    -DCMAKE_C_COMPILER=/usr/bin/gcc -DCMAKE_CXX_COMPILER=/usr/bin/g++ \
-    -DCMAKE_PREFIX_PATH="/path/to/deoxys_control/deoxys;/path/to/pinocchio;$CONDA_PREFIX"
-cmake --build build -j$(nproc)
-ldd build/osc_shm | grep franka        # several copies usually coexist -- check
-```
-
-Build this with the system compiler. Under conda's `cxx-compiler`
-`CMAKE_LIBRARY_ARCHITECTURE` is empty, so CMake never searches
-`/usr/lib/x86_64-linux-gnu` and cannot find the system urdfdom and Poco such a
-build needs. Use the conda env for Python, the system toolchain for C++.
-
-### Self-contained conda environment (libfranka ≤ 0.13 only)
-
-Everything in one env, but it cannot reach a 5.7+ robot, and the ≥ 0.14
-Pinocchio path does not work under the conda compiler.
-
-```bash
-conda create -n frankatwin -c conda-forge python=3.11 poco "eigen=3.4" \
-    cmake cxx-compiler pkg-config make "sysroot_linux-64=2.28"
+conda create -n frankatwin -c conda-forge python=3.11 "libfranka=0.20" \
+    eigen cmake cxx-compiler pkg-config make "sysroot_linux-64=2.28"
 conda activate frankatwin
-
-git clone --recursive --branch 0.13.3 https://github.com/frankaemika/libfranka.git
-cmake -S libfranka -B libfranka/build -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX \
-    -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF \
-    -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-cmake --build libfranka/build -j$(nproc) && cmake --install libfranka/build
+conda list | grep -E "^(libfranka|libpinocchio) "    # check: libfranka 0.20.x + libpinocchio (needed by libfranka >= 0.14)
 ```
 
-Pin `sysroot_linux-64` in the `conda create` line: conda's compiler links against
-the sysroot's glibc, and the 2.12 default is older than `libstdc++` (needs 2.17)
-and Poco (needs 2.28). 2.17 is not enough — libfranka still builds, then the
-executables fail to link with `fcntl64@GLIBC_2.28`. Any value from 2.28 up to
-your host glibc works (`ldd --version`); above it, the binaries will not run.
-
-Pin it in `conda create`, not a follow-up `conda install` — one fresh solve beats
-an incremental one by ~2x. If conda reports `conda-libmamba-solver` failing to
-load it has fallen back to the slow classic solver; `micromamba install -p
-$CONDA_PREFIX -c conda-forge "sysroot_linux-64=2.28"` does the same in seconds.
-
-Delete stale build dirs before retrying — CMake caches "the compiler is broken".
-
-### libfranka ≥ 0.14 needs Pinocchio
-
-Starting with libfranka 0.14 (robot system ≥ 5.7.0) the dynamics model
-(`mass`, `coriolis`, `gravity`, `zeroJacobian`) is computed with
-[Pinocchio](https://github.com/stack-of-tasks/pinocchio) instead of the old
-internal model. Linking `Franka::Franka` then requires Pinocchio too, otherwise
-you get undefined symbols like `pinocchio::computeJointJacobians` at link time.
-`CMakeLists.txt` detects the libfranka version and adds
-`find_package(pinocchio REQUIRED)` automatically; you only have to make it
-findable:
+### Build and install
 
 ```bash
-cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/libfranka;/path/to/pinocchio"
-```
-
-Install Pinocchio from apt (`robotpkg-py3*-pinocchio`), conda-forge (`pinocchio`),
-or build it minimally with `-DBUILD_PYTHON_INTERFACE=OFF`. For libfranka < 0.14
-nothing extra is needed.
-
-### Conda caveats (only if `CONDA_PREFIX` is set)
-
-`CMakeLists.txt` contains two workarounds that are active whenever a conda env is
-activated at configure time:
-
-- It prepends `$CONDA_PREFIX/lib` to the linker search path and RPATH so that a
-  conda-built libfranka (which pulls conda's `libfmt` → newer `GLIBCXX`) links
-  against conda's `libstdc++` instead of the system one.
-- It links `libboost_filesystem.so.1.82.0` from conda directly if present, because
-  binaries that run with file capabilities (`cap_sys_nice`) ignore
-  `LD_LIBRARY_PATH` and would otherwise fail to load Pinocchio's parser deps.
-
-If you use a system libfranka, configure with conda **deactivated** and both
-workarounds stay off.
-
-## 3. Build and install (NUC)
-
-```bash
+conda activate frankatwin
 git clone git@github.com:tsrobcvai/frankatwin.git && cd frankatwin
-cmake -S . -B build && cmake --build build -j
+cmake -S . -B build -DCMAKE_PREFIX_PATH=$CONDA_PREFIX && cmake --build build -j$(nproc)
 ls build/osc_shm build/move_to build/read_current_q build/read_current_pose build/read_load
+./build/read_current_q 172.16.0.2                  # read-only; proves the libfranka version matches the robot
 
 pip install -e ".[test]"                           # numpy, pyyaml, pyzmq (+ pytest)
 python -m pytest tests -q                          # shm ABI, config, excitation, cli
 python -m frankatwin.doctor                                  # RT kernel, rtprio, binaries, libfranka, FCI link
 ```
 
-`python -m frankatwin.doctor` prints one line per check with a hint on failure; fix the
-`[XX]` lines before starting the daemon.
+## PC
 
-`osc_shm` asks for `SCHED_FIFO` priority 80 at startup. Either run the daemon
-from a shell with `ulimit -r 99` (realtime group) or grant the capability once:
-
-```bash
-sudo setcap cap_sys_nice+ep build/osc_shm
-```
-
-If it can't get RT priority it prints `RT = non-RT` and continues; expect
-occasional `communication_constraints_violation` under load in that mode.
-
-## 4. Install (PC)
+Same idea, Python only — a conda env called `frankatwin`, and every example or
+script runs inside it:
 
 ```bash
+conda create -n frankatwin -c conda-forge python=3.11
+conda activate frankatwin
 git clone git@github.com:tsrobcvai/frankatwin.git && cd frankatwin
 pip install -e ".[analysis]"      # + pandas/matplotlib for scripts/compare_*.py, plot_*.py
 ```
@@ -225,53 +114,14 @@ Edit `config/robot.yaml → network.nuc_host` to the NUC's address on the PC-fac
 interface (the default `172.16.0.1` assumes the PC sits on the FCI subnet; use
 the NUC's LAN IP otherwise). Ports 5555 (REQ/REP) and 5556 (PUB) must be open.
 
-## 5. Configuration file
+## SIM
 
-Both halves read the same `config/robot.yaml` from the checkout
-(`pip install -e .` is the intended install mode). Override with `--config` on
-any command or `FRANKATWIN_CONFIG=/path/to/local.yaml`. Keys are documented
-inline in the file and in [Configuration](configuration.md).
+Only for the sysid loop (fit, replay, validate); skip it if you just want to
+control the arm. Install IsaacLab ≥ 2.3.0 following NVIDIA's guide —
+[Isaac Lab local installation (v2.3.0)](https://isaac-sim.github.io/IsaacLab/v2.3.0/source/setup/installation/index.html)
+— then deploy the FrankaTwin extension into that checkout as described in
+[System identification → One-time IsaacLab setup](sysid.md#0-one-time-isaaclab-setup).
 
-## 6. First run
+---
 
-Terminal 1, **NUC**:
-
-```bash
-python -m frankatwin.doctor          # flags other FCI clients, missing binaries, unreachable FCI
-python -m frankatwin.daemon -v
-```
-
-Expected banner:
-
-```
-[osc_shm] robot_ip = 172.16.0.2
-[osc_shm] RT       = SCHED_FIFO
-[osc_shm] tau_rate = 800.000000 Nm/s (slew limit)
-[osc_shm] load     = none (using Desk-configured load)
-[osc_shm] collision = torque 100 Nm, cartesian 100 N/Nm (reflex thresholds)
-[osc_shm] starting 1 kHz loop. SIGINT to stop.
-... daemon ready, awaiting commands
-```
-
-Terminal 2, **PC**:
-
-```bash
-python -m frankatwin.doctor          # daemon ping + state stream
-python examples/move_to.py              # move_to -> init_q (home), then osc_shm resumes
-python examples/cart_impedance.py          # 4 s, ±5 cm z-sine, prints tracking RMS
-```
-
-## 7. IsaacLab (only for sysid / replay)
-
-The optimize / validate steps run in [IsaacLab](https://github.com/isaac-sim/IsaacLab)
-≥ 2.3.0 (the dynamic/viscous joint-friction API landed in 2.3). Deploy the shipped
-extension once into your checkout:
-
-```bash
-./isaaclab_sysid/install_into_isaaclab.sh /path/to/IsaacLab
-conda activate <your isaaclab env> && pip install cmaes
-```
-
-This copies the `franka_sysid` task package, the `franka_mimic.usd` robot asset
-and three scripts into the IsaacLab tree; no IsaacLab source edits. See
-[sysid.md](sysid.md).
+Next: [Usage](usage.md) — start the daemon on the NUC and drive the arm from the PC.
