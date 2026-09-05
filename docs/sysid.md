@@ -166,7 +166,18 @@ python scripts/compare_sim_real.py --real-csv /data/heldout.csv \
 Produces position / orientation / per-joint overlays and prints RMS per axis and
 joint.
 
-## Reference results
+## Limits and honest caveats
+
+- The identified parameters are for the specific arm, payload and gains they were
+  fitted under. Re-fit after changing the end-effector mass.
+- The fit captures joint-level dynamics under closed-loop impedance control. In
+  our 6-DOF chase tests the *orientation* transfers to ≈ 1.5° RMS, while
+  translational residuals of a few cm remain in some directions (real x/y move
+  ~30 % further, z behaves differently) — anisotropic effects the current
+  parameterisation cannot express. Contributions welcome.
+- `motor_delay_steps` is quantised to 1 ms ticks.
+
+## Our results
 
 Fit on one multiband run (v3), validated on a held-out chirp (v4):
 
@@ -176,6 +187,21 @@ Fit on one multiband run (v3), validated on a held-out chirp (v4):
 | held-out chirp, per-joint RMSE | — | 12–30 mrad (1.9–8.3 % of range) |
 | training multiband, EE 3-D RMS | 41.1 mm | **8.4 mm** |
 | training multiband, joint RMS | 983 mrad | **25.5 mrad** |
+
+The held-out chirp (8 s, 6-DOF, never seen by the optimizer), replayed in
+IsaacLab with the fitted parameters. Blue is the real arm, orange the twin,
+dashed the commanded reference — the impedance controller lags the reference
+identically on both sides, which is the point:
+
+![Held-out chirp: real vs sim joint position and velocity, all seven joints](images/v3_sysid_v4chirp_joints.png)
+
+![Held-out chirp: EE position x/y/z, target vs real vs sim](images/v3_sysid_v4chirp_position.png)
+
+![Held-out chirp: EE orientation quaternion, target vs real vs sim](images/v3_sysid_v4chirp_orientation.png)
+
+The remaining gap concentrates in j1 and j5 (base yaw, wrist roll) — the two
+joints an EE-space excitation moves least, hence the rotation sweeps in the
+v3 design. The tables below are the numbers behind the plots.
 
 Per-joint RMS on the training multiband run [mrad]:
 
@@ -205,14 +231,3 @@ run the fit on yours. Two things worth knowing about them:
   dumping everything into stiction.
 - Armature mostly decreased (a more compliant arm model) once higher
   accelerations were present.
-
-## Limits and honest caveats
-
-- The identified parameters are for the specific arm, payload and gains they were
-  fitted under. Re-fit after changing the end-effector mass.
-- The fit captures joint-level dynamics under closed-loop impedance control. In
-  our 6-DOF chase tests the *orientation* transfers to ≈ 1.5° RMS, while
-  translational residuals of a few cm remain in some directions (real x/y move
-  ~30 % further, z behaves differently) — anisotropic effects the current
-  parameterisation cannot express. Contributions welcome.
-- `motor_delay_steps` is quantised to 1 ms ticks.
