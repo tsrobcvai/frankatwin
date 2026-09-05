@@ -19,7 +19,7 @@ Full prerequisites (RT kernel, FCI, libfranka ≥ 0.14 + Pinocchio, conda caveat
 <kbd>NUC</kbd> build the 1 kHz controller, install the Python side, start the daemon
 
 ```bash
-git clone https://github.com/tsrobcvai/frankatwin && cd frankatwin
+git clone git@github.com:tsrobcvai/frankatwin.git && cd frankatwin
 cmake -S . -B build && cmake --build build -j      # libfranka + Eigen3 (+ Pinocchio for libfranka >= 0.14)
 pip install -e .
 python -m frankatwin.doctor        # RT kernel, rtprio, binaries, libfranka/pinocchio, FCI link, other FCI clients
@@ -29,13 +29,17 @@ python -m frankatwin.daemon        # binds 5555 (commands) / 5556 (state), launc
 <kbd>PC</kbd> Python only
 
 ```bash
-git clone https://github.com/tsrobcvai/frankatwin && cd frankatwin
+git clone git@github.com:tsrobcvai/frankatwin.git && cd frankatwin
 pip install -e ".[analysis]"          # analysis: pandas + matplotlib for the compare/plot scripts
 vim config/robot.yaml                 # network.nuc_host = the NUC's address as seen from here
 python -m frankatwin.doctor                     # daemon reachable? state stream flowing?
 ```
 
 <kbd>SIM</kbd> only if you will run the sysid loop — see [System identification](sysid.md).
+
+The repository is private, so `git clone` needs SSH (`git@github.com:...`) with a
+key on your GitHub account. The `https://` URL only works if you have a credential
+helper or a personal access token configured.
 
 `config/robot.yaml` is shared by all sides (network, robot IP, gains, safety
 clamps, collision thresholds, payload). Override with `--config` or
@@ -175,11 +179,11 @@ workarounds stay off.
 ## 3. Build and install (NUC)
 
 ```bash
-git clone https://github.com/tsrobcvai/frankatwin && cd frankatwin
+git clone git@github.com:tsrobcvai/frankatwin.git && cd frankatwin
 cmake -S . -B build && cmake --build build -j
 ls build/osc_shm build/move_to build/read_current_q build/read_current_pose build/read_load
 
-pip install -e .                                   # numpy, pyyaml, pyzmq
+pip install -e ".[test]"                           # numpy, pyyaml, pyzmq (+ pytest)
 python -m pytest tests -q                          # shm ABI, config, excitation, cli
 python -m frankatwin.doctor                                  # RT kernel, rtprio, binaries, libfranka, FCI link
 ```
@@ -200,7 +204,7 @@ occasional `communication_constraints_violation` under load in that mode.
 ## 4. Install (PC)
 
 ```bash
-git clone https://github.com/tsrobcvai/frankatwin && cd frankatwin
+git clone git@github.com:tsrobcvai/frankatwin.git && cd frankatwin
 pip install -e ".[analysis]"      # + pandas/matplotlib for scripts/compare_*.py, plot_*.py
 ```
 
