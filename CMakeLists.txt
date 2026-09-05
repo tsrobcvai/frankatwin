@@ -156,6 +156,24 @@ endif()
 target_compile_options(read_load PRIVATE -O2)
 
 # ----------------------------------------------------------------------------
+# Utility: Franka Hand command (homing / move / grasp / stop / state)
+# ----------------------------------------------------------------------------
+# One-shot, over libfranka's gripper interface. The gripper server is its own
+# TCP endpoint (port 1338), independent of the FCI session osc_shm holds, so the
+# daemon runs this without stopping the controller. SIGINT -> Gripper::stop().
+add_executable(gripper_cmd src/gripper_cmd.cpp)
+target_link_libraries(gripper_cmd
+    PRIVATE
+        Franka::Franka
+        ${PINOCCHIO_LIBS}
+        Threads::Threads)
+if(CONDA_BOOST_FILESYSTEM)
+    target_link_options(gripper_cmd PRIVATE -Wl,--no-as-needed)
+    target_link_libraries(gripper_cmd PRIVATE ${CONDA_BOOST_FILESYSTEM})
+endif()
+target_compile_options(gripper_cmd PRIVATE -O2)
+
+# ----------------------------------------------------------------------------
 # POSIX shm + Python API
 # ----------------------------------------------------------------------------
 #

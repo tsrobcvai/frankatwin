@@ -3,7 +3,7 @@
 Two sockets:
   - REP at tcp://*:cmd_port    -> request/reply (set_ee_target, set_gains,
                                    move_to_*, get_state, enable, disable,
-                                   ping, shutdown).
+                                   gripper_*, ping, shutdown).
   - PUB at tcp://*:state_port  -> 100 Hz JSON broadcast of the latest state
                                    frame.
 
@@ -87,6 +87,11 @@ class FrankaTwinDaemon:
         self._op_lock = threading.Lock()
         self._pub_thread: Optional[threading.Thread] = None
         self._watchdog_thread: Optional[threading.Thread] = None
+        # Gripper commands run on their own thread (see _gripper_start).
+        self._gripper_thread: Optional[threading.Thread] = None
+        self._gripper_lock = threading.Lock()
+        self._gripper_seq = 0
+        self._gripper_last: Dict[str, Any] = {}
 
     # ---------------------------------------------------------------- run loop
     def run(self) -> None:
@@ -141,6 +146,12 @@ class FrankaTwinDaemon:
 
     def _shutdown(self) -> None:
         logger.info("daemon shutting down")
+        if self._gripper_thread is not None and self._gripper_thread.is_alive():
+            try:
+                self.controller.gripper_stop()
+            except Exception:
+                logger.exception("gripper_stop at shutdown failed")
+            self._gripper_thread.join(timeout=2.0)
         if self._watchdog_thread is not None:
             # Let any in-flight restart settle before we tear down the shm.
             self._watchdog_thread.join(timeout=2.0)
@@ -245,6 +256,71 @@ class FrankaTwinDaemon:
         quat = np.asarray(req["quat"], dtype=np.float64)
         duration = req.get("duration")
         self.controller.move_to_pose(pos, quat, duration=duration)
+
+    # -- gripper ------------------------------------------------------------
+    # The Franka Hand has its own connection (port 1338), so these never touch
+    # osc_shm or the shm segment. They are still blocking on the hardware side
+    # (grasp/move < 2 s, homing ~6 s) and the REP loop is serial: a handler that
+    # waited would stall every set_ee_target from a policy loop. So homing /
+    # move / grasp start a thread and return {"started": true, "seq": n}; the
+    # client polls gripper_state until busy == false and last.seq == n.
+    def _gripper_busy(self) -> bool:
+        t = self._gripper_thread
+        return t is not None and t.is_alive()
+
+    def _gripper_start(self, name: str, fn) -> Dict[str, Any]:
+        if self._gripper_busy():
+            raise RuntimeError("gripper busy: previous command still running (gripper_stop to abort)")
+        self._gripper_seq += 1
+        seq = self._gripper_seq
+
+        def run() -> None:
+            try:
+                res = dict(fn())
+                res.setdefault("ok", True)
+            except Exception as e:  # reported to the client via gripper_state.last
+                logger.exception("gripper %s failed", name)
+                res = {"ok": False, "cmd": name, "error": str(e)}
+            res["seq"] = seq
+            with self._gripper_lock:
+                self._gripper_last = res
+
+        t = threading.Thread(target=run, name="frankatwin_gripper", daemon=True)
+        self._gripper_thread = t
+        t.start()
+        return {"started": True, "seq": seq}
+
+    def _op_gripper_homing(self, _req: Dict[str, Any]) -> Dict[str, Any]:
+        return self._gripper_start("homing", self.controller.gripper_homing)
+
+    def _op_gripper_move(self, req: Dict[str, Any]) -> Dict[str, Any]:
+        width = float(req["width"])
+        speed = req.get("speed")
+        return self._gripper_start("move", lambda: self.controller.gripper_move(width, speed=speed))
+
+    def _op_gripper_grasp(self, req: Dict[str, Any]) -> Dict[str, Any]:
+        kw = {k: req.get(k) for k in ("width", "speed", "force", "epsilon_inner", "epsilon_outer")}
+        return self._gripper_start("grasp", lambda: self.controller.gripper_grasp(**kw))
+
+    def _op_gripper_stop(self, _req: Dict[str, Any]) -> Dict[str, Any]:
+        # Synchronous and quick: signals the running gripper_cmd (or sends a
+        # standalone stop). The running command's thread records its final output.
+        res = self.controller.gripper_stop()
+        if self._gripper_thread is not None:
+            self._gripper_thread.join(timeout=2.0)
+        return {"result": bool(res.get("result", True))}
+
+    def _op_gripper_state(self, req: Dict[str, Any]) -> Dict[str, Any]:
+        """`busy`, `last` (output of the last finished command, incl. its final
+        `state`) and -- when `fresh` is true and nothing is running -- a live
+        readOnce() as `state`. Live reads cost a TCP round trip to the hand
+        (~0.1-0.3 s) during which the REP loop is held, so poll with fresh=false."""
+        with self._gripper_lock:
+            last = dict(self._gripper_last)
+        out: Dict[str, Any] = {"busy": self._gripper_busy(), "last": last}
+        if req.get("fresh") and not out["busy"]:
+            out["state"] = self.controller.gripper_state()
+        return out
 
     def _op_shutdown(self, _req: Dict[str, Any]) -> Dict[str, Any]:
         # Signal the main loop to stop after we ack the request.

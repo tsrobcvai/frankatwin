@@ -19,6 +19,7 @@ from frankatwin import __version__
 from frankatwin.config import RobotConfig, load_config, resolve_config_path
 
 FCI_TCP_PORT = 1337  # libfranka command channel
+GRIPPER_TCP_PORT = 1338  # libfranka gripper server (separate from the FCI session)
 
 
 class _Report:
@@ -96,6 +97,12 @@ def _check_nuc(rep: _Report, cfg: RobotConfig) -> None:
             rep.add(_Report.FAIL, f"binary {name}", f"not found at {path}",
                     "cmake -S . -B build && cmake --build build   (docs/installation.md), "
                     "or set paths.build_dir in robot.yaml")
+    grip = cfg.paths.build_dir / "gripper_cmd"
+    if grip.is_file():
+        rep.add(_Report.OK, "binary gripper_cmd", str(grip))
+    elif cfg.gripper.enabled:
+        rep.add(_Report.WARN, "binary gripper_cmd", f"not found at {grip}",
+                "gripper_* commands will fail; rebuild (cmake --build build) or set gripper.enabled: false")
     if osc is not None:
         ldd = _run(["ldd", str(osc)])
         fr = [l.strip() for l in ldd.splitlines() if "libfranka" in l]
@@ -118,6 +125,13 @@ def _check_nuc(rep: _Report, cfg: RobotConfig) -> None:
     else:
         rep.add(_Report.FAIL, "fci", f"{cfg.robot.ip}:{FCI_TCP_PORT} unreachable",
                 "check the FCI link (172.16.0.x), that FCI is enabled in Desk, and robot.ip in robot.yaml")
+
+    if cfg.gripper.enabled:
+        if _tcp_reachable(cfg.robot.ip, GRIPPER_TCP_PORT):
+            rep.add(_Report.OK, "gripper", f"{cfg.robot.ip}:{GRIPPER_TCP_PORT} reachable")
+        else:
+            rep.add(_Report.WARN, "gripper", f"{cfg.robot.ip}:{GRIPPER_TCP_PORT} unreachable",
+                    "no Franka Hand server -- gripper_* commands will fail (gripper.enabled: false to silence)")
 
     # Competing FCI clients
     procs = _run(["pgrep", "-a", "-f", r"franka-interface|franka_control|franka_ros|osc_shm|move_to"])

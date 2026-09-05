@@ -34,6 +34,7 @@ flowchart LR
 | `LocalController` | `python/frankatwin/local_controller.py` | The daemon's in-process controller handle (also usable directly on the NUC without ZMQ). |
 | `FrankaTwinClient` | `python/frankatwin/remote_client.py` | PC-side client; same method signatures as `LocalController`. |
 | `read_current_q` / `read_current_pose` / `read_load` | `src/read_*.cpp` | One-shot `readOnce()` utilities (need the FCI session, so stop the daemon first). |
+| `gripper_cmd` | `src/gripper_cmd.cpp` | One-shot Franka Hand command (`homing` / `move` / `grasp` / `stop` / `state`) over libfranka's gripper server — its own connection (port 1338), so the daemon runs it while `osc_shm` holds the arm. The daemon runs it on a thread and exposes the result through `gripper_state`. |
 
 ## Control law (`osc_shm`)
 

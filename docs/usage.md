@@ -5,8 +5,8 @@
 Two steps: bring the controller up on the NUC, then drive the arm from the PC.
 Every command below runs inside the `frankatwin` conda env of that machine
 ([Installation](installation.md)).
-Step 2 shows three usage examples (each script takes `--config robot.yaml`; the
-two controllers they use are described in [Architecture](architecture.md)).
+Step 2 shows four usage examples (each script takes `--config robot.yaml`; the
+two arm controllers they use are described in [Architecture](architecture.md)).
 
 ### Step 1 · Start the daemon
 
@@ -37,11 +37,11 @@ python -m frankatwin.doctor          # daemon ping on 5555, state stream on 5556
 ```
 
 If it fails, `network.nuc_host` in `config/robot.yaml` is the usual culprit
-([Troubleshooting](troubleshooting.md)). Then three usage examples, from a one-shot
-move to a closed-loop policy. Each one says what the arm will do before you run
-it. Examples 2 and 3 run under impedance control (the arm is compliant — you can
-push it and it springs back); Example 1 is stiff position control, see its safety
-note.
+([Troubleshooting](troubleshooting.md)). Then four usage examples: a one-shot
+move, a scripted reference, a closed-loop policy, and the gripper. Each one says
+what the arm will do before you run it. Examples 2 and 3 run under impedance
+control (the arm is compliant — you can push it and it springs back); Example 1
+is stiff position control, see its safety note.
 
 #### Example 1 · Reset the arm
 
@@ -175,3 +175,48 @@ no clip either. Targets are absolute poses in the base frame, quaternions
 Control law, safety chain and timing: [Architecture](architecture.md); every
 client method and protocol: [Interfaces](interfaces.md); every config key:
 [Configuration](configuration.md).
+
+#### Example 4 · Open and close the gripper
+
+Script: [`examples/gripper.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/gripper.py)
+
+**What the robot does.** Only the Franka Hand moves; the arm keeps holding its
+pose under impedance control. The hand is served on its own port (1338), so no
+`osc_shm` stop/restart is involved — you can open and close while a policy loop
+is running.
+
+```bash
+python examples/gripper.py --homing                      # once after power-up: calibrates the stroke
+python examples/gripper.py --open                        # fully open (80 mm)
+python examples/gripper.py --open --width 0.42           # 42 % of the stroke = 33.6 mm
+python examples/gripper.py --close                       # grasp: squeeze at gripper.grasp_force (70 N)
+python examples/gripper.py --close --force 30            # gentler hold
+python examples/gripper.py --state                       # width / max_width / is_grasped / temperature
+```
+
+| flag | meaning |
+|---|---|
+| `--open [--width FRAC \| --width-m M]` | `Gripper::move` to a fraction of the stroke (default 1.0) or to metres |
+| `--close [--force N] [--close-width M] [--eps M]` | `Gripper::grasp`; defaults from `robot.yaml → gripper` (70 N, −0.01 m, 0.08) |
+| `--homing` / `--stop` / `--state` | calibrate / abort the motion in flight / read the state |
+| `--speed` | finger speed [m/s]; default `gripper.move_speed` (0.1) / `gripper.grasp_speed` (0.5) |
+| `--no-wait` | return once the daemon accepted the command |
+
+**Closing is a grasp, not a width command.** libfranka's
+`grasp(width, speed, force, eps)` drives the fingers *towards* `width` and
+squeezes with `force` once they stall on something. The default width (−0.01 m,
+past full closure) always reaches the object, so the resting width is set by the
+object and `--force` is the knob for how hard it is held. `--close-width` only
+stops the jaws early — above the object's width they halt before touching and
+hold nothing. The returned `result` / `is_grasped` is "final width within
+`epsilon` of the target"; with the default 0.08 m band every stall counts.
+
+In a policy loop:
+
+```python
+robot.gripper_open()                              # blocks < 2 s; the arm holds meanwhile
+...
+out = robot.gripper_close(force=30)               # returns when the fingers stalled
+held = out["state"]["width"]                      # the object's width, real-side twin of the sim finger joint
+robot.gripper_open(0.06, wait=False)              # or fire-and-forget, then robot.gripper_wait()
+```

@@ -5,6 +5,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Franka Hand support: `gripper_cmd` C++ binary (libfranka `Gripper`, own
+  connection on port 1338 — the arm controller keeps running), daemon ops
+  `gripper_homing` / `gripper_move` / `gripper_grasp` / `gripper_stop` /
+  `gripper_state` (asynchronous, polled), `FrankaTwinClient.gripper_open()` /
+  `gripper_close()` / `gripper_homing()` / `gripper_stop()` / `gripper_state()`,
+  `examples/gripper.py` (same `--open --width FRAC` / `--close --force N`
+  semantics as the deoxys-based `control_gripper.py`), and real
+  `robot.yaml → gripper:` keys (speeds, grasp force / width, epsilons).
+  `doctor` checks the binary and the gripper port.
+
 ### Changed
 - Installation is conda-only: one `frankatwin` env per machine, libfranka from
   conda-forge matched to the robot's FCI protocol (system 5.9 → `libfranka=0.20`;

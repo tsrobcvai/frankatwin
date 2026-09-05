@@ -83,7 +83,25 @@ class ResetConfig:
 
 @dataclass
 class GripperConfig:
-    enabled: bool = False
+    """Franka Hand defaults for the `gripper_*` commands (libfranka `Gripper`).
+
+    Closing is a libfranka *grasp*: the fingers drive towards `grasp_width` and
+    squeeze with `grasp_force` once they stall on the object, so the OBJECT sets
+    the resting width and `grasp_force` sets how hard it is held. The default
+    `grasp_width = -0.01` (past full closure) means "close as far as you can and
+    hold". `epsilon_inner/outer` is the band around `grasp_width` inside which
+    libfranka reports `is_grasped`; 0.08 (the whole stroke) counts every stall
+    as a grasp, matching the deoxys stack this replaces.
+    """
+
+    enabled: bool = True
+    move_speed: float = 0.1       # m/s, `move` (open)
+    grasp_speed: float = 0.5      # m/s, `grasp` (close)
+    grasp_force: float = 70.0     # N, Franka Hand rated continuous maximum
+    grasp_width: float = -0.01    # m, target the fingers drive towards when closing
+    epsilon_inner: float = 0.08   # m
+    epsilon_outer: float = 0.08   # m
+    max_width: float = 0.08       # m, full stroke of the Franka Hand (`open()` default)
 
 
 @dataclass
@@ -223,7 +241,31 @@ def load_config(path: Optional[os.PathLike] = None) -> RobotConfig:
             )
 
         grip = raw.get("gripper", {}) or {}
-        grip_cfg = GripperConfig(enabled=bool(grip.get("enabled", False)))
+        grip_cfg = GripperConfig(
+            enabled=bool(grip.get("enabled", True)),
+            move_speed=float(grip.get("move_speed", 0.1)),
+            grasp_speed=float(grip.get("grasp_speed", 0.5)),
+            grasp_force=float(grip.get("grasp_force", 70.0)),
+            grasp_width=float(grip.get("grasp_width", -0.01)),
+            epsilon_inner=float(grip.get("epsilon_inner", 0.08)),
+            epsilon_outer=float(grip.get("epsilon_outer", 0.08)),
+            max_width=float(grip.get("max_width", 0.08)),
+        )
+        for fld in ("move_speed", "grasp_speed", "max_width"):
+            if getattr(grip_cfg, fld) <= 0.0:
+                raise ValueError(f"gripper.{fld} must be > 0, got {getattr(grip_cfg, fld)}")
+        if not (0.0 < grip_cfg.grasp_force <= 70.0):
+            raise ValueError(
+                f"gripper.grasp_force must be in (0, 70] N (Franka Hand continuous limit), "
+                f"got {grip_cfg.grasp_force}"
+            )
+        if grip_cfg.grasp_width > grip_cfg.max_width:
+            raise ValueError(
+                f"gripper.grasp_width must be <= max_width ({grip_cfg.max_width}), got {grip_cfg.grasp_width}"
+            )
+        for fld in ("epsilon_inner", "epsilon_outer"):
+            if getattr(grip_cfg, fld) < 0.0:
+                raise ValueError(f"gripper.{fld} must be >= 0, got {getattr(grip_cfg, fld)}")
 
         load = raw.get("load", {}) or {}
         load_cfg = LoadConfig(
