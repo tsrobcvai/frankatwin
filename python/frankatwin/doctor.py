@@ -51,6 +51,26 @@ def _tcp_reachable(host: str, port: int, timeout: float = 1.5) -> bool:
         return False
 
 
+def _is_local_address(host: str) -> Optional[bool]:
+    """True if `host` names an address of this machine (the daemon binds here),
+    False if it resolves elsewhere, None if it cannot be resolved."""
+    try:
+        infos = socket.getaddrinfo(host, None, socket.AF_INET, socket.SOCK_DGRAM)
+    except socket.gaierror:
+        return None
+    for family, kind, proto, _canon, sockaddr in infos:
+        ip = sockaddr[0]
+        if ip.startswith("127."):
+            return True
+        try:  # binding to an address only succeeds on the machine that owns it
+            with socket.socket(family, kind, proto) as probe:
+                probe.bind((ip, 0))
+            return True
+        except OSError:
+            continue
+    return False
+
+
 def _run(cmd: List[str], timeout: float = 5.0) -> str:
     try:
         return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout).stdout
@@ -178,6 +198,7 @@ def _check_pc(rep: _Report, cfg: RobotConfig) -> None:
             return
     finally:
         req.close()
+    import time
     sub = ctx.socket(zmq.SUB)
     sub.setsockopt(zmq.LINGER, 0)
     sub.setsockopt(zmq.SUBSCRIBE, b"")
@@ -186,19 +207,43 @@ def _check_pc(rep: _Report, cfg: RobotConfig) -> None:
         n = 0
         poller = zmq.Poller()
         poller.register(sub, zmq.POLLIN)
-        import time
-        t_end = time.monotonic() + 1.0
+        t_end = time.monotonic() + 2.0
         while time.monotonic() < t_end:
             if poller.poll(100):
                 sub.recv(flags=zmq.NOBLOCK)
                 n += 1
         if n:
-            rep.add(_Report.OK, "state stream", f"{n} frames / s")
-        else:
-            rep.add(_Report.FAIL, "state stream", "no frames in 1 s",
-                    "firewall on the state port, or osc_shm is not publishing (daemon log)")
+            rep.add(_Report.OK, "state stream", f"{n} frames / 2 s")
+            return
     finally:
         sub.close()
+    # No frames. The daemon only publishes when osc_shm writes a new 1 kHz frame,
+    # so tell a frozen controller apart from a PUB port that does not reach us.
+    seqs = []
+    req = ctx.socket(zmq.REQ)
+    req.setsockopt(zmq.LINGER, 0)
+    req.connect(url)
+    try:
+        for _ in range(2):
+            req.send_json({"op": "get_state"})
+            if not req.poll(2000):
+                break
+            st = req.recv_json().get("state")
+            seqs.append(None if not st else st.get("seq"))
+            time.sleep(0.5)
+    finally:
+        req.close()
+    if len(seqs) == 2 and seqs[0] is not None and seqs[0] == seqs[1]:
+        rep.add(_Report.FAIL, "state stream", f"no frames in 2 s; controller frame counter frozen at seq {seqs[0]}",
+                "osc_shm is not running its 1 kHz loop (reflex / user stop / stuck restart) -- read the daemon "
+                "terminal on the NUC (-v), then `move_to` or restart the daemon")
+    elif len(seqs) == 2 and None in seqs:
+        rep.add(_Report.FAIL, "state stream", "no frames in 2 s; daemon has no state frame yet",
+                "osc_shm has not started -- daemon log on the NUC")
+    else:
+        rep.add(_Report.FAIL, "state stream", "no frames in 2 s although the controller is ticking",
+                f"PUB port {cfg.network.state_port} does not reach this PC: firewall on the NUC, or a NAT/route "
+                "that passes 5555 but not 5556")
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -209,8 +254,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     p.add_argument("--config", "-c", default=None, help="path to robot.yaml")
     p.add_argument("--role", choices=["auto", "nuc", "pc"], default="auto",
-                   help="nuc: controller-host checks; pc: client checks; auto: nuc checks if the "
-                        "robot's FCI port is reachable or binaries are present, plus pc checks")
+                   help="nuc: controller-host checks; pc: client checks; auto: nuc checks when "
+                        "network.nuc_host is an address of this machine (else pc), plus pc checks")
     args = p.parse_args(argv)
 
     rep = _Report()
@@ -225,9 +270,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if cfg is not None:
         role = args.role
         if role == "auto":
-            has_bin = (cfg.paths.build_dir / "osc_shm").is_file()
-            role = "nuc" if (has_bin or _tcp_reachable(cfg.robot.ip, FCI_TCP_PORT, 0.5)) else "pc"
-            rep.add(_Report.OK, "role", f"{role} (auto)")
+            # The NUC is whatever machine the daemon binds on, i.e. the one that
+            # owns network.nuc_host. FCI reachability is not a tell: a PC on the
+            # FCI subnet reaches the robot too and would get NUC-only failures.
+            local = _is_local_address(cfg.network.nuc_host)
+            if local is None:  # unresolvable host: fall back to "has the binaries"
+                local = (cfg.paths.build_dir / "osc_shm").is_file()
+            role = "nuc" if local else "pc"
+            rep.add(_Report.OK, "role", f"{role} (auto: nuc_host {cfg.network.nuc_host} is "
+                    f"{'this machine' if local else 'remote'})")
         if role == "nuc":
             _check_nuc(rep, cfg)
         _check_pc(rep, cfg)

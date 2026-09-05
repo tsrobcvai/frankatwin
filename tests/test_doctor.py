@@ -32,3 +32,13 @@ def test_doctor_bad_config_is_reported_not_raised(tmp_path, capsys):
     out = capsys.readouterr().out
     assert rc == 1 and "[XX] config" in out
 
+
+
+def test_role_detection_is_by_nuc_host_ownership():
+    """A PC on the FCI subnet reaches the robot too, so FCI reachability must not
+    make it a NUC; the tell is whether network.nuc_host is one of our addresses."""
+    from frankatwin.doctor import _is_local_address
+    assert _is_local_address("127.0.0.1") is True
+    assert _is_local_address("localhost") is True
+    assert _is_local_address("192.0.2.1") is False          # TEST-NET-1, never ours
+    assert _is_local_address("no-such-host.invalid") is None
