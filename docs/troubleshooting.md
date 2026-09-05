@@ -97,6 +97,22 @@ also costs time; keep it off in production.
 
 ## Build
 
+### `conda create` hangs for minutes on `Solving environment`
+
+Look for `Error while loading conda entry point: conda-libmamba-solver` in the
+output: conda has fallen back to the classic solver, which can take tens of
+minutes on the env in [Installation](installation.md#conda-environment-libfranka)
+(18 min and counting on our NUC, against 1.6 s for the same spec with
+`micromamba`). Usually a partial base-env upgrade left `libmamba` linked against
+a `libarchive` that is no longer installed. Either repair base conda, or create
+the env with `micromamba` — same channel, same specs, same result:
+
+```bash
+micromamba create -p $(conda info --base)/envs/frankatwin -y -c conda-forge \
+    python=3.11 "libfranka=0.20" eigen cmake cxx-compiler pkg-config make \
+    "sysroot_linux-64=2.28"
+```
+
 ### `Incompatible library version (server version: N, library version: M)`
 
 libfranka speaks a different FCI protocol than the robot. Nothing in the build
