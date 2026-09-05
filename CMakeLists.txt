@@ -44,11 +44,13 @@ endif()
 # Dependencies
 # ----------------------------------------------------------------------------
 #
-# libfranka can come from one of two places:
-#   1. System install:    sudo apt install libfranka  (or build & `cmake --install`)
-#   2. deoxys-vendored:   cmake -DCMAKE_PREFIX_PATH=/path/to/deoxys/build/libfranka ..
+# libfranka comes from the active conda env (docs/installation.md): the
+# conda-forge package whose FCI protocol matches the robot system version
+# (system 5.9 -> libfranka=0.20). Any other install that provides
+# FrankaConfig.cmake works as well, e.g.
+#   cmake -DCMAKE_PREFIX_PATH=/path/to/deoxys/build/libfranka ..
 #
-# Both produce a `Franka::Franka` imported target via find_package(Franka).
+# All of them produce a `Franka::Franka` imported target via find_package(Franka).
 find_package(Franka REQUIRED)
 find_package(Eigen3 REQUIRED)
 
@@ -91,10 +93,11 @@ endif()
 # CONDA_PREFIX/lib), avoiding loader failures like:
 #   libboost_filesystem.so.1.82.0: cannot open shared object file
 set(CONDA_BOOST_FILESYSTEM "")
-if(DEFINED ENV{CONDA_PREFIX})
-    set(_CONDA_BOOST_CANDIDATE "$ENV{CONDA_PREFIX}/lib/libboost_filesystem.so.1.82.0")
-    if(EXISTS "${_CONDA_BOOST_CANDIDATE}")
-        set(CONDA_BOOST_FILESYSTEM "${_CONDA_BOOST_CANDIDATE}")
+if(DEFINED ENV{CONDA_PREFIX} AND PINOCCHIO_LIBS)   # boost only enters via Pinocchio (libfranka >= 0.14)
+    # Whatever boost version the env carries (1.82 in deoxys envs, 1.9x on current conda-forge).
+    file(GLOB _CONDA_BOOST_CANDIDATES "$ENV{CONDA_PREFIX}/lib/libboost_filesystem.so.[0-9]*")
+    if(_CONDA_BOOST_CANDIDATES)
+        list(GET _CONDA_BOOST_CANDIDATES 0 CONDA_BOOST_FILESYSTEM)
         message(STATUS "frankatwin: using conda boost filesystem: ${CONDA_BOOST_FILESYSTEM}")
     else()
         message(WARNING "frankatwin: conda boost filesystem not found under $ENV{CONDA_PREFIX}/lib")

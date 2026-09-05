@@ -97,18 +97,66 @@ also costs time; keep it off in production.
 
 ## Build
 
+### `Incompatible library version (server version: N, library version: M)`
+
+libfranka speaks a different FCI protocol than the robot. Nothing in the build
+catches this — it surfaces when `osc_shm` (or `read_current_q`) opens a session.
+Read the robot's system version and install the matching libfranka from the table
+in [Installation → NUC](installation.md#conda-environment-libfranka) (system
+≥ 5.9 → protocol 10 → libfranka 0.18–0.21; 5.7.2–5.8 → 0.15–0.17; 5.5–5.6 → 0.13).
+
+### `cmake` does not print `frankatwin: prepending CONDA_PREFIX/lib`
+
+The `frankatwin` conda env was not active when you configured, so CMake picked up
+whatever libfranka / compiler the system has (or none). `conda activate frankatwin`,
+`rm -rf build`, configure again ([Installation → NUC](installation.md#nuc)).
+
+### `The C++ compiler is not able to compile a simple test program` (conda env)
+
+`undefined reference to memcpy@GLIBC_2.14` / `secure_getenv@GLIBC_2.17` in the
+CMake error log: the env's sysroot is conda-forge's default 2.12, older than the
+glibc conda's own `libstdc++` was built against. Recreate the env with
+`"sysroot_linux-64=2.28"` in the `conda create` line
+([Installation](installation.md#conda-environment-libfranka)), then
+`rm -rf libfranka/build build` — CMake caches the broken-compiler verdict.
+
+### `undefined reference to fcntl64@GLIBC_2.28` when linking `osc_shm`
+
+Same cause, one step later: Poco from conda-forge needs glibc 2.28 and the env's
+sysroot is 2.17 or older. libfranka itself built because a shared library
+tolerates unresolved symbols in its dependencies. Pin `sysroot_linux-64=2.28` as
+above and rebuild both libfranka and FrankaTwin from clean build directories.
+
+### Building libfranka: `Compatibility with CMake < 3.5 has been removed`
+
+conda's CMake 4 refuses libfranka 0.13's `cmake_minimum_required(VERSION 3.4)`.
+Add `-DCMAKE_POLICY_VERSION_MINIMUM=3.5` to the libfranka configure line (already
+in [Installation](installation.md#conda-environment-libfranka)).
+
+### Building libfranka: `Could NOT find Eigen3 (missing: EIGEN3_INCLUDE_DIRS)`
+
+libfranka 0.13's `FindEigen3.cmake` reads a legacy variable that Eigen 5 no longer
+exports. Pin Eigen 3.4 in the env: `conda install -n frankatwin "eigen=3.4"`.
+
 ### Undefined `pinocchio::…` symbols at link time
 
-libfranka ≥ 0.14 uses Pinocchio for dynamics. Point CMake at it:
-`-DCMAKE_PREFIX_PATH="…;/path/to/pinocchio"`. See
-[installation.md](installation.md#libfranka--014-needs-pinocchio).
+libfranka ≥ 0.14 (robot system ≥ 5.7) computes its dynamics model with
+[Pinocchio](https://github.com/stack-of-tasks/pinocchio), so linking `Franka::Franka`
+needs it too. The conda-forge `libfranka` packages pull `libpinocchio` in, and
+`CMakeLists.txt` adds `find_package(pinocchio REQUIRED)` automatically — seeing this
+error means the build did not run inside the `frankatwin` env (previous entry).
 
-### `GLIBCXX_3.4.29 not found` or `libboost_filesystem.so.1.82.0: cannot open`
+### `liburdfdom_world.so.5.1: cannot open shared object file`
 
-You're mixing a conda-built libfranka with the system toolchain, or running a
-capability-enabled binary that ignores `LD_LIBRARY_PATH`. The conda blocks in
-`CMakeLists.txt` handle both when `CONDA_PREFIX` is set at configure time; if you
-use a system libfranka, configure with conda deactivated.
+Some conda-forge `libfranka` builds (seen with 0.15.0) do not declare their urdfdom
+dependency, so conda resolves urdfdom 6. Pin it: `conda install -n frankatwin "urdfdom=5.1"`.
+
+### `GLIBCXX_3.4.29 not found` or `libboost_filesystem.so.1.xx.0: cannot open`
+
+You're mixing conda libraries with the system toolchain, or running a
+capability-enabled (`setcap`) binary, which ignores `LD_LIBRARY_PATH`. The conda
+blocks in `CMakeLists.txt` handle both when `CONDA_PREFIX` is set at configure
+time — reconfigure inside the env (`rm -rf build` first).
 
 ### `tests/test_shm_layout.py` fails
 
