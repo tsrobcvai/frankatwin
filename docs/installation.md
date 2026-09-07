@@ -99,17 +99,35 @@ python -m pytest tests -q                          # shm ABI, config, excitation
 ### Verify
 
 1. **Robot**: switch FCI mode on in Desk ([Robot](#robot) above).
-2. **NUC**, in the env:
+2. **NUC**, in the env, before any daemon is running:
 
 ```bash
-python -m frankatwin.doctor          # RT kernel, rtprio, binaries + ldd, FCI reachable, competing clients
 ./build/read_current_q 172.16.0.2    # opens one libfranka session and prints q -- read-only, the arm does not move
 ```
 
-`doctor` must end with `all good.` and `read_current_q` must print seven joint
-angles: together they show libfranka is installed, linked and speaks the robot's
-protocol. Anything else — `[XX]` lines or `Incompatible library version` — is in
-[Troubleshooting](troubleshooting.md).
+3. **NUC**, in a **second terminal**, in the env — start the daemon and leave it
+   running:
+
+```bash
+python -m frankatwin.daemon          # launches osc_shm; the arm holds its pose under impedance control
+```
+
+4. **NUC**, back in the first terminal:
+
+```bash
+python -m frankatwin.doctor          # RT kernel, rtprio, binaries + ldd, FCI reachable, daemon ping + state stream
+```
+
+`read_current_q` must print seven joint angles and `doctor` must end with
+`all good.`: together they show libfranka is installed, linked and speaks the
+robot's protocol, and that the daemon answers on 5555 / 5556. The order matters:
+`read_current_q` needs the FCI session, which the daemon holds from the moment
+it starts. A `[!!] fci clients` line naming your own `osc_shm` is expected while
+the daemon runs. Anything else — `[XX]` lines
+([Troubleshooting → Build](troubleshooting.md#build)) or
+`Incompatible library version`
+([its entry](troubleshooting.md#incompatible-library-version-server-version-n-library-version-m))
+— is covered there.
 
 ## PC
 
@@ -129,7 +147,8 @@ the NUC's LAN IP otherwise). Ports 5555 (REQ/REP) and 5556 (PUB) must be open.
 
 ### Verify
 
-1. **NUC**, in its env: `python -m frankatwin.daemon` (robot in FCI mode, as above).
+1. **NUC**, in its env: `python -m frankatwin.daemon` — still running from the
+   [NUC](#nuc) verify step above, or started again now (robot in FCI mode).
 2. **PC**, in its env:
 
 ```bash
@@ -138,7 +157,7 @@ python -m frankatwin.doctor          # daemon ping on 5555, state stream on 5556
 
 `doctor` must end with `all good.` — the PC sees the daemon and receives the
 100 Hz state stream. If it fails, `network.nuc_host` in `config/robot.yaml` is
-the usual culprit ([Troubleshooting](troubleshooting.md)).
+the usual culprit ([Troubleshooting → Communication](troubleshooting.md#communication)).
 
 ## SIM
 
