@@ -90,23 +90,8 @@ Design notes:
 ## Workflow
 
 <kbd>NUC</kbd> = real-time PC on the robot, <kbd>PC</kbd> = your workstation, <kbd>SIM</kbd> = machine with IsaacLab (may be the PC).
-
-### 0. One-time IsaacLab setup
-
-<kbd>SIM</kbd> — needs [IsaacLab](https://github.com/isaac-sim/IsaacLab) ≥ 2.3.0
-(the dynamic/viscous joint-friction API landed in 2.3). Deploy the shipped
-extension once into your checkout; no IsaacLab source edits.
-
-```bash
-./isaaclab_sysid/install_into_isaaclab.sh /path/to/IsaacLab
-conda activate <isaaclab env> && pip install cmaes
-```
-
-Installs `Isaac-FrankaTwin-Sysid-v0` / `Isaac-FrankaTwin-Replay-v0`
-(`source/isaaclab_tasks/isaaclab_tasks/direct/franka_sysid/`, auto-registered),
-`franka_mimic.usd` (Franka with a `panda_fingertip_centered` frame) and the three
-scripts under `scripts/tools/`. Always launch the scripts from the IsaacLab root —
-the task configs reference the USD relative to it.
+The <kbd>SIM</kbd> box needs IsaacLab with the FrankaTwin extension deployed —
+a one-time step described in [Installation → SIM](installation.md#sim).
 
 ### 1. Collect
 

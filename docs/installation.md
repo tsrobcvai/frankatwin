@@ -162,10 +162,24 @@ the usual culprit ([Troubleshooting → Communication](troubleshooting.md#commun
 ## SIM
 
 Only for the sysid loop (fit, replay, validate); skip it if you just want to
-control the arm. Install IsaacLab ≥ 2.3.0 following NVIDIA's guide —
+control the arm. Needs [IsaacLab](https://github.com/isaac-sim/IsaacLab) ≥ 2.3.0
+(the dynamic/viscous joint-friction API landed in 2.3). Install it following
+NVIDIA's guide —
 [Isaac Lab local installation (v2.3.0)](https://isaac-sim.github.io/IsaacLab/v2.3.0/source/setup/installation/index.html)
-— then deploy the FrankaTwin extension into that checkout as described in
-[System identification → One-time IsaacLab setup](sysid.md#0-one-time-isaaclab-setup).
+— then deploy the shipped FrankaTwin extension once into that checkout, from
+this repository's root (clone it on the SIM box if that is not the PC); no
+IsaacLab source edits:
+
+```bash
+./isaaclab_sysid/install_into_isaaclab.sh /path/to/IsaacLab
+conda activate <isaaclab env> && pip install cmaes
+```
+
+Installs `Isaac-FrankaTwin-Sysid-v0` / `Isaac-FrankaTwin-Replay-v0`
+(`source/isaaclab_tasks/isaaclab_tasks/direct/franka_sysid/`, auto-registered),
+`franka_mimic.usd` (Franka with a `panda_fingertip_centered` frame) and the three
+scripts under `scripts/tools/`. Always launch the scripts from the IsaacLab root —
+the task configs reference the USD relative to it.
 
 ---
 
