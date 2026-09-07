@@ -166,12 +166,21 @@ control the arm. Needs [IsaacLab](https://github.com/isaac-sim/IsaacLab) ≥ 2.3
 (the dynamic/viscous joint-friction API landed in 2.3). Install it following
 NVIDIA's guide —
 [Isaac Lab local installation (v2.3.0)](https://isaac-sim.github.io/IsaacLab/v2.3.0/source/setup/installation/index.html)
-— then deploy the shipped FrankaTwin extension once into that checkout, from
-this repository's root (clone it on the SIM box if that is not the PC); no
-IsaacLab source edits:
+— then deploy the shipped FrankaTwin extension once into that checkout; no
+IsaacLab source edits.
+
+The deploy script is `isaaclab_sysid/install_into_isaaclab.sh` **inside the
+frankatwin repository**, so the SIM box needs a copy of this repo:
+
+- **SIM is the PC**: the clone from [PC](#pc) above already has it — `cd` into
+  that checkout.
+- **SIM is a separate machine**: clone the repo there first. Nothing else from
+  the PC setup is needed (no conda env, no `pip install -e`); the script only
+  copies files into IsaacLab.
 
 ```bash
-./isaaclab_sysid/install_into_isaaclab.sh /path/to/IsaacLab
+git clone git@github.com:tsrobcvai/frankatwin.git && cd frankatwin   # separate SIM box only
+./isaaclab_sysid/install_into_isaaclab.sh /path/to/IsaacLab           # from the frankatwin root
 conda activate <isaaclab env> && pip install cmaes
 ```
 
