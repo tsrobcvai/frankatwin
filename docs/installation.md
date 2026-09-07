@@ -10,7 +10,7 @@ docs every command carries the tag of the machine it runs on:
 | <kbd>PC</kbd> | your workstation | `examples/*.py`, analysis scripts | conda env `frankatwin`: Python 3.11 (numpy, pyyaml, pyzmq; pandas + matplotlib for the analysis scripts) |
 | <kbd>SIM</kbd> | any GPU box with IsaacLab (can be the PC) | sysid fit, sim replay | IsaacLab 2.3.0 (≥ 2.3 for the dynamic/viscous joint-friction API) · `cmaes` |
 
-![Deployment: Robot ↔ NUC over FCI/libfranka at 1 kHz, NUC ↔ PC over ZMQ 5555/5556, PC ↔ SIM by copying CSV/JSON files. IPs shown are the config/robot.yaml defaults.](images/deployment.svg)
+![Deployment: Robot ↔ NUC over FCI/libfranka at 1 kHz, NUC ↔ PC over ZMQ 5555/5556, PC ↔ SIM by copying CSV/JSON files. IPs shown are the config/robot.yaml defaults; the PC takes any address on the same subnet as the NUC and Robot.](images/deployment.svg)
 
 :::{admonition} [TODO, checklist]
 :class: warning
