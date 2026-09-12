@@ -30,11 +30,12 @@ by line, what it logs while running, how to stop it and when to restart it:
 
 ### Step 2 · Drive the arm from the PC
 
-<kbd>PC</kbd> — four usage examples: a one-shot move, a scripted reference, a
-closed-loop policy, and the gripper. Each one says what the arm will do before
-you run it. Examples 2 and 3 run under impedance control (the arm is compliant —
-you can push it and it springs back); Example 1 is stiff position control, see
-its safety note.
+<kbd>PC</kbd> — run the examples below from the root of the frankatwin repository:
+
+```bash
+conda activate frankatwin
+cd frankatwin
+```
 
 #### Example 1 · Reset the arm
 
