@@ -3,6 +3,10 @@
 </p>
 
 <p align="center">
+  <a href="https://tsrobcvai.github.io/frankatwin/"><b>Documentation</b></a>
+</p>
+
+<p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
   <img alt="libfranka" src="https://img.shields.io/badge/libfranka-0.13%20%E2%80%93%200.15-informational">
   <img alt="IsaacLab" src="https://img.shields.io/badge/IsaacLab-%E2%89%A5%202.3-76b900">
@@ -26,20 +30,6 @@ matches the task-space impedance used by sim-to-real work such as
 [IndustReal](https://arxiv.org/abs/2305.17110) and
 [OmniReset](https://weirdlabuw.github.io/omnireset/).
 
-## Documentation
-
-Everything lives in [`docs/`](docs/):
-[Installation](docs/installation.md) ·
-[Usage](docs/usage.md) ·
-[Architecture](docs/architecture.md) ·
-[System identification](docs/sysid.md) ·
-[Data format](docs/data_format.md) ·
-[Troubleshooting](docs/troubleshooting.md) ·
-[Interfaces](docs/interfaces.md)
-
-Browse it as a site with `pip install -e ".[docs]" && sphinx-autobuild docs docs/_build/html`
-(includes the API reference generated from docstrings).
-
 ## Citing
 
 ```bibtex
@@ -56,6 +46,7 @@ Browse it as a site with `pip install -e ".[docs]" && sphinx-autobuild docs docs
 
 - [**Tao Sun**](https://taosun99.github.io/) — McGill University
 - [**Patrick Yin**](https://patrickyin.me/) — University of Washington
+- **Harry He** — McGill University
 
 ## License
 

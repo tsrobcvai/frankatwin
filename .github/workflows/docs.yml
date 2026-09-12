@@ -20,12 +20,12 @@ jobs:
         with:
           path: docs/_build/html
 
-  # Deploys on pushes to the default branch once the repository variable
-  # ENABLE_PAGES is "true" (Settings -> Variables) and Pages is set to
-  # "GitHub Actions" (Settings -> Pages). Public repos get Pages for free.
+  # Publishes https://tsrobcvai.github.io/frankatwin/ on pushes to (or a manual
+  # "Run workflow" on) the default branch. Requires Settings -> Pages -> Source
+  # set to "GitHub Actions" once.
   deploy:
     needs: build
-    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && vars.ENABLE_PAGES == 'true'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
     permissions:
       pages: write

@@ -47,6 +47,7 @@ napoleon_numpy_docstring = True
 # (captions as section headers, pages expandable); no top navigation bar.
 html_theme = "sphinx_book_theme"
 html_title = "FrankaTwin"
+html_baseurl = "https://tsrobcvai.github.io/frankatwin/"   # canonical URLs for the published site
 html_logo = "images/favicon.png"
 html_favicon = "images/favicon.png"
 html_static_path = ["_static"]

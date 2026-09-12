@@ -49,7 +49,7 @@ docs = [
 
 [project.urls]
 Homepage = "https://github.com/tsrobcvai/frankatwin"
-Documentation = "https://github.com/tsrobcvai/frankatwin/tree/main/docs"
+Documentation = "https://tsrobcvai.github.io/frankatwin/"
 Issues = "https://github.com/tsrobcvai/frankatwin/issues"
 
 [tool.setuptools]
