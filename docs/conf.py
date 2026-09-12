@@ -7,7 +7,7 @@ from datetime import date
 sys.path.insert(0, os.path.abspath("../python"))  # autodoc imports frankatwin from the checkout
 
 project = "FrankaTwin"
-author = "Tao Sun, Patrick Yin"
+author = "Tao Sun, Patrick Yin, Harry He"
 copyright = f"{date.today().year}, {author}"
 version = "0.2"
 release = "0.2.0"

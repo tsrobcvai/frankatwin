@@ -12,6 +12,7 @@ license = { text = "Apache-2.0" }
 authors = [
     { name = "Tao Sun", email = "tao.sun@mail.mcgill.ca" },
     { name = "Patrick Yin" },
+    { name = "Harry He" },
 ]
 keywords = ["franka", "libfranka", "impedance-control", "system-identification", "sim-to-real", "isaac-lab"]
 classifiers = [

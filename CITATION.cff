@@ -12,6 +12,9 @@ authors:
     given-names: Patrick
     affiliation: University of Washington
     website: https://patrickyin.me/
+  - family-names: He
+    given-names: Harry
+    affiliation: McGill University
 version: 0.2.0
 date-released: 2026-09-03
 license: Apache-2.0

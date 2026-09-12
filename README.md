@@ -2,9 +2,7 @@
   <img src="docs/images/logo.png" width="440" alt="FrankaTwin — sim ↔ real">
 </p>
 
-<p align="center">
-  <a href="https://tsrobcvai.github.io/frankatwin/"><b>Documentation</b></a>
-</p>
+<h2 align="center"><a href="https://tsrobcvai.github.io/frankatwin/">Documentation</a></h2>
 
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
@@ -34,7 +32,7 @@ matches the task-space impedance used by sim-to-real work such as
 
 ```bibtex
 @software{frankatwin2026,
-  author  = {Sun, Tao and Yin, Patrick},
+  author  = {Sun, Tao and Yin, Patrick and He, Harry},
   title   = {FrankaTwin: a sim-to-real aligned 1 kHz task impedance controller for the Franka Research 3},
   year    = {2026},
   version = {0.2.0},
