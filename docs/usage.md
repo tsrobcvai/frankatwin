@@ -41,21 +41,12 @@ cd frankatwin
 
 Script: [`examples/move_to.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/move_to.py)
 
-One-shot position control (`move_to`). Home by default; prints the pose
-`osc_shm` holds afterwards.
+Moves the arm to a target with stiff position control, then `osc_shm` resumes
+and holds the new pose. A joint target (home by default) sweeps an arc; an
+end-effector target moves in a straight line.
 
-**What the robot does.** `osc_shm` stops; libfranka drives all seven joints to
-the target along a min-jerk profile (for `--target-joints` / home the EE sweeps
-an arc, *not* a straight line; for `--target-ee` it follows a straight 5th-order
-path), at `--speed` × the joint speed limits — the default 0.2 takes 3–5 s from
-a typical pose. Then `osc_shm` restarts and holds the new pose compliantly.
-
-> **Safety.** This is stiff position control: the arm moves through whatever
-> lies between its current pose and the target, and does not yield on contact.
-> Before every move: clear the workspace of objects and people, check that the
-> target is reachable and that the path does not cross the table or fixtures,
-> and hold the user stop in your hand for the whole motion. Use `--speed 0.1`
-> the first time you try a new target.
+> **Safety.** The arm does not yield on contact. Clear its path, keep the user
+> stop in hand, and go slow on new targets (`--speed 0.1` or a longer `--duration`).
 
 ```bash
 # Move to the home pose (robot.init_q in config/robot.yaml):
@@ -75,10 +66,10 @@ python examples/move_to.py \
 
 | flag | meaning |
 |---|---|
-| `--target-joints J1 … J7` | 7 absolute joint angles [rad] |
-| `--target-ee x y z qw qx qy qz` | EE position [m] in the robot **base frame** (+x forward, +z up) and orientation as a **unit quaternion, wxyz** — `0 1 0 0` = tool pointing down. EE frame = the one configured in Desk (Franka Hand: TCP between the fingertips) |
-| `--speed` | joint move: speed factor (0, 0.5]; default `reset.joint_speed_factor` |
-| `--duration` | EE move: seconds in [1.5, 20]; default `reset.pose_duration` |
+| `--target-joints J1 … J7` | joint angles [rad] |
+| `--target-ee x y z qw qx qy qz` | TCP position [m] and quaternion (wxyz) in the base frame; `0 1 0 0` = tool down |
+| `--speed` | joint-move speed factor in (0, 0.5]; default 0.2 |
+| `--duration` | end-effector move time in [1.5, 20] s; default 5 |
 
 #### Example 2 · Track a scripted reference
 
