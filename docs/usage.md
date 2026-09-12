@@ -10,17 +10,7 @@ two arm controllers they use are described in [Architecture](architecture.md)).
 
 ### Step 0 · Power on and prepare the arm
 
-**Robot** — every session, before anything else:
-
-1. Switch on the control cabinet and wait until Desk loads in a browser at the
-   robot's address (`172.16.0.2` by default, from the PC or the NUC).
-2. Release the external activation device (user stop) so the arm is enabled.
-3. In Desk, unlock the joints (release the brakes) and activate **FCI** mode.
-   The arm's status light must not be yellow (joints locked) or red (error /
-   user stop) when you continue.
-
-Franka's step-by-step for the last item, and the one-time FCI feature install,
-are linked in [Installation → Robot](installation.md#robot).
+**Robot** — power on the arm and activate **FCI** mode in Desk.
 
 ### Step 1 · Start the daemon
 
