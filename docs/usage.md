@@ -58,6 +58,8 @@ a typical pose. Then `osc_shm` restarts and holds the new pose compliantly.
 > the first time you try a new target.
 
 ```bash
+# home = robot.init_q in config/robot.yaml (joints 1-7):
+#   [0, -0.785, 0, -2.356, 0, 1.571, 0.785] rad  =  [0, -45, 0, -135, 0, 90, 45] deg
 python examples/move_to.py                                                # home = robot.init_q
 python examples/move_to.py --target-joints 0 -0.785 0 -2.356 0 1.571 0.785 --speed 0.2
 python examples/move_to.py --target-ee 0.4 0.0 0.3  0 1 0 0 --duration 5
