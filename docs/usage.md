@@ -75,41 +75,37 @@ python examples/move_to.py \
 
 Script: [`examples/cart_impedance.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/cart_impedance.py)
 
-Continuous control (`osc_shm`) following a scripted EE reference at `--rate` Hz.
+Streams a Cartesian reference to `osc_shm` at 50 Hz under impedance control, then
+prints tracking error and torque headroom. By default the end effector moves
+±5 cm along z at 0.5 Hz for 4 s and ends back at its start pose.
 
-**What the robot does.** Starting from wherever it is, the EE oscillates ±5 cm
-along z at 0.5 Hz for 4 s (`sine`), then returns to the start pose. `multiband`
-and `chirp` are the sysid excitations: 6-DOF motion of up to ±10–15 cm and
-±0.5 rad for 8–12 s with peak speeds around 0.5 m/s and visibly fast wrist
-rotation — start them from a pose with at least 30 cm of free space in every
-direction. Under impedance control the arm is compliant throughout.
-Logs a per-tick CSV + sidecar and prints tracking RMS and torque headroom. This
-is also the sysid data collector.
+> **Safety.** `multiband` and `chirp` are fast 6-DOF sysid motions, up to ±15 cm
+> and ±0.5 rad. Start them with at least 30 cm of free space around the tool.
 
 ```bash
-python examples/cart_impedance.py                                         # sine: ±5 cm z at 0.5 Hz for 4 s
-python examples/cart_impedance.py --mode chirp --kp-pos 500 --kp-ori 30 \
-    --err-delta-pos 0.15 --err-delta-rot 0.80 --log data/run.csv        # sysid v4 chirp, logged
-python examples/cart_impedance.py --mode multiband --dry-run              # build + check the reference, no robot
+# Default: ±5 cm along z at 0.5 Hz for 4 s
+python examples/cart_impedance.py
+
+# Build and check a reference without moving the robot
+python examples/cart_impedance.py --mode multiband --dry-run
+
+# Sysid chirp with the gains and error clamps it needs, logged to CSV
+python examples/cart_impedance.py --mode chirp \
+    --kp-pos 500 --kp-ori 30 \
+    --err-delta-pos 0.15 --err-delta-rot 0.80 \
+    --log data/run.csv
 ```
 
 | flag | meaning |
 |---|---|
-| `--mode sine \| multiband \| chirp` | reference: z-sine (default), sysid v3 multi-band, sysid v4 chirp |
-| `--kp-pos`, `--kp-ori` | impedance gains; default `control.*` in `robot.yaml` |
-| `--err-delta-pos`, `--err-delta-rot` | `osc_shm` error clamps; the chirp needs `0.15` / `0.80` |
-| `--rate`, `--duration` | loop rate [Hz] (50) and run time [s] (4 / 12 / 8 by mode) |
-| `--amp`, `--freq` · `--amp-x/y/z`, `--amp-yaw`, `--amp-roll` · `--f0`, `--f1`, `--amp-rx/ry/rz` | reference shape for sine · multiband · chirp |
-| `--log run.csv [--sidecar run.json]` | write the CSV + metadata ([format](data_format.md)) |
-| `--dry-run` | build the reference and print peak rates without a robot |
+| `--mode` | `sine` (default), `multiband` or `chirp` |
+| `--kp-pos`, `--kp-ori` | impedance gains; default from `robot.yaml` |
+| `--err-delta-pos`, `--err-delta-rot` | error clamps [m] / [rad]; `chirp` needs `0.15` / `0.80` |
+| `--log run.csv` | save a per-tick CSV and JSON sidecar ([format](data_format.md)) |
+| `--dry-run` | build the reference and print peak rates, no robot |
 
-Modes:
-
-| mode | reference | default duration | typical gains |
-|---|---|---|---|
-| `sine` | ±`--amp` (5 cm) z-sine at `--freq` (0.5 Hz) | 4 s | yaml defaults |
-| `multiband` | SysID v3: two-band sinusoids on x/y/z + yaw/roll (`frankatwin.excitation.multiband`) | 12 s | `--kp-pos 200 --kp-ori 20` |
-| `chirp` | SysID v4: 6-DOF linear chirp `--f0 0.1 → --f1 0.7` Hz, π/3 phase-staggered (`frankatwin.excitation.chirp`) | 8 s | `--kp-pos 500 --kp-ori 30 --err-delta-pos 0.15 --err-delta-rot 0.80` |
+Shape and duration flags are listed by `--help`; the `multiband` and `chirp`
+designs are explained in [System identification](sysid.md#excitation-design).
 
 #### Example 3 · Run a policy closed-loop
 
