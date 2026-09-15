@@ -41,24 +41,26 @@ gravity compensation on the real side.
 
 ## Optimizer
 
-`isaaclab_sysid/scripts/tools/sysid_franka_osc.py` runs
-[CMA-ES](https://github.com/CyberAgentAILab/cmaes) in a `[0, 1]^29` latent space
-mapped to the bounds above. Each generation evaluates `--num_envs` candidates in
-parallel (one env per candidate) by replaying the real run at 1 kHz and scoring
+The fit runs [CMA-ES](https://github.com/CyberAgentAILab/cmaes) in
+`isaaclab_sysid/scripts/tools/sysid_franka_osc.py`, with the 29 parameters
+normalized to `[0, 1]` within the bounds above. Each generation replays the real
+run at 1 kHz in `--num_envs` parallel envs, one candidate per env, and scores
+each with
 
 ```
 loss = w_q · MSE(q_sim − q_real) + w_dq · MSE(q̇_sim − q̇_real) + w_x · MSE(x_sim − x_real)
        (w_q = 1.0, w_dq = 0.1, w_x = 0.01 by default)
 ```
 
-summed over trajectories (optionally weighted with `--traj_weights`). With
-128 envs and 40 iterations a fit takes ≈ 4 h on one GPU; the best parameters are
-checkpointed every `--save_interval` generations to
+summed over trajectories (weights: `--traj_weights`). 128 envs × 40 iterations
+take about 4 h on one GPU. The best parameters are saved every
+`--save_interval` generations to
 `logs/sysid_franka/<timestamp>/sysid_best_params.json`.
 
 ## Excitation design
 
-Identifiability is decided before you touch the optimizer. Two designs ship:
+A parameter is identifiable only if the recorded motion exercises it. Two
+designs ship:
 
 | | **v3 multiband** (`python scripts/gen_excitation_traj.py` / `python examples/cart_impedance.py --mode multiband`) | **v4 chirp** (`python scripts/gen_chirp_traj.py` / `python examples/cart_impedance.py --mode chirp`) |
 |---|---|---|
@@ -71,27 +73,21 @@ Identifiability is decided before you touch the optimizer. Two designs ship:
 
 Design notes:
 
-- **Rotation excitation is not optional.** A translation-only sweep produces a
-  task wrench with no torque component, so j1 (base yaw) and j5 (wrist roll)
-  barely move and their friction is unobservable. Adding yaw/roll sweeps (v3)
-  cut j1 RMS from 88 → 39 mrad and j5 from 29.5 → 10.1 mrad versus the
-  translation-only fit.
-- **Chirp top frequency is bounded by the wrist.** The UR5e design this borrows
-  from sweeps to 3 Hz; on the Franka that saturates the 12 N·m limit of j5–j7
-  and trips the tracking abort. 0.7 Hz keeps peak `|ẋ|` ≈ 0.46 m/s and stays
-  clear of the limits.
-- **Log rate vs sim rate.** The Python loop commands at 50 Hz while the
-  controller runs at 1 kHz. The replay reproduces exactly that zero-order-hold
-  staircase (`replay_python_csv_sim.py`), so the 50 Hz sampling is not a source
-  of sim–real mismatch. Do not use a 1 kHz replay path on a 50 Hz log.
-- **Multiple trajectories beat one long one.** Fit on ≥ 2 runs with different
-  spectral content and hold one out.
+- **Excite rotation.** Translation alone barely moves j1 (base yaw) and j5
+  (wrist roll), leaving their friction unobservable. Adding yaw and roll (v3)
+  cut the sim–real RMS error from 88 to 39 mrad on j1 and from 29.5 to 10.1 mrad
+  on j5.
+- **The wrist caps the chirp at 0.7 Hz.** The 3 Hz sweep of the original UR5e
+  design exceeds the 12 N·m limit of j5–j7 and trips the tracking abort. At
+  0.7 Hz, peak end-effector speed stays near 0.46 m/s.
+- **Replay at the logged rate.** Targets are sent at 50 Hz and held by the
+  1 kHz controller; `replay_python_csv_sim.py` reproduces that hold, so logging
+  at 50 Hz adds no sim–real mismatch. Never replay a 50 Hz log through a 1 kHz
+  path.
+- **Fit on several runs.** Use at least two runs with different frequency
+  content, and hold one out.
 
 ## Workflow
-
-<kbd>NUC</kbd> = real-time PC on the robot, <kbd>PC</kbd> = your workstation, <kbd>SIM</kbd> = machine with IsaacLab (may be the PC).
-The <kbd>SIM</kbd> box needs IsaacLab with the FrankaTwin extension deployed —
-a one-time step described in [Installation → SIM](installation.md#sim).
 
 ### 1. Collect
 
