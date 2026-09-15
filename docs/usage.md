@@ -41,9 +41,9 @@ cd frankatwin
 
 Script: [`examples/move_to.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/move_to.py)
 
-Moves the arm to a target with stiff position control, then `osc_shm` resumes
-and holds the new pose. A joint target (home by default) sweeps an arc; an
-end-effector target moves in a straight line.
+**What the robot does.** The arm moves to the target under stiff position
+control, then `osc_shm` resumes and holds the new pose. A joint target (home by
+default) sweeps an arc; an end-effector target moves in a straight line.
 
 > **Safety.** The arm does not yield on contact. Clear its path, keep the user
 > stop in hand, and go slow on new targets (`--speed 0.1` or a longer `--duration`).
@@ -75,9 +75,12 @@ python examples/move_to.py \
 
 Script: [`examples/cart_impedance.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/cart_impedance.py)
 
-Streams a Cartesian reference to `osc_shm` at 50 Hz under impedance control, then
-prints tracking error and torque headroom. By default the end effector moves
-±5 cm along z at 0.5 Hz for 4 s and ends back at its start pose.
+Streams a Cartesian reference to `osc_shm` at 50 Hz, then prints tracking error
+and torque headroom.
+
+**What the robot does.** Under impedance control the end effector moves ±5 cm
+along z at 0.5 Hz for 4 s and ends back at its start pose. `multiband` and
+`chirp` move all six axes, much faster.
 
 > **Safety.** `multiband` and `chirp` are fast 6-DOF sysid motions, up to ±15 cm
 > and ±0.5 rad. Start them with at least 30 cm of free space around the tool.
@@ -111,15 +114,16 @@ designs are explained in [System identification](sysid.md#excitation-design).
 
 Script: [`examples/policy_loop.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/policy_loop.py)
 
-**What the robot does.** With the stand-in policy the EE rises 10 cm over 2 s,
-descends 10 cm over the next 2 s, and repeats four times (16 s), then holds
-where it ends. With your own policy it does whatever the actions command — bound
-them with `--pos-scale` / `--rot-scale`, and keep the user stop in hand on the
-first runs.
+Runs a policy at a fixed rate under impedance control. Replace the stand-in
+`demo_policy` with your network.
 
-Continuous control driven by a policy at a fixed rate. Ships with a stand-in
-policy that moves the EE up 10 cm and back down every 4 s for 16 s; swap in
-your network.
+**What the robot does.** The arm first resets to home (skip with `--no-reset`).
+The stand-in policy then raises the end effector 10 cm over 2 s and lowers it
+over the next 2 s, four times (16 s), and the arm holds where it ends.
+
+> **Safety.** The reset is stiff position control, as in Example 1. A new policy
+> moves the arm wherever its actions point: keep `--pos-scale` / `--rot-scale`
+> small and the user stop in hand on the first runs.
 
 ```bash
 python examples/policy_loop.py                          # demo policy, 10 Hz, 16 s
@@ -133,7 +137,7 @@ python examples/policy_loop.py --hz 20 --pos-scale 0.0025 --no-reset
 | `--kp-pos`, `--kp-ori`, `--err-delta-pos`, `--err-delta-rot` | impedance gains (500 / 30) and clamps (0.15 / 0.80) |
 | `--no-reset` | skip the initial `move_to` home |
 
-The whole loop — the pattern every closed-loop rollout uses:
+The whole loop:
 
 ```python
 def demo_policy(t, obs):                      # stand-in for a network; 6-D action in [-1, 1]
@@ -157,14 +161,12 @@ with FrankaTwinClient(cfg) as robot:
         s = robot.get_state()                                 # 7. newest frame of the 100 Hz stream
 ```
 
-Between two policy steps `osc_shm` applies `τ = Jᵀ[Kp e − Kd ẋ]` a hundred times
-to the held target (zero-order hold); the IsaacLab replay reproduces exactly that
-staircase, which is why the sysid transfers. `error_delta_pos` is set above the
-largest single step so the controller never clips — the sim's task impedance has
-no clip either. Targets are absolute poses in the base frame, quaternions
-**wxyz**; gains and clamps persist across `move_to` and controller restarts.
-Control law, safety chain and timing: [Architecture](architecture.md); every
-client method and protocol: [Interfaces](interfaces.md); every config key:
+Between policy steps `osc_shm` holds the last target at 1 kHz, the same
+zero-order hold the IsaacLab replay uses. Keep `--err-delta-pos` above one step
+so the clamp never engages, as in sim. Targets are absolute base-frame poses
+with **wxyz** quaternions; gains and clamps persist across `move_to` and
+restarts. More in
+[Architecture](architecture.md), [Interfaces](interfaces.md) and
 [Configuration](configuration.md).
 
 #### Example 4 · Open and close the gripper
@@ -175,6 +177,9 @@ Script: [`examples/gripper.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.
 pose under impedance control. The hand is served on its own port (1338), so no
 `osc_shm` stop/restart is involved — you can open and close while a policy loop
 is running.
+
+> **Safety.** The fingers close at up to 0.5 m/s and squeeze with up to 70 N.
+> Keep hands out of the jaws; `--homing` sweeps the full stroke.
 
 ```bash
 python examples/gripper.py --homing                      # once after power-up: calibrates the stroke
@@ -187,20 +192,17 @@ python examples/gripper.py --state                       # width / max_width / i
 
 | flag | meaning |
 |---|---|
-| `--open [--width FRAC \| --width-m M]` | `Gripper::move` to a fraction of the stroke (default 1.0) or to metres |
-| `--close [--force N] [--close-width M] [--eps M]` | `Gripper::grasp`; defaults from `robot.yaml → gripper` (70 N, −0.01 m, 0.08) |
-| `--homing` / `--stop` / `--state` | calibrate / abort the motion in flight / read the state |
-| `--speed` | finger speed [m/s]; default `gripper.move_speed` (0.1) / `gripper.grasp_speed` (0.5) |
-| `--no-wait` | return once the daemon accepted the command |
+| `--open [--width FRAC \| --width-m M]` | open to a fraction of the stroke (default fully open) or to a width [m] |
+| `--close [--force N] [--close-width M] [--eps M]` | grasp; defaults 70 N, −0.01 m, 0.08 m |
+| `--homing` / `--stop` / `--state` | calibrate / abort the motion / read the state |
+| `--speed` | finger speed [m/s]; default 0.1 open, 0.5 close |
+| `--no-wait` | return once the daemon accepts the command |
 
-**Closing is a grasp, not a width command.** libfranka's
-`grasp(width, speed, force, eps)` drives the fingers *towards* `width` and
-squeezes with `force` once they stall on something. The default width (−0.01 m,
-past full closure) always reaches the object, so the resting width is set by the
-object and `--force` is the knob for how hard it is held. `--close-width` only
-stops the jaws early — above the object's width they halt before touching and
-hold nothing. The returned `result` / `is_grasped` is "final width within
-`epsilon` of the target"; with the default 0.08 m band every stall counts.
+**Closing is a grasp, not a width command.** The fingers close until they stall
+on the object, then squeeze at `--force`, so the object sets the held width and
+`--force` sets how hard. `--close-width` only stops the fingers early; set wider
+than the object, they hold nothing. `is_grasped` means the final width is within
+`--eps` of the target; the default 0.08 m counts every stall.
 
 In a policy loop:
 
