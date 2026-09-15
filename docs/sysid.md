@@ -1,27 +1,23 @@
 # System identification
 
-The goal: make IsaacLab's Franka move like *your* Franka under the *same*
-controller, so that anything you tune or train in sim transfers. FrankaTwin does
-this by replaying real excitation runs in simulation — same setpoint staircase,
-same gains, same control law — and fitting the sim's joint dynamics until the sim
-joint trajectories land on the real ones.
+FrankaTwin makes IsaacLab's Franka move like *your* Franka under the *same*
+controller, so what you tune or train in sim transfers. It replays real
+excitation runs in sim with identical setpoints, gains and control law, and fits
+the sim's joint dynamics until the trajectories match.
 
 ## Approach
 
-We follow the procedure [OmniReset](https://arxiv.org/abs/2603.15789) uses for
-its UR7e, which in turn follows PACE
-([Bjelonic et al., 2025](https://arxiv.org/abs/2509.06342)): run excitation
-trajectories on the real arm, replay them in simulation under the same
-controller, and fit the actuator parameters — friction, armature, motor delay —
-by minimizing the simulated-vs-real joint-trajectory error with CMA-ES. Two
-differences from OmniReset:
+We follow the procedure of [OmniReset](https://arxiv.org/abs/2603.15789) (UR7e),
+itself based on PACE ([Bjelonic et al., 2025](https://arxiv.org/abs/2509.06342)):
+record excitation runs on the real arm, replay them in sim under the same
+controller, and fit friction, armature and motor delay with CMA-ES to minimize
+the sim–real joint-trajectory error. Two differences:
 
-- **One real-world trajectory for the fit.** We identify from a single
-  multi-band sinusoidal excitation (v3, see [Excitation design](#excitation-design))
-  rather than from chirps.
-- **A chirp as the held-out test.** The identified parameters are validated on
-  a 6-DOF chirp (v4) — the excitation family OmniReset fits on — that was not
-  used in the fit. Joint-position MSE on it: 4.8 × 10⁻⁴ rad².
+- **Fit on one multiband run.** Parameters come from a single multi-band
+  sinusoidal excitation (v3, [Excitation design](#excitation-design)), not from
+  chirps.
+- **Validate on a held-out chirp.** A 6-DOF chirp (v4), the excitation OmniReset
+  fits on, is used only as the test: joint-position MSE 4.8 × 10⁻⁴ rad².
 
 ## What is identified
 
@@ -151,11 +147,11 @@ joint.
 
 - The identified parameters are for the specific arm, payload and gains they were
   fitted under. Re-fit after changing the end-effector mass.
-- The fit captures joint-level dynamics under closed-loop impedance control. In
-  our 6-DOF chase tests the *orientation* transfers to ≈ 1.5° RMS, while
-  translational residuals of a few cm remain in some directions (real x/y move
-  ~30 % further, z behaves differently) — anisotropic effects the current
-  parameterisation cannot express. Contributions welcome.
+- The fit models joint-level dynamics under impedance control, so some Cartesian
+  error remains. In our 6-DOF tracking tests, orientation matches to ≈ 1.5° RMS,
+  but position is off by a few cm in some directions: the real arm moves about
+  30 % further than the sim in x and y, and differs in z. The current parameters
+  cannot represent such direction-dependent effects. Contributions welcome.
 - `motor_delay_steps` is quantised to 1 ms ticks.
 
 ## Our results
