@@ -181,10 +181,12 @@ with FrankaTwinClient(cfg) as robot:
         obs = np.concatenate([s.q, s.dq, s.ee_pos, s.ee_quat, s.ee_linvel, s.ee_angvel])
         a = np.clip(demo_policy(k / 10, obs), -1, 1)
         pos  = s.ee_pos + 0.02 * a[:3]                        # 4. Δ on the measured pose (as in the sim task)
-        quat = mul_wxyz(from_rotvec_wxyz(0.02 * a[3:]), s.ee_quat)
+        quat = mul_wxyz(from_rotvec_wxyz(0.03 * a[3:]), s.ee_quat)
         robot.set_ee_target(pos, quat)                        # 5. non-blocking; osc_shm holds it at 1 kHz
         time.sleep(max(0.0, t0 + (k + 1) / 10 - time.monotonic()))   # 6. fixed-rate tick
-        s = robot.get_state()                                 # 7. newest frame of the 100 Hz stream
+        s = robot.get_state() or s                            # 7. newest frame of the 100 Hz stream
+
+    robot.set_ee_target(s.ee_pos, s.ee_quat)                  # 8. hold where the run ended
 ```
 
 Between policy steps `osc_shm` holds the last target at 1 kHz, the same
