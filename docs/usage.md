@@ -169,7 +169,7 @@ python examples/policy_loop.py --hz 20 --pos-scale 0.0025 --no-reset
 | `--hz`, `--duration` | policy rate [Hz] (10) and run time [s] (16) |
 | `--pos-scale`, `--rot-scale` | action → Δpos [m/step] (0.005) and Δrot [rad/step] (0.02) |
 | `--kp-pos`, `--kp-ori` | impedance gains (500 / 30) |
-| [`--err-delta-pos`]{.flag-safety} | [delta translation action clamp, for safety]{.flag-safety} — bounds how far the EE may lag its target [m] (0.15). Kept well above one step (0.005 m), so it never engages in normal running |
+| [`--err-delta-pos`]{.flag-safety} | [delta translation action clamp, for safety]{.flag-safety} — bounds how far the EE may lag its target [m]. This example passes `0.15`, well above one step (0.005 m), so it never engages in normal running. `robot.yaml` ships `0`, which turns the clamp off entirely |
 | `--no-reset` | skip the initial `move_to` home |
 
 The whole loop of [`policy_loop.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/policy_loop.py):
