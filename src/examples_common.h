@@ -3,12 +3,16 @@
 //
 // Vendored from libfranka/examples/examples_common.h. Provides:
 //   - setDefaultBehavior(robot): sets collision/joint/cart impedance defaults.
-//   - MotionGenerator: 7-DOF synchronized min-jerk joint trajectory generator
-//     compatible with robot.control(MotionGenerator&).
+//   - MotionGenerator: 7-DOF joint trajectory generator compatible with
+//     robot.control(MotionGenerator&). Per joint a cubic acceleration ramp, a
+//     constant-velocity cruise and a cubic deceleration ramp -- a smoothed
+//     trapezoid, not a min-jerk profile -- with the seven joints synchronized
+//     to finish together.
 //
 // This is reused by frankatwin/src/move_to.cpp for the --q reset path.
-// We intentionally keep the file verbatim so future libfranka upgrades can be
-// re-vendored with a clean diff. DO NOT add frankatwin-specific changes here.
+// The banner above is ours and may be corrected; the code below is kept
+// verbatim so future libfranka upgrades can be re-vendored with a clean diff.
+// DO NOT add frankatwin-specific changes to the code.
 
 #pragma once
 
