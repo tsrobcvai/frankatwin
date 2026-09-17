@@ -41,3 +41,16 @@ html[data-theme="dark"] .badge-default {
   background: #22334D;
   color: #9CBEEC;
 }
+
+/* Highlighted table row for a flag that exists for safety */
+.flag-safety {
+  padding: 0.1em 0.4em;
+  border-radius: 0.25em;
+  background: var(--pst-color-warning-bg, #fff3cd);
+  color: var(--pst-color-text-base);
+}
+/* the pill supplies the background; don't stack the code tag's own on top */
+.flag-safety code {
+  background: transparent;
+  border: none;
+}
