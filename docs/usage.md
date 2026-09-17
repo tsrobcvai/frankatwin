@@ -87,8 +87,7 @@ Streams a Cartesian reference to `osc_shm` at 50 Hz, then prints tracking error
 and torque headroom.
 
 **What the robot does.** Under impedance control the end effector moves ±5 cm
-along z at 0.5 Hz for 4 s and ends back at its start pose. `multiband` and
-`chirp` move all six axes, much faster.
+along z at 0.5 Hz for 4 s and ends back at its start pose.
 
 :::{admonition} Safety
 :class: danger
