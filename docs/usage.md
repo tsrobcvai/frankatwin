@@ -42,10 +42,13 @@ cd frankatwin
 Script: [`examples/move_to.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/move_to.py)
 
 **What the robot does.** The arm moves under stiff position control to a target
-named one of two ways. `--target-joints` takes seven joint angles and
-interpolates in joint space along a min-jerk profile, so the end effector sweeps
-an arc; with no flag it targets home (`robot.init_q`). `--target-ee` takes a
-Cartesian pose and follows a straight 5th-order path, libfranka solving the IK.
+named one of two ways:
+
+- **`--target-joints`** — seven joint angles, interpolated in joint space along
+  a min-jerk profile, so the end effector sweeps an arc. This is the default
+  mode: with no flag at all the target is home, `robot.init_q`.
+- **`--target-ee`** — a Cartesian pose. libfranka solves the IK and the end
+  effector follows a straight 5th-order path.
 
 :::{admonition} Safety
 :class: danger
