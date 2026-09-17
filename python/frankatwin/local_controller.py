@@ -192,6 +192,22 @@ def _wxyz_from(quat: np.ndarray) -> np.ndarray:
     return q / n
 
 
+# Mirror of the C++ bound in src/move_to.cpp (kQMaxSpeedMax). 1.25 rad/s is
+# MotionGenerator's largest dq_max_ entry (2.5) at the old speed_factor ceiling
+# of 0.5, so this is the same limit the joint mode has always enforced.
+Q_MAX_SPEED_MAX = 1.25
+
+
+def _checked_q_max_speed(value: Optional[float], cfg) -> float:
+    """Resolve the pacing knob against the config default and validate it."""
+    v = float(value) if value is not None else float(cfg.reset.q_max_speed)
+    if not (0.0 < v <= Q_MAX_SPEED_MAX):
+        raise ValueError(
+            f"q_max_speed must be in (0, {Q_MAX_SPEED_MAX}] rad/s, got {v}"
+        )
+    return v
+
+
 @dataclass
 class RobotState:
     """Plain-data snapshot of the latest robot state frame."""
@@ -633,7 +649,7 @@ class LocalController:
     def move_to_q(
         self,
         q_target: np.ndarray,
-        speed_factor: Optional[float] = None,
+        q_max_speed: Optional[float] = None,
     ) -> None:
         """Blocking joint-space reset using libfranka MotionGenerator.
 
@@ -643,35 +659,32 @@ class LocalController:
         q = np.asarray(q_target, dtype=np.float64).reshape(-1)
         if q.shape != (7,):
             raise ValueError(f"q_target must have shape (7,), got {q.shape}")
-        sf = (
-            speed_factor
-            if speed_factor is not None
-            else self.cfg.reset.joint_speed_factor
-        )
-        if not (0.0 < sf <= 0.5):
-            raise ValueError(f"speed_factor must be in (0, 0.5], got {sf}")
+        v = _checked_q_max_speed(q_max_speed, self.cfg)
         args = [str(self._move_to_bin), self.cfg.robot.ip, "--q"]
-        args += [f"{v:.6f}" for v in q.tolist()]
-        args += ["--speed-factor", f"{sf:.4f}"]
+        args += [f"{x:.6f}" for x in q.tolist()]
+        args += ["--q-max-speed", f"{v:.4f}"]
         self._run_exclusive(args)
 
     def move_to_pose(
         self,
         target_pos: np.ndarray,
         target_quat: np.ndarray,
-        duration: Optional[float] = None,
+        q_max_speed: Optional[float] = None,
     ) -> None:
         """Blocking task-space reset using libfranka CartesianPose motion type.
 
         target_quat is wxyz. No external IK; libfranka solves internally.
+
+        `q_max_speed` is APPROXIMATE here: because the IK lives inside
+        libfranka, move_to estimates the joint speed from the Jacobian at the
+        start pose alone. It degrades over large reorientations and near
+        singularities. See src/move_to.cpp.
         """
         pos = np.asarray(target_pos, dtype=np.float64).reshape(-1)
         if pos.shape != (3,):
             raise ValueError(f"target_pos must have shape (3,), got {pos.shape}")
         quat = _wxyz_from(target_quat)
-        dur = duration if duration is not None else self.cfg.reset.pose_duration
-        if not (0.5 <= dur <= 20.0):
-            raise ValueError(f"duration must be in [0.5, 20.0] s, got {dur}")
+        v = _checked_q_max_speed(q_max_speed, self.cfg)
         args = [
             str(self._move_to_bin),
             self.cfg.robot.ip,
@@ -683,8 +696,8 @@ class LocalController:
             f"{quat[1]:.6f}",
             f"{quat[2]:.6f}",
             f"{quat[3]:.6f}",
-            "--duration",
-            f"{dur:.3f}",
+            "--q-max-speed",
+            f"{v:.4f}",
         ]
         self._run_exclusive(args)
 

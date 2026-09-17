@@ -18,8 +18,7 @@ once at start — restart it after edits.
 | `collision.torque_threshold` / `cartesian_threshold` | 100 N·m / 100 N | `setCollisionBehavior` thresholds (all entries). |
 | `paths.build_dir` | `build` | Where `osc_shm` / `move_to` live (relative to repo root). |
 | `paths.shm_name` | `/frankatwin_osc` | POSIX shm name. |
-| `reset.joint_speed_factor` | 0.2 | `move_to --q` speed, (0, 0.5]. |
-| `reset.pose_duration` | 2.0 s | `move_to --pose` duration, [0.5, 20]. Short values over a long travel can trip a Cartesian reflex. |
+| `reset.q_max_speed` | 0.5 rad/s | Per-joint velocity cap for **both** `move_to` modes, (0, 1.25]. Motion time follows from the travel. Approximate for `--pose` — see [Usage](usage.md). |
 | `load.mass` / `com` / `inertia` | 0 / 0 / 0 | Extra payload for `setLoad`; see the comments in the file. |
 | `gripper.enabled` | true | `false` makes every `gripper_*` command fail fast (no Franka Hand). |
 | `gripper.move_speed` / `grasp_speed` | 0.1 / 0.5 m/s | Finger speed for `gripper_open` (`Gripper::move`) / `gripper_close` (`Gripper::grasp`). |

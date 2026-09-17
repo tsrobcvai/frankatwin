@@ -25,14 +25,25 @@ All notable changes to this project are documented here. The format follows
   reports the lock state as `fci lock`.
 
 ### Changed
-- `move_to --pose` duration: lower bound relaxed 1.5 s -> 0.5 s and the default
-  lowered 5.0 s -> 2.0 s (`reset.pose_duration`). The bound is a blanket guard,
-  not a physical limit -- the travel distance is unknown at parse time, so a
-  short duration over a long travel can still trip a Cartesian reflex.
-- `move_to` validates only the pacing knob its mode uses, and rejects the other
-  one outright: `--duration` with `--q` (or `--speed-factor` with `--pose`) was
-  previously range-checked and then silently ignored, which hid the fact that
-  the requested pacing would not happen.
+- **Breaking.** One pacing knob for both `move_to` modes: `--q-max-speed`, a
+  per-joint velocity cap in rad/s, range (0, 1.25], default 0.5. It replaces
+  `--speed-factor` and `--duration` on the binary, `speed_factor=` / `duration=`
+  on `LocalController` / `FrankaTwinClient` (`q_max_speed=`), the `speed_factor`
+  / `duration` wire fields (`q_max_speed`), `--speed` / `--duration` on
+  `examples/move_to.py` (`--q-max-speed`), and `reset.joint_speed_factor` /
+  `reset.pose_duration` in `robot.yaml` (`reset.q_max_speed`). The default
+  reproduces the old behaviour exactly: 0.5 rad/s is `speed_factor` 0.2 against
+  MotionGenerator's largest `dq_max_` (2.5), and the 1.25 ceiling is the old
+  `speed_factor <= 0.5`. A `robot.yaml` still carrying the old keys falls back
+  to the default rather than erroring.
+
+  Motion time is now derived from the travel in both modes, so a longer move
+  takes longer instead of moving faster -- which a fixed duration could not do.
+  For `--pose` the cap is **approximate**: libfranka owns the IK, so `move_to`
+  estimates the joint displacement from the Jacobian at the start pose
+  (damped least squares) and sizes the min-jerk profile from that. The estimate
+  degrades over large reorientations and near singularities; the binary says so
+  on stdout, and the docs repeat it.
 - Installation is conda-only: one `frankatwin` env per machine, libfranka from
   conda-forge matched to the robot's FCI protocol (system 5.9 → `libfranka=0.20`;
   a mismatch only shows up when a session is opened). `CMakeLists.txt` finds

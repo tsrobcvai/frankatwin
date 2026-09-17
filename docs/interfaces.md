@@ -28,7 +28,7 @@ The walkthrough is in [Usage](usage.md).
 |---|---|---|
 | `python -m frankatwin.daemon [-c robot.yaml] [-v] [--load-mass …]` | NUC | The daemon (below). |
 | `python -m frankatwin.doctor [--role auto\|nuc\|pc]` | NUC, PC | Environment check: RT kernel, rtprio, binaries + `ldd` (libfranka / pinocchio), FCI port, competing FCI clients, daemon ping, state stream. Exit 1 on a hard failure, with a hint per line. Run it first on both machines. |
-| `examples/move_to.py [--target-joints J1..J7 \| --target-ee x y z qw qx qy qz] [--speed] [--duration]` | PC | Position-controlled move via `move_to`: home (`robot.init_q`) by default, a joint configuration, or an EE pose (base frame, quaternion **wxyz**). Prints the held pose afterwards. |
+| `examples/move_to.py [--target-joints J1..J7 \| --target-ee x y z qw qx qy qz] [--q-max-speed]` | PC | Position-controlled move via `move_to`: home (`robot.init_q`) by default, a joint configuration, or an EE pose (base frame, quaternion **wxyz**). Prints the held pose afterwards. |
 | `examples/policy_loop.py [--hz 10] [--duration 16] [--pos-scale 0.005] [--rot-scale 0.02]` | PC | Fixed-rate policy on top of task impedance: read state → policy → Δpose target → `set_ee_target`. Ships a stand-in policy (10 cm up/down every 4 s). The closed-loop rollout skeleton. |
 | `examples/cart_impedance.py --mode {sine,multiband,chirp} …` | PC | Run a scripted Cartesian reference at `--rate` Hz, log CSV + sidecar, print tracking RMS and torque headroom. `--dry-run` needs no robot. |
 | `examples/gripper.py --open [--width FRAC \| --width-m M] \| --close [--force N] [--close-width M] \| --homing \| --stop \| --state` | PC | Franka Hand via the daemon; the arm controller keeps running. `--width` is a fraction of the stroke (0.42 → 33.6 mm). Closing is a libfranka *grasp*: the object sets the width, `--force` (default 70 N) sets the hold. |
@@ -66,8 +66,8 @@ NUC (no ZMQ); scripts written against one run against the other.
 | `get_state(*, fresh=False)` → `RobotState \| None` | no (`fresh=True`: one round-trip) | Newest frame of the 100 Hz stream. |
 | `get_state_history()` → `list[RobotState]` | no | Up to `network.state_cache` (256) recent frames. |
 | `wait_for_state(timeout_s=3.0)` → `RobotState` | until a frame arrives | Use once after connecting / resetting. |
-| `move_to_q(q[7], speed_factor=None)` | yes (≤ 60 s) | Joint-space position move via `move_to`; `osc_shm` restarts at the new pose with gains preserved. `speed_factor ∈ (0, 0.5]`. |
-| `move_to_pose(pos[3], quat[4], duration=None)` | yes | Cartesian position move via libfranka `CartesianPose`; `duration ∈ [0.5, 20]` s, default `reset.pose_duration` (2.0 s). |
+| `move_to_q(q[7], q_max_speed=None)` | yes (≤ 60 s) | Joint-space position move via `move_to`; `osc_shm` restarts at the new pose with gains preserved. `q_max_speed ∈ (0, 1.25]` rad/s, default `reset.q_max_speed` (0.5). Exact cap. |
+| `move_to_pose(pos[3], quat[4], q_max_speed=None)` | yes | Cartesian position move via libfranka `CartesianPose`; same knob and range. **Approximate** — the joint speed is estimated from the Jacobian at the start pose, since libfranka owns the IK. |
 | `gripper_open(width=None, speed=None, *, wait=True)` | yes (< 2 s) | `Gripper::move` to `width` [m], default `gripper.max_width`. `osc_shm` keeps running (the hand has its own connection). |
 | `gripper_close(width=None, speed=None, force=None, epsilon_inner=None, epsilon_outer=None, *, wait=True)` (= `gripper_grasp`) | yes (< 2 s) | `Gripper::grasp`: fingers drive towards `width` (default −0.01 = past closure, so the object sets the resting width) and squeeze with `force` (default 70 N). Returns `{"result": is-within-epsilon, "state": {...}}`. |
 | `gripper_homing(*, wait=True)` | yes (~6 s) | Calibrate the stroke; once after power-up or a finger change. |
@@ -122,8 +122,8 @@ Request `{"op": "<name>", ...}`; reply `{"ok": true, ...}` or
 | `set_gains` | any of `kp_pos`, `kp_ori`, `kd_pos`, `kd_ori`, `error_delta_pos`, `error_delta_rot` | — | no |
 | `enable` / `disable` | — | — | no |
 | `get_state` | — | `state`: object (fields as below) or `null` | no |
-| `move_to_q` | `q: [7]`, optional `speed_factor` | — | yes |
-| `move_to_pose` | `pos: [3]`, `quat: [4] wxyz`, optional `duration` | — | yes |
+| `move_to_q` | `q: [7]`, optional `q_max_speed` | — | yes |
+| `move_to_pose` | `pos: [3]`, `quat: [4] wxyz`, optional `q_max_speed` | — | yes |
 | `gripper_homing` | — | `started: true`, `seq` | no — runs on a daemon thread |
 | `gripper_move` | `width` [m], optional `speed` | `started: true`, `seq` | no — runs on a daemon thread |
 | `gripper_grasp` | optional `width`, `speed`, `force`, `epsilon_inner`, `epsilon_outer` (defaults: `robot.yaml → gripper`) | `started: true`, `seq` | no — runs on a daemon thread |
@@ -193,7 +193,7 @@ Built by CMake into `build/`; all but `gripper_cmd` need the sole FCI session
 | binary | usage | notes |
 |---|---|---|
 | `osc_shm` | `osc_shm <robot_ip> [--shm-name NAME] [--init-shm] [--no-coriolis] [--print-every N] [--duration s] [--max-torque-rate Nm_per_s] [--load-mass kg] [--load-com x y z] [--load-inertia i0…i8] [--collision-torque Nm] [--collision-cartesian N]` | The 1 kHz controller. `--init-shm` creates the segment (omit under the daemon). Defaults: slew 800 N·m/s, no payload, collision 20 (the daemon passes `robot.yaml`'s 100). Stops cleanly on SIGINT/SIGTERM. |
-| `move_to` | `move_to <robot_ip> --q J1…J7 [--speed-factor 0.2]` or `move_to <robot_ip> --pose x y z qw qx qy qz [--duration 5]` | Blocking. Exit 0 ok, 1 bad CLI, 10 `franka::Exception`, 11 other. |
+| `move_to` | `move_to <robot_ip> --q J1…J7 [--q-max-speed 0.5]` or `move_to <robot_ip> --pose x y z qw qx qy qz [--q-max-speed 0.5]` | Blocking. One pacing knob for both modes; approximate for `--pose`. Exit 0 ok, 1 bad CLI, 5 robot busy, 10 `franka::Exception`, 11 other. |
 | `read_current_q` | `read_current_q <robot_ip>` | Print `q` once. |
 | `read_current_pose` | `read_current_pose <robot_ip> [out.json]` | EE pose as a sidecar for `--base-sidecar`. |
 | `read_load` | `read_load <robot_ip>` | Print `m_ee / m_load / m_total` as configured. |

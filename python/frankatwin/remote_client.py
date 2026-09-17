@@ -227,22 +227,23 @@ class FrankaTwinClient:
     def move_to_q(
         self,
         q_target: np.ndarray,
-        speed_factor: Optional[float] = None,
+        q_max_speed: Optional[float] = None,
     ) -> None:
         q = np.asarray(q_target, dtype=np.float64).reshape(-1)
         if q.shape != (7,):
             raise ValueError(f"q_target must have shape (7,), got {q.shape}")
         payload: Dict[str, Any] = {"op": "move_to_q", "q": q.tolist()}
-        if speed_factor is not None:
-            payload["speed_factor"] = float(speed_factor)
+        if q_max_speed is not None:
+            payload["q_max_speed"] = float(q_max_speed)
         self._call(payload, timeout_s=MOVE_TO_REQ_TIMEOUT_S)
 
     def move_to_pose(
         self,
         target_pos: np.ndarray,
         target_quat: np.ndarray,
-        duration: Optional[float] = None,
+        q_max_speed: Optional[float] = None,
     ) -> None:
+        """`q_max_speed` is approximate here -- see LocalController.move_to_pose."""
         pos = np.asarray(target_pos, dtype=np.float64).reshape(-1)
         quat = np.asarray(target_quat, dtype=np.float64).reshape(-1)
         if pos.shape != (3,):
@@ -254,8 +255,8 @@ class FrankaTwinClient:
             "pos": pos.tolist(),
             "quat": quat.tolist(),
         }
-        if duration is not None:
-            payload["duration"] = float(duration)
+        if q_max_speed is not None:
+            payload["q_max_speed"] = float(q_max_speed)
         self._call(payload, timeout_s=MOVE_TO_REQ_TIMEOUT_S)
 
     # ----------------------------------------------------------------- gripper
