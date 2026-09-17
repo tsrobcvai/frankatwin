@@ -98,6 +98,9 @@ rad. Start them with at least 30 cm of free space around the tool.
 :::
 
 ```bash
+# The reference is anchored at whatever pose the arm starts from, so reset first
+python examples/move_to.py
+
 # Default: ±5 cm along z at 0.5 Hz for 4 s
 python examples/cart_impedance.py
 
