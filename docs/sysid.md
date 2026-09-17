@@ -3,8 +3,11 @@
 FrankaTwin makes IsaacLab's Franka move like *your* real Franka robot under the
 *same* impedance control. It replays real excitation runs in sim with identical
 setpoints, gains and control law, and fits the sim's joint dynamics until the
-trajectories match. What it fits, how, and with which excitations is in
-[SysID details](sysid_details.md); this page is the procedure to run it.
+trajectories match.
+
+This page is the procedure to run it. For what the fit identifies, how the
+optimizer works and how the excitations are designed, see
+[SysID details](sysid_details.md).
 
 ## Workflow
 
