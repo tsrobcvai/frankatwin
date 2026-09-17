@@ -133,9 +133,9 @@ def main() -> int:
 
     args_ref = base.get("args", {})
 
-    # Peak rate diagnostics against robot.yaml's default per-tick position
-    # clamp (error_delta_pos = 0.05 m) and the 0.30 m/s Cartesian speed
-    # convention.
+    # Peak rate diagnostics for the commanded trajectory, reported for
+    # inspection. Nothing caps them; robot.yaml's per-tick position clamp
+    # (error_delta_pos) is what actually bounds the arm at runtime.
     peak_dx = float(np.max(np.abs(dx_des[:, 0])))
     peak_dy = float(np.max(np.abs(dx_des[:, 1])))
     peak_dz = float(np.max(np.abs(dx_des[:, 2])))
@@ -187,38 +187,20 @@ def main() -> int:
     out_sidecar.parent.mkdir(parents=True, exist_ok=True)
     out_sidecar.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
-    # Convention limits: peak Cartesian speed 0.30 m/s, peak angular rate
-    # 0.50 rad/s.  Nothing enforces them at runtime (osc_shm only clamps the
-    # position tracking error), but staying inside the envelope is the
-    # conservative thing to do.
-    CART_DX_PEAK_LIMIT_MPS = 0.30
-    ORI_DOT_PEAK_LIMIT_RPS = 0.50
     peak_ori_combined = float(args.amp_yaw + args.amp_roll) * (1.0 + float(args.high_band_ratio))
 
     print(f"[gen_excitation_traj] wrote {out_csv}")
     print(f"[gen_excitation_traj] wrote {out_sidecar}")
     print(
         f"[gen_excitation_traj] peak |dx_des| [m/s]: x={peak_dx:.4f}, y={peak_dy:.4f}, z={peak_dz:.4f}  "
-        f"(|dx|_max={peak_speed_cart:.4f} m/s, convention {CART_DX_PEAK_LIMIT_MPS:.2f})"
+        f"(|dx|_max={peak_speed_cart:.4f} m/s)"
     )
     print(
         "[gen_excitation_traj] peak rotation rates [rad/s]: "
-        f"dyaw={peak_dyaw:.4f}, droll={peak_droll:.4f} "
-        f"(convention {ORI_DOT_PEAK_LIMIT_RPS:.2f}). "
+        f"dyaw={peak_dyaw:.4f}, droll={peak_droll:.4f}. "
         f"yaw amp={args.amp_yaw:.3f} rad, roll amp={args.amp_roll:.3f} rad. "
         f"q_des max ang-offset from anchor ~ {peak_ori_combined:.3f} rad"
     )
-    if peak_speed_cart > CART_DX_PEAK_LIMIT_MPS:
-        print(
-            f"[gen_excitation_traj] WARNING: peak Cartesian speed {peak_speed_cart:.3f} m/s "
-            f"> convention {CART_DX_PEAK_LIMIT_MPS:.2f} m/s.  Reduce --amp-* or --high-band-ratio."
-        )
-    if max(peak_dyaw, peak_droll) > ORI_DOT_PEAK_LIMIT_RPS:
-        print(
-            f"[gen_excitation_traj] WARNING: peak angular rate {max(peak_dyaw, peak_droll):.3f} rad/s "
-            f"> convention {ORI_DOT_PEAK_LIMIT_RPS:.2f} rad/s.  "
-            "Reduce --amp-yaw/--amp-roll or --high-band-ratio."
-        )
     return 0
 
 

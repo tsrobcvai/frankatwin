@@ -61,12 +61,12 @@ from frankatwin.excitation import (
 )
 from frankatwin.remote_client import FrankaTwinClient
 
-# Safety conventions shared with frankatwin.excitation.{multiband,chirp}.
-# The Python loop runs at lower rate so
-# tracking-error aborts on the NUC are the actual safety net, but we still
-# pre-flight the *target* rates here so a bad CLI doesn't get sent to a robot.
-CART_DX_PEAK_LIMIT_MPS = 0.30
-ORI_DOT_PEAK_LIMIT_RPS = 0.50
+# Peak target rates are reported, not policed. The old 0.30 m/s / 0.50 rad/s
+# pair came from the UR5e pipeline this excitation code was ported from, not
+# from Franka -- libfranka's own ceilings are 3.0 m/s and 2.5 rad/s (see
+# franka/rate_limiting.h) -- and the shipped v3 defaults sat just above the
+# translational one, so the default run warned about itself. The safety net is
+# osc_shm's tracking-error clamp on the NUC.
 
 
 def parse_args() -> argparse.Namespace:
@@ -215,7 +215,11 @@ def _print_peak_rates(
     rot_b: np.ndarray,
     args: argparse.Namespace,
 ) -> dict:
-    """Print and return peak-rate diagnostics; warn if safety conventions exceeded.
+    """Print and return peak-rate diagnostics for the commanded trajectory.
+
+    These are properties of the *reference*: ``dx_des`` is its analytic
+    derivative, so they say how fast the target moves, not how fast the arm
+    does -- under impedance control it lags behind.
 
     ``rot_a`` / ``rot_b`` interpretation depends on mode (see _build_trajectory).
     """
@@ -236,25 +240,13 @@ def _print_peak_rates(
         peak_ang_rate = float(max(peak_drx, peak_dry, peak_drz))
         print(
             f"[cart_impedance] peak |dx_des| [m/s]: x={peak_dx:.4f}, y={peak_dy:.4f}, "
-            f"z={peak_dz:.4f}  (|dx|_max={peak_cart_speed:.4f}, convention {CART_DX_PEAK_LIMIT_MPS:.2f})"
+            f"z={peak_dz:.4f}  (|dx|_max={peak_cart_speed:.4f})"
         )
         print(
             f"[cart_impedance] peak rotation rates [rad/s]: drx={peak_drx:.4f}, "
-            f"dry={peak_dry:.4f}, drz={peak_drz:.4f}  (convention {ORI_DOT_PEAK_LIMIT_RPS:.2f}). "
+            f"dry={peak_dry:.4f}, drz={peak_drz:.4f}. "
             f"max |rot_offset| ~ {peak_ori_offset:.3f} rad"
         )
-        if peak_cart_speed > CART_DX_PEAK_LIMIT_MPS:
-            print(
-                f"[cart_impedance] WARNING: peak Cartesian speed {peak_cart_speed:.3f} > "
-                f"{CART_DX_PEAK_LIMIT_MPS:.2f} m/s convention. Reduce --amp-x/y/z or --f1.",
-                file=sys.stderr,
-            )
-        if peak_ang_rate > ORI_DOT_PEAK_LIMIT_RPS:
-            print(
-                f"[cart_impedance] WARNING: peak angular rate {peak_ang_rate:.3f} > "
-                f"{ORI_DOT_PEAK_LIMIT_RPS:.2f} rad/s convention.",
-                file=sys.stderr,
-            )
         return {
             "cart_speed_m_s": peak_cart_speed,
             "dx_m_s": [peak_dx, peak_dy, peak_dz],
@@ -270,25 +262,13 @@ def _print_peak_rates(
 
     print(
         f"[cart_impedance] peak |dx_des| [m/s]: x={peak_dx:.4f}, y={peak_dy:.4f}, "
-        f"z={peak_dz:.4f}  (|dx|_max={peak_cart_speed:.4f}, convention {CART_DX_PEAK_LIMIT_MPS:.2f})"
+        f"z={peak_dz:.4f}  (|dx|_max={peak_cart_speed:.4f})"
     )
     print(
         f"[cart_impedance] peak rotation rates [rad/s]: dyaw={peak_dyaw:.4f}, "
-        f"droll={peak_droll:.4f}  (convention {ORI_DOT_PEAK_LIMIT_RPS:.2f}). "
+        f"droll={peak_droll:.4f}. "
         f"q_des max ang-offset ~ {peak_ori_offset:.3f} rad"
     )
-    if peak_cart_speed > CART_DX_PEAK_LIMIT_MPS:
-        print(
-            f"[cart_impedance] WARNING: peak Cartesian speed {peak_cart_speed:.3f} > "
-            f"{CART_DX_PEAK_LIMIT_MPS:.2f} m/s convention. Reduce --amp-* or --high-band-ratio.",
-            file=sys.stderr,
-        )
-    if max(peak_dyaw, peak_droll) > ORI_DOT_PEAK_LIMIT_RPS:
-        print(
-            f"[cart_impedance] WARNING: peak angular rate {max(peak_dyaw, peak_droll):.3f} > "
-            f"{ORI_DOT_PEAK_LIMIT_RPS:.2f} rad/s convention.",
-            file=sys.stderr,
-        )
     return {
         "cart_speed_m_s": peak_cart_speed,
         "dx_m_s": [peak_dx, peak_dy, peak_dz],

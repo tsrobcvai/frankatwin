@@ -18,10 +18,8 @@ from pathlib import Path
 import numpy as np
 
 from frankatwin.excitation.chirp import (  # noqa: E402
-    CART_DX_PEAK_LIMIT_MPS,
     CHIRP_F0_DEFAULT,
     CHIRP_F1_DEFAULT,
-    ORI_DOT_PEAK_LIMIT_RPS,
     PHASE_OFFSETS,
     _load_base_sidecar,
     _peak_rates,
@@ -175,27 +173,14 @@ def main() -> int:
     print(
         f"[gen_chirp_traj] peak |dx_des| [m/s]: x={peak['dx_m_s'][0]:.4f}, "
         f"y={peak['dx_m_s'][1]:.4f}, z={peak['dx_m_s'][2]:.4f}  "
-        f"(|dx|_max={peak['cart_speed_m_s']:.4f}, convention {CART_DX_PEAK_LIMIT_MPS:.2f})"
+        f"(|dx|_max={peak['cart_speed_m_s']:.4f})"
     )
     print(
         f"[gen_chirp_traj] peak rotation rates [rad/s]: "
         f"drx={peak['drot_rad_s'][0]:.4f}, dry={peak['drot_rad_s'][1]:.4f}, "
-        f"drz={peak['drot_rad_s'][2]:.4f}  (convention {ORI_DOT_PEAK_LIMIT_RPS:.2f}). "
+        f"drz={peak['drot_rad_s'][2]:.4f}. "
         f"max |rot_offset| ~ {peak_ori_offset:.3f} rad"
     )
-
-    if peak["cart_speed_m_s"] > CART_DX_PEAK_LIMIT_MPS:
-        print(
-            f"[gen_chirp_traj] WARNING: peak Cartesian speed "
-            f"{peak['cart_speed_m_s']:.3f} > {CART_DX_PEAK_LIMIT_MPS:.2f} m/s. "
-            "Reduce --amp-x/y/z or --f1."
-        )
-    peak_ang = peak["ang_rate_rad_s"]
-    if peak_ang > ORI_DOT_PEAK_LIMIT_RPS:
-        print(
-            f"[gen_chirp_traj] WARNING: peak angular rate {peak_ang:.3f} > "
-            f"{ORI_DOT_PEAK_LIMIT_RPS:.2f} rad/s. Reduce --amp-rx/ry/rz or --f1."
-        )
     return 0
 
 

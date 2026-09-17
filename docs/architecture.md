@@ -131,7 +131,9 @@ Ordered from first to last line of defence:
 
 1. **Reference pre-flight** (Python, before anything is sent): the trajectory
    generators and `python examples/cart_impedance.py` print peak `|ẋ|`, `|ω|` and the max
-   orientation offset and warn against the 0.30 m/s / 0.50 rad/s conventions.
+   orientation offset of the commanded trajectory. Reported for inspection
+   only -- nothing caps them; `osc_shm`'s tracking-error clamp is the
+   safety net.
 2. **Error clamp** (`error_delta_pos/rot`, per tick): when > 0, clips the
    position error coordinate-wise *and* aborts the loop if the unclipped
    error exceeds it — bounds the controller's own translational push to

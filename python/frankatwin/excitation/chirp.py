@@ -38,9 +38,8 @@ import numpy as np
 
 # ---------------------------------------------------------------------------
 # Defaults follow the UR5e chirp template (collect_sysid_data.py) but scaled
-# for the Franka task-impedance envelope.  The sidecar peak-rate conventions
-# (peak Cartesian speed <= 0.30 m/s, peak angular rate <= 0.50 rad/s) still
-# apply -- see _print_peak_rates for the runtime warnings.
+# for the Franka task-impedance envelope.  Peak target rates are reported by
+# _peak_rates for inspection; nothing caps them.
 # ---------------------------------------------------------------------------
 
 # Defaults follow UR5e's collect_sysid_data.py *shape* exactly (amplitudes,
@@ -231,7 +230,3 @@ def _peak_rates(t_s: np.ndarray, dx_des: np.ndarray, rot_offsets: np.ndarray) ->
         "drot_rad_s": [peak_drx, peak_dry, peak_drz],
     }
 
-
-# Safety conventions (shared with frankatwin.excitation.multiband).
-CART_DX_PEAK_LIMIT_MPS = 0.30
-ORI_DOT_PEAK_LIMIT_RPS = 0.50
