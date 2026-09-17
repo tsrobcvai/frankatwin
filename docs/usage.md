@@ -47,8 +47,7 @@ named one of two ways:
 - **`--target-joints`** — seven joint angles. libfranka's `MotionGenerator`
   gives each joint a cubic ramp up, a constant-velocity cruise and a cubic ramp
   down, the seven synchronized to finish together, so the end effector sweeps an
-  arc. This is the default mode: with no flag at all the target is home,
-  `robot.init_q`.
+  arc. This is the default mode.
 - **`--target-ee`** — a Cartesian pose. libfranka solves the IK and the end
   effector follows a straight 5th-order path.
 
