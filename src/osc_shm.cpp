@@ -20,8 +20,8 @@
 // Safety semantics preserved:
 //   - Per-tick joint-limit check (Q_MIN / Q_MAX) is WARN-ONLY: an out-of-nominal
 //     joint logs once but no longer aborts (libfranka hard limits still apply).
-//   - Per-tick |e_pos|_inf > error_delta_pos (if set) and ||e_o|| >
-//     error_delta_rot (if set) raise an abort.
+//   - Per-tick |e_pos|_inf > error_delta_pos (if set) raises an abort. The
+//     orientation channel is pure impedance: no clip, no tracking abort.
 //   - SIGINT / SIGTERM: clean stop with zero torque.
 //
 // CLI:
@@ -453,13 +453,12 @@ int main(int argc, char** argv) {
       cmd->kd_pos = 0.0;  // 0 -> auto 2*sqrt(kp)
       cmd->kd_ori = 0.0;
       // Pure impedance to match the (unclipped) sim: 0 disables BOTH the
-      // per-tick error clip (see the `err_dp > 0.0` / `err_dr > 0.0` guards
-      // where f_task is built) AND the tracking-error abort further down. The
-      // remaining safety net is the per-joint TAU_LIMIT clamp, the torque slew
-      // limiter, and libfranka's own collision reflex + hard joint limits.
+      // per-tick error clip (see the `err_dp > 0.0` guard where f_task is
+      // built) AND the tracking-error abort further down. The remaining safety
+      // net is the per-joint TAU_LIMIT clamp, the torque slew limiter, and
+      // libfranka's own collision reflex + hard joint limits.
       // A client may still re-enable clipping at runtime via set_gains.
       cmd->error_delta_pos = 0.0;
-      cmd->error_delta_rot = 0.0;
       cmd->enabled = 1u;
       panda_shm::cmd_write_end(cmd, s);
     }
@@ -525,15 +524,11 @@ int main(int argc, char** argv) {
       const double kd_ori =
           cmd_snap.kd_ori > 0.0 ? cmd_snap.kd_ori : 2.0 * std::sqrt(kp_ori);
       const double err_dp = cmd_snap.error_delta_pos;
-      const double err_dr = cmd_snap.error_delta_rot;
 
       Eigen::Vector3d e_pos = x_des - x;
       Eigen::Vector3d e_ori = shortest_quat_error_vec(q_des, q_cur);
       if (err_dp > 0.0) {
         e_pos = e_pos.cwiseMax(-err_dp).cwiseMin(err_dp);
-      }
-      if (err_dr > 0.0) {
-        e_ori = e_ori.cwiseMax(-err_dr).cwiseMin(err_dr);
       }
 
       Eigen::Matrix<double, 6, 1> f_task;
@@ -648,11 +643,6 @@ int main(int argc, char** argv) {
         abort_code = 1;
         abort_value = (x_des - x).cwiseAbs().maxCoeff();
       }
-      if (abort_code == 0 && err_dr > 0.0 &&
-          shortest_quat_error_vec(q_des, q_cur).norm() > err_dr + 1e-9) {
-        abort_code = 3;
-        abort_value = shortest_quat_error_vec(q_des, q_cur).norm();
-      }
 
       const bool time_up = (args.duration > 0.0 && elapsed >= args.duration);
       ++tick;
@@ -697,9 +687,6 @@ int main(int argc, char** argv) {
     } else if (abort_code == 2) {
       std::cout << "abort    : joint limit (joint=" << (abort_joint + 1)
                 << ", q=" << abort_value << ")" << std::endl;
-    } else if (abort_code == 3) {
-      std::cout << "abort    : orientation tracking exceeded "
-                << "(value=" << abort_value << ")" << std::endl;
     } else {
       std::cout << "abort    : none" << std::endl;
     }

@@ -45,7 +45,7 @@ class _StubController:
 
 SEED = dict(
     kp_pos=200.0, kp_ori=20.0, kd_pos=1.5, kd_ori=0.5,
-    error_delta_pos=0.05, error_delta_rot=0.30, enabled=True,
+    error_delta_pos=0.05, enabled=True,
 )
 SEED_POS = [0.5, 0.0, 0.4]
 SEED_QUAT = [1.0, 0.0, 0.0, 0.0]
@@ -70,13 +70,13 @@ def _read(ctl):
 
 
 def test_set_gains_changes_only_what_it_is_given(ctl):
-    ctl.set_gains(kp_pos=500.0, error_delta_rot=0.80)
+    ctl.set_gains(kp_pos=500.0, error_delta_pos=0.15)
 
     got = _read(ctl)
     assert got["kp_pos"] == 500.0
-    assert got["error_delta_rot"] == 0.80
+    assert got["error_delta_pos"] == 0.15
     # everything else untouched
-    for field in ("kp_ori", "kd_pos", "kd_ori", "error_delta_pos"):
+    for field in ("kp_ori", "kd_pos", "kd_ori"):
         assert got[field] == SEED[field]
     assert got["enabled"] is True
 

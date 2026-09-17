@@ -52,11 +52,10 @@ import numpy as np
 # clamp, and the 50 Hz cart_impedance.py logger is well above Nyquist.  The
 # per-axis spectral *shape* (linear chirp from 0.1 Hz to f1) is preserved.
 #
-# IMPORTANT: With UR5e-amp rotations (0.50 + 0.25 + 0.50 rad), the reference
-# itself reaches max|rot_offset| ~= 0.61 rad.  This is *above* robot.yaml's
-# default error_delta_rot (0.30 rad): run cart_impedance.py with
-# --err-delta-rot 0.80 (and --err-delta-pos 0.15, see README) or osc_shm's
-# tracking clamp will abort the run.
+# NOTE: With UR5e-amp rotations (0.50 + 0.25 + 0.50 rad), the reference itself
+# reaches max|rot_offset| ~= 0.61 rad.  The orientation channel is pure
+# impedance -- no clamp, no tracking abort -- so nothing aborts on that; the
+# arm simply lags the reference by however much the gains allow.
 CHIRP_F0_DEFAULT = 0.1
 CHIRP_F1_DEFAULT = 0.7
 # Per-axis phase offsets (6 axes, 6 evenly spaced offsets k * pi/3).
@@ -236,4 +235,3 @@ def _peak_rates(t_s: np.ndarray, dx_des: np.ndarray, rot_offsets: np.ndarray) ->
 # Safety conventions (shared with frankatwin.excitation.multiband).
 CART_DX_PEAK_LIMIT_MPS = 0.30
 ORI_DOT_PEAK_LIMIT_RPS = 0.50
-ORI_TRACK_ABORT_RAD = 0.30

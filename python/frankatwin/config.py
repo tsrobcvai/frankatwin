@@ -58,7 +58,6 @@ class ControlConfig:
     kd_pos: Optional[float]
     kd_ori: Optional[float]
     error_delta_pos: float
-    error_delta_rot: float
 
     @property
     def kd_pos_effective(self) -> float:
@@ -217,7 +216,6 @@ def load_config(path: Optional[os.PathLike] = None) -> RobotConfig:
             kd_pos=None if ctrl.get("kd_pos") is None else float(ctrl["kd_pos"]),
             kd_ori=None if ctrl.get("kd_ori") is None else float(ctrl["kd_ori"]),
             error_delta_pos=float(ctrl.get("error_delta_pos", 0.05)),
-            error_delta_rot=float(ctrl.get("error_delta_rot", 0.30)),
         )
 
         p = raw.get("paths", {}) or {}

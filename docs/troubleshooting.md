@@ -128,9 +128,9 @@ and `|q̇|∞ < 0.05 rad/s` (1 s cap). Don't `kill -9` the controller.
 
 Your reference moves faster than the impedance can follow at the current `kp`.
 Either raise `kp`, lower the reference speed, or loosen the clamp
-(`--err-delta-pos/--err-delta-rot` on `python examples/cart_impedance.py`, or `set_gains`). The
-chirp defaults need `0.15 m / 0.80 rad` because the reference itself reaches
-0.61 rad of orientation offset.
+(`--err-delta-pos` on `python examples/cart_impedance.py`, or `set_gains`). The
+chirp defaults need `0.15 m`. Only position can trigger this abort: the
+orientation channel is pure impedance, so a large `|e_ori|` never stops a run.
 
 ### Arm is softer than expected after a reset
 

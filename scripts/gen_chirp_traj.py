@@ -22,7 +22,6 @@ from frankatwin.excitation.chirp import (  # noqa: E402
     CHIRP_F0_DEFAULT,
     CHIRP_F1_DEFAULT,
     ORI_DOT_PEAK_LIMIT_RPS,
-    ORI_TRACK_ABORT_RAD,
     PHASE_OFFSETS,
     _load_base_sidecar,
     _peak_rates,
@@ -182,8 +181,7 @@ def main() -> int:
         f"[gen_chirp_traj] peak rotation rates [rad/s]: "
         f"drx={peak['drot_rad_s'][0]:.4f}, dry={peak['drot_rad_s'][1]:.4f}, "
         f"drz={peak['drot_rad_s'][2]:.4f}  (convention {ORI_DOT_PEAK_LIMIT_RPS:.2f}). "
-        f"max |rot_offset| ~ {peak_ori_offset:.3f} rad "
-        f"(runtime abort {ORI_TRACK_ABORT_RAD:.2f})"
+        f"max |rot_offset| ~ {peak_ori_offset:.3f} rad"
     )
 
     if peak["cart_speed_m_s"] > CART_DX_PEAK_LIMIT_MPS:
@@ -197,12 +195,6 @@ def main() -> int:
         print(
             f"[gen_chirp_traj] WARNING: peak angular rate {peak_ang:.3f} > "
             f"{ORI_DOT_PEAK_LIMIT_RPS:.2f} rad/s. Reduce --amp-rx/ry/rz or --f1."
-        )
-    if peak_ori_offset > 0.8 * ORI_TRACK_ABORT_RAD:
-        print(
-            f"[gen_chirp_traj] WARNING: max |rot_offset| = {peak_ori_offset:.3f} rad "
-            f"is > 80% of the {ORI_TRACK_ABORT_RAD:.2f} rad runtime abort. "
-            "If the controller lags, q_err can trip the abort."
         )
     return 0
 

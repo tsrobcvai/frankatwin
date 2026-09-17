@@ -126,10 +126,9 @@ python examples/cart_impedance.py
 # Run the multiband trajectory
 python examples/cart_impedance.py --mode multiband
 
-# Sysid chirp with the gains and error clamps it needs, logged to CSV
+# Sysid chirp with the gains and clamp it needs, logged to CSV
 python examples/cart_impedance.py --mode chirp \
-    --kp-pos 500 --kp-ori 30 \
-    --err-delta-pos 0.15 --err-delta-rot 0.80 \
+    --kp-pos 500 --kp-ori 30 --err-delta-pos 0.15 \
     --log data/run.csv
 ```
 
@@ -137,7 +136,7 @@ python examples/cart_impedance.py --mode chirp \
 |---|---|
 | `--mode` | `sine` [default]{.badge-default}, `multiband` or `chirp` |
 | `--kp-pos`, `--kp-ori` | impedance gains; default from `robot.yaml` |
-| `--err-delta-pos`, `--err-delta-rot` | error clamps [m] / [rad]; `chirp` needs `0.15` / `0.80` |
+| `--err-delta-pos` | position error clamp [m]; `chirp` needs `0.15`. Orientation has no clamp |
 | `--log run.csv` | save a per-tick CSV and JSON sidecar ([format](data_format.md)) |
 | `--dry-run` | build the reference and print peak rates, no robot |
 
@@ -172,7 +171,7 @@ python examples/policy_loop.py --hz 20 --pos-scale 0.0025 --no-reset
 |---|---|
 | `--hz`, `--duration` | policy rate [Hz] (10) and run time [s] (16) |
 | `--pos-scale`, `--rot-scale` | action → Δpos [m/step] (0.005) and Δrot [rad/step] (0.02) |
-| `--kp-pos`, `--kp-ori`, `--err-delta-pos`, `--err-delta-rot` | impedance gains (500 / 30) and clamps (0.15 / 0.80) |
+| `--kp-pos`, `--kp-ori`, `--err-delta-pos` | impedance gains (500 / 30) and position clamp (0.15) |
 | `--no-reset` | skip the initial `move_to` home |
 
 The whole loop:
@@ -186,7 +185,7 @@ def demo_policy(t, obs):                      # stand-in for a network; 6-D acti
 with FrankaTwinClient(cfg) as robot:
     robot.move_to_q(cfg.robot.init_q)                         # 1. position control: reset to home
     robot.set_gains(kp_pos=500, kp_ori=30,                    # 2. impedance gains (Kd = 2*sqrt(Kp));
-                    error_delta_pos=0.15, error_delta_rot=0.80)   #    clamp > one step, so it never engages
+                    error_delta_pos=0.15)                     #    clamp > one step, so it never engages
     s = robot.wait_for_state()
     t0 = time.monotonic()
     for k in range(int(16 * 10)):                             # 3. 16 s at 10 Hz

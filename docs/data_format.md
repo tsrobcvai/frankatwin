@@ -41,7 +41,7 @@ row *k+1*.
   "q_init": [7], "x_anchor": [3], "q_anchor_xyzw": [4],
   "args": {"kp_pos": 500, "kp_ori": 30, "kd_pos": 44.7, "kd_ori": 10.95,
            "duration": 8.0, "rate": 50.0, "mode": "chirp",
-           "err_delta_pos_override": 0.15, "err_delta_rot_override": 0.80,
+           "err_delta_pos_override": 0.15,
            "f0_hz": 0.1, "f1_hz": 0.7, "ramp_up_s": 2.0, "ramp_down_s": 3.0},
   "abort":   {"code": 0, "name": "none", "value": 0.0, "time_s": 0.0},
   "summary": {"ticks": 400,

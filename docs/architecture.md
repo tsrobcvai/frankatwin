@@ -43,7 +43,7 @@ Per 1 kHz tick, with `x`, `q_cur` from `model.pose(kEndEffector)` and
 
 ```
 e_p  = x_des − x                         (clipped to ±error_delta_pos if > 0)
-e_o  = 2 · vec(q_des ⊗ q_cur⁻¹)          shortest-path sign, clipped to ±error_delta_rot if > 0
+e_o  = 2 · vec(q_des ⊗ q_cur⁻¹)          shortest-path sign, never clipped (pure impedance)
 v, ω = J q̇
 
 F    = [ Kp_pos e_p − Kd_pos v ;  Kp_ori e_o − Kd_ori ω ]
@@ -77,8 +77,8 @@ pinned by `tests/test_shm_layout.py` (compiles the header with `g++`, dumps
 
 ```
 ShmHeader     32 B   magic 'PAND', version 3, state_frames 1024, controller_pid, state_head
-ShmCommand   120 B   seq, target_pos[3], target_quat[4] (wxyz), kp_pos, kp_ori, kd_pos, kd_ori,
-                     error_delta_pos, error_delta_rot, enabled
+ShmCommand   112 B   seq, target_pos[3], target_quat[4] (wxyz), kp_pos, kp_ori, kd_pos, kd_ori,
+                     error_delta_pos, enabled
 ShmStateFrame 384 B  seq, timestamp_s, q[7], dq[7], ee_pos[3], ee_quat[4] (wxyz), tau[7],
                      ee_linvel[3], ee_angvel[3], tau_J[7]           × 1024 ring buffer
 ```
@@ -133,13 +133,14 @@ Ordered from first to last line of defence:
    generators and `python examples/cart_impedance.py` print peak `|ẋ|`, `|ω|` and the max
    orientation offset and warn against the 0.30 m/s / 0.50 rad/s conventions.
 2. **Error clamp** (`error_delta_pos/rot`, per tick): when > 0, clips the
-   position/orientation error coordinate-wise *and* aborts the loop if the
-   unclipped error exceeds it — bounds the controller's own push to
-   `Kp · error_delta` (≈ 25 N at `kp_pos=500`, `0.05 m`). `robot.yaml` sets
-   0.05 m / 0.30 rad as the daemon's initial values; `0` disables both (pure
-   impedance, what the sim does). Override at runtime with
-   `set_gains(error_delta_pos=…, error_delta_rot=…)` or
-   `python examples/cart_impedance.py --err-delta-pos/--err-delta-rot`.
+   position error coordinate-wise *and* aborts the loop if the unclipped
+   error exceeds it — bounds the controller's own translational push to
+   `Kp_pos · error_delta_pos` (≈ 25 N at `kp_pos=500`, `0.05 m`). `robot.yaml`
+   sets 0.05 m as the daemon's initial value; `0` disables both (pure
+   impedance, what the sim does). The orientation channel has no clamp and no
+   tracking abort at all. Override at runtime with
+   `set_gains(error_delta_pos=…)` or
+   `python examples/cart_impedance.py --err-delta-pos`.
 3. **Torque clamp** `τ_max` per joint.
 4. **Torque slew limiter** 800 N·m/s per joint (libfranka's own limit is
    1000). The Jᵀ law emits a torque *step* whenever its input jumps — a new

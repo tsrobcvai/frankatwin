@@ -52,7 +52,6 @@ def main() -> int:
     p.add_argument("--kp-ori", type=float, default=30.0)
     p.add_argument("--err-delta-pos", type=float, default=0.15,
                    help="osc_shm error clamp [m]; keep it > one step so it never engages (the sim has no clip)")
-    p.add_argument("--err-delta-rot", type=float, default=0.80)
     p.add_argument("--no-reset", action="store_true", help="skip the initial move_to home")
     p.add_argument("--config", type=str, default=None, help="path to robot.yaml")
     args = p.parse_args()
@@ -63,7 +62,7 @@ def main() -> int:
         if not args.no_reset:
             robot.move_to_q(cfg.robot.init_q)                       # position control: blocking reset
         robot.set_gains(kp_pos=args.kp_pos, kp_ori=args.kp_ori,     # impedance gains, Kd = 2*sqrt(Kp)
-                        error_delta_pos=args.err_delta_pos, error_delta_rot=args.err_delta_rot)
+                        error_delta_pos=args.err_delta_pos)
         s = robot.wait_for_state()
         print(f"[policy_loop] {args.hz:g} Hz for {args.duration:g} s; start ee_pos = {np.round(s.ee_pos, 4).tolist()}")
 

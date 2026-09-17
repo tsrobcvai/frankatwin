@@ -14,7 +14,7 @@ once at start — restart it after edits.
 | `robot.init_q` | Franka home | `examples/move_to.py` default (home) target, 7 floats [rad]. |
 | `control.kp_pos` / `kp_ori` | 200 N/m / 20 N·m/rad | Initial gains the daemon writes at startup; runtime override via `set_gains` (persists across restarts). Also the defaults of `cart_impedance.py --kp-*`. |
 | `control.kd_pos` / `kd_ori` | `null` | `null` → `2√kp` (`osc_shm`'s auto rule). |
-| `control.error_delta_pos` / `error_delta_rot` | 0.05 m / 0.30 rad | Initial per-tick error clamp + abort. `0` → pure impedance (as in sim). Runtime override via `set_gains(error_delta_*)` or `python examples/cart_impedance.py --err-delta-*`. |
+| `control.error_delta_pos` | 0.05 m | Initial per-tick position error clamp + abort. `0` → pure impedance (as in sim). The orientation channel is always pure impedance: no clamp, no abort. Runtime override via `set_gains(error_delta_pos=)` or `python examples/cart_impedance.py --err-delta-pos`. |
 | `collision.torque_threshold` / `cartesian_threshold` | 100 N·m / 100 N | `setCollisionBehavior` thresholds (all entries). |
 | `paths.build_dir` | `build` | Where `osc_shm` / `move_to` live (relative to repo root). |
 | `paths.shm_name` | `/frankatwin_osc` | POSIX shm name. |

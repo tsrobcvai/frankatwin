@@ -60,14 +60,13 @@ COMMAND_DTYPE = np.dtype(
         ("kd_pos", np.float64),
         ("kd_ori", np.float64),
         ("error_delta_pos", np.float64),
-        ("error_delta_rot", np.float64),
         ("enabled", np.uint32),
         ("reserved0", np.uint32),
     ],
     align=True,
 )
-assert COMMAND_DTYPE.itemsize == 120, (
-    f"COMMAND_DTYPE size {COMMAND_DTYPE.itemsize} != 120"
+assert COMMAND_DTYPE.itemsize == 112, (
+    f"COMMAND_DTYPE size {COMMAND_DTYPE.itemsize} != 112"
 )
 
 STATE_FRAME_DTYPE = np.dtype(
@@ -99,7 +98,7 @@ SHM_TOTAL_BYTES = (
     + COMMAND_DTYPE.itemsize
     + STATE_FRAME_DTYPE.itemsize * FRANKATWIN_SHM_STATE_FRAMES
 )
-assert SHM_TOTAL_BYTES == 32 + 120 + 1024 * 384
+assert SHM_TOTAL_BYTES == 32 + 112 + 1024 * 384
 
 # Offset of each region within the shm buffer.
 OFFSET_HEADER = 0
@@ -176,7 +175,6 @@ class ShmView:
         kd_pos: float,
         kd_ori: float,
         error_delta_pos: float,
-        error_delta_rot: float,
         enabled: bool,
     ) -> None:
         """Atomically publish a new command. Uses the seqlock protocol.
@@ -200,7 +198,6 @@ class ShmView:
         c["kd_pos"][0] = kd_pos
         c["kd_ori"][0] = kd_ori
         c["error_delta_pos"][0] = error_delta_pos
-        c["error_delta_rot"][0] = error_delta_rot
         c["enabled"][0] = np.uint32(1 if enabled else 0)
 
         _atomic_store_u64(self.raw, seq_offset, odd + 1)

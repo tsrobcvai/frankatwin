@@ -73,7 +73,7 @@ _OSC_READY_STATE_HEAD_ADVANCE = 5
 # The first start (zeroed segment) falls back to robot.yaml's `control:` block.
 _GAIN_FIELDS = (
     "kp_pos", "kp_ori", "kd_pos", "kd_ori",
-    "error_delta_pos", "error_delta_rot", "enabled",
+    "error_delta_pos", "enabled",
 )
 
 
@@ -85,7 +85,6 @@ def gains_from_config(ctrl: ControlConfig) -> Dict[str, float]:
         "kd_pos": 0.0 if ctrl.kd_pos is None else float(ctrl.kd_pos),
         "kd_ori": 0.0 if ctrl.kd_ori is None else float(ctrl.kd_ori),
         "error_delta_pos": float(ctrl.error_delta_pos),
-        "error_delta_rot": float(ctrl.error_delta_rot),
         "enabled": True,
     }
 
@@ -119,7 +118,6 @@ def restore_gains(view: ShmView, gains: Dict[str, float]) -> None:
         kd_pos=float(gains["kd_pos"]),
         kd_ori=float(gains["kd_ori"]),
         error_delta_pos=float(gains["error_delta_pos"]),
-        error_delta_rot=float(gains["error_delta_rot"]),
         enabled=bool(gains["enabled"]),
     )
 
@@ -360,9 +358,9 @@ class LocalController:
                 if self.verbose:
                     logger.info(
                         "osc_shm running; gains restored: kp=%.1f/%.1f "
-                        "err_delta=%.3f/%.3f enabled=%s",
+                        "err_delta_pos=%.3f enabled=%s",
                         self._gains["kp_pos"], self._gains["kp_ori"],
-                        self._gains["error_delta_pos"], self._gains["error_delta_rot"],
+                        self._gains["error_delta_pos"],
                         self._gains["enabled"],
                     )
                 return
@@ -574,7 +572,6 @@ class LocalController:
             kd_pos=float(prev["kd_pos"][0]),
             kd_ori=float(prev["kd_ori"][0]),
             error_delta_pos=float(prev["error_delta_pos"][0]),
-            error_delta_rot=float(prev["error_delta_rot"][0]),
             enabled=bool(prev["enabled"][0]),
         )
 
@@ -585,7 +582,6 @@ class LocalController:
         kd_pos: Optional[float] = None,
         kd_ori: Optional[float] = None,
         error_delta_pos: Optional[float] = None,
-        error_delta_rot: Optional[float] = None,
     ) -> None:
         """Update controller gains. Any None argument keeps the current value."""
         prev = self._view.read_command()
@@ -600,11 +596,6 @@ class LocalController:
                 prev["error_delta_pos"][0]
                 if error_delta_pos is None
                 else error_delta_pos
-            ),
-            error_delta_rot=float(
-                prev["error_delta_rot"][0]
-                if error_delta_rot is None
-                else error_delta_rot
             ),
             enabled=bool(prev["enabled"][0]),
         )
@@ -625,7 +616,6 @@ class LocalController:
             kd_pos=float(prev["kd_pos"][0]),
             kd_ori=float(prev["kd_ori"][0]),
             error_delta_pos=float(prev["error_delta_pos"][0]),
-            error_delta_rot=float(prev["error_delta_rot"][0]),
             enabled=value,
         )
 

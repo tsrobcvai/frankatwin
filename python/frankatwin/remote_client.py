@@ -179,7 +179,6 @@ class FrankaTwinClient:
         kd_pos: Optional[float] = None,
         kd_ori: Optional[float] = None,
         error_delta_pos: Optional[float] = None,
-        error_delta_rot: Optional[float] = None,
     ) -> None:
         payload: Dict[str, Any] = {"op": "set_gains"}
         if kp_pos is not None:
@@ -192,8 +191,6 @@ class FrankaTwinClient:
             payload["kd_ori"] = float(kd_ori)
         if error_delta_pos is not None:
             payload["error_delta_pos"] = float(error_delta_pos)
-        if error_delta_rot is not None:
-            payload["error_delta_rot"] = float(error_delta_rot)
         self._call(payload)
 
     def enable(self) -> None:

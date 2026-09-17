@@ -132,7 +132,7 @@ def _check_common(rep: _Report, cfg_path: pathlib.Path, cfg: Optional[RobotConfi
     rep.add(_Report.OK, "config", str(cfg_path))
     rep.add(_Report.OK, "  network", f"nuc_host={cfg.network.nuc_host} cmd={cfg.network.cmd_port} state={cfg.network.state_port}")
     rep.add(_Report.OK, "  robot", f"ip={cfg.robot.ip}  kp={cfg.control.kp_pos:g}/{cfg.control.kp_ori:g}  "
-            f"err_delta={cfg.control.error_delta_pos:g}/{cfg.control.error_delta_rot:g}")
+            f"err_delta_pos={cfg.control.error_delta_pos:g}")
 
 
 def _check_nuc(rep: _Report, cfg: RobotConfig) -> None:

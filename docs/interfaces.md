@@ -61,7 +61,7 @@ NUC (no ZMQ); scripts written against one run against the other.
 | method | blocking | effect |
 |---|---|---|
 | `set_ee_target(pos[3], quat[4])` | no | New impedance setpoint (base frame, wxyz). Held until the next call. |
-| `set_gains(kp_pos=, kp_ori=, kd_pos=, kd_ori=, error_delta_pos=, error_delta_rot=)` | no | Any argument left `None` keeps its value. `kd_* = 0` → `2√kp`. `error_delta_* = 0` disables clamp + abort. Persists across controller restarts. |
+| `set_gains(kp_pos=, kp_ori=, kd_pos=, kd_ori=, error_delta_pos=)` | no | Any argument left `None` keeps its value. `kd_* = 0` → `2√kp`. `error_delta_pos = 0` disables the position clamp + abort; orientation is always unclamped. Persists across controller restarts. |
 | `enable()` / `disable()` | no | `disable` zeroes the impedance torque (gravity compensation stays); the slew limiter ramps it. |
 | `get_state(*, fresh=False)` → `RobotState \| None` | no (`fresh=True`: one round-trip) | Newest frame of the 100 Hz stream. |
 | `get_state_history()` → `list[RobotState]` | no | Up to `network.state_cache` (256) recent frames. |
@@ -119,7 +119,7 @@ Request `{"op": "<name>", ...}`; reply `{"ok": true, ...}` or
 |---|---|---|---|
 | `ping` | — | `pid` (osc_shm pid, `0` = controller not running) | no |
 | `set_ee_target` | `pos: [x, y, z]`, `quat: [w, x, y, z]` | — | no |
-| `set_gains` | any of `kp_pos`, `kp_ori`, `kd_pos`, `kd_ori`, `error_delta_pos`, `error_delta_rot` | — | no |
+| `set_gains` | any of `kp_pos`, `kp_ori`, `kd_pos`, `kd_ori`, `error_delta_pos` | — | no |
 | `enable` / `disable` | — | — | no |
 | `get_state` | — | `state`: object (fields as below) or `null` | no |
 | `move_to_q` | `q: [7]`, optional `q_max_speed` | — | yes |
@@ -171,7 +171,7 @@ directly — that is how `LocalController` works.
 | region | size | writer → reader | protocol |
 |---|---|---|---|
 | `ShmHeader` | 32 B | both | `magic`, `version` (3), `state_frames` (1024), `controller_pid`, `state_head` (atomic 64-bit) |
-| `ShmCommand` | 120 B | client → `osc_shm` | **seqlock**: writer bumps `seq` to odd, writes, bumps to even; reader retries while `seq` is odd or changed. Fields: `target_pos[3]`, `target_quat[4]` wxyz, `kp_pos`, `kp_ori`, `kd_pos`, `kd_ori`, `error_delta_pos`, `error_delta_rot`, `enabled` |
+| `ShmCommand` | 112 B | client → `osc_shm` | **seqlock**: writer bumps `seq` to odd, writes, bumps to even; reader retries while `seq` is odd or changed. Fields: `target_pos[3]`, `target_quat[4]` wxyz, `kp_pos`, `kp_ori`, `kd_pos`, `kd_ori`, `error_delta_pos`, `enabled` |
 | `ShmStateFrame[1024]` | 384 B each | `osc_shm` → client | **SPSC ring** indexed by `state_head`; frame `seq` validates a read. Fields: `seq`, `timestamp_s`, `q[7]`, `dq[7]`, `ee_pos[3]`, `ee_quat[4]`, `tau[7]`, `ee_linvel[3]`, `ee_angvel[3]`, `tau_J[7]` |
 
 Total 393 368 B. The layout is an ABI: `src/shm_layout.h` (C, with

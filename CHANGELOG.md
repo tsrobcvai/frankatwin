@@ -39,6 +39,20 @@ All notable changes to this project are documented here. The format follows
   the report people already paste when something is off.
 
 ### Changed
+- **Breaking.** The orientation channel is pure impedance: `error_delta_rot` is
+  gone everywhere — the per-tick `|e_ori|` clip and the orientation
+  tracking-error abort in `osc_shm`, the `ShmCommand` field (the struct is now
+  **112 B**, `enabled` at offset 104), the `set_gains(error_delta_rot=)`
+  argument on `LocalController` / `FrankaTwinClient` and its daemon wire field,
+  `robot.yaml`'s `control.error_delta_rot`, `--err-delta-rot` on
+  `examples/cart_impedance.py` and `examples/policy_loop.py`, and the
+  `ORI_TRACK_ABORT_RAD` pre-flight warnings in the excitation scripts. Position
+  keeps its clamp and abort (`error_delta_pos`). Rebuild and restart the daemon:
+  an old binary and a new one disagree on the command-block layout. The
+  remaining orientation safety net is the per-joint torque clamp, the slew
+  limiter, and libfranka's collision reflex and hard limits — with no cap on
+  `Kp_ori · e_ori`, consider lowering `collision.torque_threshold` (100 N·m was
+  chosen on the assumption that the controller's own push was bounded).
 - **Breaking.** One pacing knob for both `move_to` modes: `--q-max-speed`, a
   per-joint velocity cap in rad/s, range (0, 1.25], default 0.5. It replaces
   `--speed-factor` and `--duration` on the binary, `speed_factor=` / `duration=`

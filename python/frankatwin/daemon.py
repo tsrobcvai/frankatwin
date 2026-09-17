@@ -231,7 +231,6 @@ class FrankaTwinDaemon:
             kd_pos=req.get("kd_pos"),
             kd_ori=req.get("kd_ori"),
             error_delta_pos=req.get("error_delta_pos"),
-            error_delta_rot=req.get("error_delta_rot"),
         )
 
     def _op_enable(self, _req: Dict[str, Any]) -> None:

@@ -58,7 +58,7 @@ struct ShmHeader {
 };
 
 // ---------------------------------------------------------------------------
-// Command (Python -> C++). Size: 120 B.
+// Command (Python -> C++). Size: 112 B.
 // ---------------------------------------------------------------------------
 // Seqlock convention:
 //   seq even  => stable, payload valid
@@ -83,7 +83,6 @@ struct ShmCommand {
   double   kd_pos;              // translational damping (Ns/m); 0 = auto 2*sqrt(kp_pos)
   double   kd_ori;              // rotational damping  (Nms/rad); 0 = auto 2*sqrt(kp_ori)
   double   error_delta_pos;     // clip |pose_error_pos| coordinate-wise (m); 0 disables
-  double   error_delta_rot;     // clip |pose_error_rot| coordinate-wise (rad); 0 disables
   uint32_t enabled;             // 0 = output zero command torque (hold), 1 = active
   uint32_t reserved0;           // pad
 };
@@ -110,7 +109,7 @@ struct ShmStateFrame {
 };
 
 // ---------------------------------------------------------------------------
-// Top-level layout. Size: 32 + 120 + 1024 * 384 = 393368 B (384.15 KiB).
+// Top-level layout. Size: 32 + 112 + 1024 * 384 = 393360 B (384.14 KiB).
 // ---------------------------------------------------------------------------
 struct ShmSegment {
   ShmHeader     header;
@@ -124,9 +123,9 @@ struct ShmSegment {
 // ---------------------------------------------------------------------------
 #ifdef __cplusplus
 static_assert(sizeof(ShmHeader) == 32, "ShmHeader size drift");
-static_assert(sizeof(ShmCommand) == 120, "ShmCommand size drift");
+static_assert(sizeof(ShmCommand) == 112, "ShmCommand size drift");
 static_assert(sizeof(ShmStateFrame) == 384, "ShmStateFrame size drift");
-static_assert(sizeof(ShmSegment) == 32 + 120 + 1024 * 384, "ShmSegment size drift");
+static_assert(sizeof(ShmSegment) == 32 + 112 + 1024 * 384, "ShmSegment size drift");
 static_assert(offsetof(ShmHeader, controller_pid) == 16, "header.controller_pid offset drift");
 static_assert(offsetof(ShmHeader, state_head) == 24, "header.state_head offset drift");
 static_assert(offsetof(ShmCommand, target_pos) == 8, "command.target_pos offset drift");
@@ -136,8 +135,7 @@ static_assert(offsetof(ShmCommand, kp_ori) == 72, "command.kp_ori offset drift")
 static_assert(offsetof(ShmCommand, kd_pos) == 80, "command.kd_pos offset drift");
 static_assert(offsetof(ShmCommand, kd_ori) == 88, "command.kd_ori offset drift");
 static_assert(offsetof(ShmCommand, error_delta_pos) == 96, "command.error_delta_pos offset drift");
-static_assert(offsetof(ShmCommand, error_delta_rot) == 104, "command.error_delta_rot offset drift");
-static_assert(offsetof(ShmCommand, enabled) == 112, "command.enabled offset drift");
+static_assert(offsetof(ShmCommand, enabled) == 104, "command.enabled offset drift");
 static_assert(offsetof(ShmStateFrame, q) == 16, "state.q offset drift");
 static_assert(offsetof(ShmStateFrame, dq) == 72, "state.dq offset drift");
 static_assert(offsetof(ShmStateFrame, ee_pos) == 128, "state.ee_pos offset drift");

@@ -82,10 +82,10 @@ def _np_offset(dtype, field: str) -> int:
 def test_sizes(cpp_offsets):
     sizes, _ = cpp_offsets
     assert sizes["ShmHeader"] == HEADER_DTYPE.itemsize == 32
-    assert sizes["ShmCommand"] == COMMAND_DTYPE.itemsize == 120
+    assert sizes["ShmCommand"] == COMMAND_DTYPE.itemsize == 112
     assert sizes["ShmStateFrame"] == STATE_FRAME_DTYPE.itemsize == 384
     assert sizes["ShmSegment"] == SHM_TOTAL_BYTES
-    assert SHM_TOTAL_BYTES == 32 + 120 + 1024 * 384
+    assert SHM_TOTAL_BYTES == 32 + 112 + 1024 * 384
     assert FRANKATWIN_SHM_STATE_FRAMES == 1024
 
 
@@ -109,8 +109,7 @@ def test_command_offsets(cpp_offsets):
         ("kd_pos", 80),
         ("kd_ori", 88),
         ("error_delta_pos", 96),
-        ("error_delta_rot", 104),
-        ("enabled", 112),
+        ("enabled", 104),
     ]
     for field, expected in pairs:
         cpp = off[f"ShmCommand.{field}"]

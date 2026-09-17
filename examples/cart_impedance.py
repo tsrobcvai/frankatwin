@@ -67,7 +67,6 @@ from frankatwin.remote_client import FrankaTwinClient
 # pre-flight the *target* rates here so a bad CLI doesn't get sent to a robot.
 CART_DX_PEAK_LIMIT_MPS = 0.30
 ORI_DOT_PEAK_LIMIT_RPS = 0.50
-ORI_TRACK_ABORT_RAD = 0.30
 
 
 def parse_args() -> argparse.Namespace:
@@ -83,15 +82,14 @@ def parse_args() -> argparse.Namespace:
                    help="Cartesian position stiffness (default: from robot.yaml).")
     p.add_argument("--kp-ori", type=float, default=None,
                    help="Cartesian orientation stiffness (default: from robot.yaml).")
-    # osc_shm per-tick safety clamps.  Default None -> daemon keeps its
-    # current value (which comes from robot.yaml at daemon startup).  Pass
-    # explicitly to relax the clamps for aggressive trajectories (e.g. chirp
-    # mode at full UR5e amps): the controller will then run despite large
-    # tracking error instead of latching its tau output to zero.
+    # osc_shm per-tick position safety clamp.  Default None -> daemon keeps
+    # its current value (which comes from robot.yaml at daemon startup).  Pass
+    # explicitly to relax it for aggressive trajectories (e.g. chirp mode at
+    # full UR5e amps): the controller will then run despite large tracking
+    # error instead of latching its tau output to zero.  The orientation
+    # channel is pure impedance and has no clamp to relax.
     p.add_argument("--err-delta-pos", type=float, default=None,
                    help="Override osc_shm |e_pos|_inf abort threshold [m] (default: keep daemon value, typically 0.05).")
-    p.add_argument("--err-delta-rot", type=float, default=None,
-                   help="Override osc_shm |e_ori| abort threshold [rad] (default: keep daemon value, typically 0.30).")
 
     # sine-mode parameters
     p.add_argument("--amp", type=float, default=0.05,
@@ -243,7 +241,7 @@ def _print_peak_rates(
         print(
             f"[cart_impedance] peak rotation rates [rad/s]: drx={peak_drx:.4f}, "
             f"dry={peak_dry:.4f}, drz={peak_drz:.4f}  (convention {ORI_DOT_PEAK_LIMIT_RPS:.2f}). "
-            f"max |rot_offset| ~ {peak_ori_offset:.3f} rad (abort {ORI_TRACK_ABORT_RAD:.2f})"
+            f"max |rot_offset| ~ {peak_ori_offset:.3f} rad"
         )
         if peak_cart_speed > CART_DX_PEAK_LIMIT_MPS:
             print(
@@ -255,12 +253,6 @@ def _print_peak_rates(
             print(
                 f"[cart_impedance] WARNING: peak angular rate {peak_ang_rate:.3f} > "
                 f"{ORI_DOT_PEAK_LIMIT_RPS:.2f} rad/s convention.",
-                file=sys.stderr,
-            )
-        if peak_ori_offset > 0.8 * ORI_TRACK_ABORT_RAD:
-            print(
-                f"[cart_impedance] WARNING: max |rot_offset| = {peak_ori_offset:.3f} rad "
-                f"is > 80% of {ORI_TRACK_ABORT_RAD:.2f} rad runtime abort.",
                 file=sys.stderr,
             )
         return {
@@ -283,8 +275,7 @@ def _print_peak_rates(
     print(
         f"[cart_impedance] peak rotation rates [rad/s]: dyaw={peak_dyaw:.4f}, "
         f"droll={peak_droll:.4f}  (convention {ORI_DOT_PEAK_LIMIT_RPS:.2f}). "
-        f"q_des max ang-offset ~ {peak_ori_offset:.3f} rad "
-        f"(abort {ORI_TRACK_ABORT_RAD:.2f})"
+        f"q_des max ang-offset ~ {peak_ori_offset:.3f} rad"
     )
     if peak_cart_speed > CART_DX_PEAK_LIMIT_MPS:
         print(
@@ -296,12 +287,6 @@ def _print_peak_rates(
         print(
             f"[cart_impedance] WARNING: peak angular rate {max(peak_dyaw, peak_droll):.3f} > "
             f"{ORI_DOT_PEAK_LIMIT_RPS:.2f} rad/s convention.",
-            file=sys.stderr,
-        )
-    if peak_ori_offset > 0.8 * ORI_TRACK_ABORT_RAD:
-        print(
-            f"[cart_impedance] WARNING: amp_yaw + amp_roll = {peak_ori_offset:.3f} rad is > 80% "
-            f"of {ORI_TRACK_ABORT_RAD:.2f} rad runtime abort.",
             file=sys.stderr,
         )
     return {
@@ -423,7 +408,6 @@ def _write_sidecar(
             "rate": float(args.rate),
             "mode": args.mode,
             "err_delta_pos_override": args.err_delta_pos,
-            "err_delta_rot_override": args.err_delta_rot,
             **({"f0_hz": float(args.f0), "f1_hz": float(args.f1),
                 "ramp_up_s": float(args.ramp_up), "ramp_down_s": float(args.ramp_down)}
                 if args.mode == "chirp" else {}),
@@ -516,12 +500,11 @@ def main() -> int:
             kp_pos=kp_pos,
             kp_ori=kp_ori,
             error_delta_pos=args.err_delta_pos,
-            error_delta_rot=args.err_delta_rot,
         )
-        if args.err_delta_pos is not None or args.err_delta_rot is not None:
+        if args.err_delta_pos is not None:
             print(
-                f"[cart_impedance] osc_shm clamps overridden: "
-                f"err_delta_pos={args.err_delta_pos}, err_delta_rot={args.err_delta_rot}"
+                f"[cart_impedance] osc_shm clamp overridden: "
+                f"err_delta_pos={args.err_delta_pos}"
             )
         state = robot.wait_for_state(timeout_s=3.0)
         q_init = state.q.copy()

@@ -36,12 +36,11 @@ control:
   kd_ori: null       # null -> 2 * sqrt(kp_ori)
   # Per-tick error clamp in osc_shm: when > 0, |e_pos|_inf is clipped to
   # error_delta_pos (bounding the push to kp * error_delta) and an error beyond
-  # it aborts the loop; same for ||e_o|| / error_delta_rot. 0 disables both
-  # (pure impedance, matching the sim). Runtime override via
-  # robot.set_gains(error_delta_pos=..., error_delta_rot=...) or
-  # python examples/cart_impedance.py --err-delta-pos / --err-delta-rot.
+  # it aborts the loop. 0 disables both (pure impedance, matching the sim).
+  # The orientation channel has no clamp and no tracking abort at all.
+  # Runtime override via robot.set_gains(error_delta_pos=...) or
+  # python examples/cart_impedance.py --err-delta-pos.
   error_delta_pos: 0.05    # m
-  error_delta_rot: 0.30    # rad
 
 # libfranka collision-reflex thresholds (passed to setCollisionBehavior at
 # osc_shm startup; daemon restart applies a change, no rebuild needed once the

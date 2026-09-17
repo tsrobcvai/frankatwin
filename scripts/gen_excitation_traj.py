@@ -133,9 +133,9 @@ def main() -> int:
 
     args_ref = base.get("args", {})
 
-    # Peak rate diagnostics against robot.yaml's default per-tick tracking
-    # clamps (error_delta_pos = 0.05 m, error_delta_rot = 0.30 rad) and the
-    # 0.30 m/s Cartesian speed convention.
+    # Peak rate diagnostics against robot.yaml's default per-tick position
+    # clamp (error_delta_pos = 0.05 m) and the 0.30 m/s Cartesian speed
+    # convention.
     peak_dx = float(np.max(np.abs(dx_des[:, 0])))
     peak_dy = float(np.max(np.abs(dx_des[:, 1])))
     peak_dz = float(np.max(np.abs(dx_des[:, 2])))
@@ -189,11 +189,10 @@ def main() -> int:
 
     # Convention limits: peak Cartesian speed 0.30 m/s, peak angular rate
     # 0.50 rad/s.  Nothing enforces them at runtime (osc_shm only clamps the
-    # tracking error), but staying inside the envelope is the conservative
-    # thing to do.
+    # position tracking error), but staying inside the envelope is the
+    # conservative thing to do.
     CART_DX_PEAK_LIMIT_MPS = 0.30
     ORI_DOT_PEAK_LIMIT_RPS = 0.50
-    ORI_TRACK_ABORT_RAD = 0.30
     peak_ori_combined = float(args.amp_yaw + args.amp_roll) * (1.0 + float(args.high_band_ratio))
 
     print(f"[gen_excitation_traj] wrote {out_csv}")
@@ -207,8 +206,7 @@ def main() -> int:
         f"dyaw={peak_dyaw:.4f}, droll={peak_droll:.4f} "
         f"(convention {ORI_DOT_PEAK_LIMIT_RPS:.2f}). "
         f"yaw amp={args.amp_yaw:.3f} rad, roll amp={args.amp_roll:.3f} rad. "
-        f"q_des max ang-offset from anchor ~ {peak_ori_combined:.3f} rad "
-        f"(runtime abort fires when |q_err| > {ORI_TRACK_ABORT_RAD:.2f} rad)"
+        f"q_des max ang-offset from anchor ~ {peak_ori_combined:.3f} rad"
     )
     if peak_speed_cart > CART_DX_PEAK_LIMIT_MPS:
         print(
@@ -220,12 +218,6 @@ def main() -> int:
             f"[gen_excitation_traj] WARNING: peak angular rate {max(peak_dyaw, peak_droll):.3f} rad/s "
             f"> convention {ORI_DOT_PEAK_LIMIT_RPS:.2f} rad/s.  "
             "Reduce --amp-yaw/--amp-roll or --high-band-ratio."
-        )
-    if peak_ori_combined > 0.8 * ORI_TRACK_ABORT_RAD:
-        print(
-            f"[gen_excitation_traj] WARNING: amp_yaw + amp_roll = {peak_ori_combined:.3f} rad "
-            f"is > 80% of the {ORI_TRACK_ABORT_RAD:.2f} rad runtime abort.  "
-            "If the controller lags much (e.g. >25%), q_err can trip the abort."
         )
     return 0
 

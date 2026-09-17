@@ -35,7 +35,6 @@ int main() {
   PRINT_OFFSET(ShmCommand, kd_pos);
   PRINT_OFFSET(ShmCommand, kd_ori);
   PRINT_OFFSET(ShmCommand, error_delta_pos);
-  PRINT_OFFSET(ShmCommand, error_delta_rot);
   PRINT_OFFSET(ShmCommand, enabled);
 
   PRINT_OFFSET(ShmStateFrame, seq);

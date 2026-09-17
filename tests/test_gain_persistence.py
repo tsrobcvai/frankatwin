@@ -35,7 +35,7 @@ def _seed_like_osc_shm(view, anchor_pos, anchor_quat_wxyz):
         target_pos=np.asarray(anchor_pos, dtype=np.float64),
         target_quat=np.asarray(anchor_quat_wxyz, dtype=np.float64),
         kp_pos=200.0, kp_ori=20.0, kd_pos=0.0, kd_ori=0.0,
-        error_delta_pos=0.0, error_delta_rot=0.0, enabled=True,
+        error_delta_pos=0.0, enabled=True,
     )
 
 
@@ -46,10 +46,10 @@ def test_snapshot_is_none_on_zeroed_segment():
 def test_gains_from_config_maps_auto_kd_to_zero():
     ctrl = ControlConfig(frequency_hz=1000, kp_pos=200.0, kp_ori=20.0,
                          kd_pos=None, kd_ori=7.5,
-                         error_delta_pos=0.05, error_delta_rot=0.30)
+                         error_delta_pos=0.05)
     g = gains_from_config(ctrl)
     assert g == {"kp_pos": 200.0, "kp_ori": 20.0, "kd_pos": 0.0, "kd_ori": 7.5,
-                 "error_delta_pos": 0.05, "error_delta_rot": 0.30, "enabled": True}
+                 "error_delta_pos": 0.05, "enabled": True}
 
 
 def test_restore_keeps_new_anchor_and_client_gains():
@@ -61,11 +61,11 @@ def test_restore_keeps_new_anchor_and_client_gains():
     view.write_command(
         target_pos=np.array(cur["target_pos"][0]), target_quat=np.array(cur["target_quat"][0]),
         kp_pos=500.0, kp_ori=30.0, kd_pos=0.0, kd_ori=0.0,
-        error_delta_pos=0.15, error_delta_rot=0.80, enabled=False,
+        error_delta_pos=0.15, enabled=False,
     )
     snap = snapshot_gains(view)
     assert snap == {"kp_pos": 500.0, "kp_ori": 30.0, "kd_pos": 0.0, "kd_ori": 0.0,
-                    "error_delta_pos": 0.15, "error_delta_rot": 0.80, "enabled": False}
+                    "error_delta_pos": 0.15, "enabled": False}
 
     # osc_shm restarts at a different pose and re-seeds its built-ins.
     new_pos, new_quat = [0.3, 0.1, 0.5], [0.0, 1.0, 0.0, 0.0]
@@ -79,6 +79,6 @@ def test_restore_keeps_new_anchor_and_client_gains():
     assert float(cmd["kp_pos"][0]) == 500.0                          # ... gains from the client
     assert float(cmd["kp_ori"][0]) == 30.0
     assert float(cmd["error_delta_pos"][0]) == 0.15
-    assert float(cmd["error_delta_rot"][0]) == 0.80
+    assert float(cmd["error_delta_pos"][0]) == 0.15
     assert int(cmd["enabled"][0]) == 0
     assert int(cmd["seq"][0]) % 2 == 0                               # seqlock left stable
