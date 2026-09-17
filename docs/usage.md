@@ -123,15 +123,13 @@ python examples/move_to.py
 # Default: ±5 cm along z at 0.5 Hz for 4 s
 python examples/cart_impedance.py
 
-# Run the multiband trajectory
-python examples/cart_impedance.py --mode multiband
+# What the sysid runs below share: stiffer gains than robot.yaml's, and a
+# clamp far above one step -- it never clips, but still aborts if tracking runs
+# away. Drop --err-delta-pos to run fully unclipped (robot.yaml's 0).
+SYSID="--kp-pos 500 --kp-ori 30 --err-delta-pos 0.15"
 
-# Sysid chirp, logged to CSV. --err-delta-pos 0.15 is what the v3 data was
-# collected with: far above one step, so it never clips, but it still aborts
-# if tracking runs away. Omit it to run fully unclipped (robot.yaml's 0).
-python examples/cart_impedance.py --mode chirp \
-    --kp-pos 500 --kp-ori 30 --err-delta-pos 0.15 \
-    --log data/run.csv
+python examples/cart_impedance.py --mode multiband $SYSID --log data/multiband.csv
+python examples/cart_impedance.py --mode chirp     $SYSID --log data/chirp.csv
 ```
 
 | flag | meaning |
