@@ -7,7 +7,7 @@ osc_shm holds that target at 1 kHz until the next step (zero-order hold -- the
 same staircase the IsaacLab replay reproduces).
 
 Run (daemon running on the NUC):
-  python examples/policy_loop.py                          # demo policy: 40 cm up / down every 4 s, for 16 s
+  python examples/policy_loop.py                          # demo policy: ~15 cm up / down every 4 s, for 16 s
   python examples/policy_loop.py --hz 20 --pos-scale 0.0025
   python examples/policy_loop.py --kp-pos 500 --kp-ori 30 --no-reset
 
@@ -35,7 +35,9 @@ from frankatwin.remote_client import FrankaTwinClient
 def demo_policy(t: float, obs: np.ndarray) -> np.ndarray:
     """Stand-in for a network: up for 2 s, down for 2 s, repeat.
 
-    At 10 Hz with pos_scale = 0.02 m/step that is a 40 cm stroke every 4 s.
+    Each step asks for pos_scale beyond the *measured* pose, so the target
+    only ever leads by one step and the stroke is set by how fast the impedance
+    follows, not by pos_scale * rate: ~15 cm per half-cycle at the defaults.
     """
     a = np.zeros(6)
     a[2] = 1.0 if t % 4.0 < 2.0 else -1.0

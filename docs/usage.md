@@ -147,13 +147,13 @@ Script: [`examples/policy_loop.py`](https://github.com/tsrobcvai/frankatwin/blob
 Runs a policy at a fixed rate under impedance control. Replace the stand-in
 `demo_policy` with your policy.
 
-**What the robot does.** The arm first resets to home (skip with `--no-reset`).
-The stand-in policy then raises the end effector 40 cm over 2 s and lowers it
-over the next 2 s, four times (16 s), and the arm holds where it ends.
+**What the robot does.** The default command below first sends the arm home
+(skip with `--no-reset`). The stand-in policy then raises the end effector about
+15 cm over 2 s and lowers it about 15 cm over the next 2 s, four times (16 s),
+and the arm holds where it ends.
 
 ```bash
 python examples/policy_loop.py                          # demo policy, 10 Hz, 16 s
-python examples/policy_loop.py --hz 20 --pos-scale 0.0025 --no-reset
 ```
 
 | flag | meaning |
@@ -169,7 +169,7 @@ The whole loop of [`policy_loop.py`](https://github.com/tsrobcvai/frankatwin/blo
 ```python
 def demo_policy(t, obs):                      # stand-in for a network; 6-D action in [-1, 1]
     a = np.zeros(6)                           # a[0:3] = Δxyz, a[3:6] = Δrot (axis-angle), base frame
-    a[2] = 1.0 if t % 4.0 < 2.0 else -1.0     # up for 2 s, down for 2 s: 40 cm at 0.02 m/step, 10 Hz
+    a[2] = 1.0 if t % 4.0 < 2.0 else -1.0     # up for 2 s, down for 2 s: ~15 cm as the impedance follows
     return a
 
 with FrankaTwinClient(cfg) as robot:
