@@ -41,27 +41,24 @@ cd frankatwin
 
 Script: [`examples/move_to.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/move_to.py)
 
-**What the robot does.** The arm moves to the target under stiff position
-control, then `osc_shm` resumes and holds the new pose. A joint target (home by
-default) sweeps an arc; an end-effector target moves in a straight line.
+**What the robot does.** The arm moves under stiff position control to a target
+named one of two ways. `--target-joints` takes seven joint angles and
+interpolates in joint space along a min-jerk profile, so the end effector sweeps
+an arc; with no flag it targets home (`robot.init_q`). `--target-ee` takes a
+Cartesian pose and follows a straight 5th-order path, libfranka solving the IK.
 
 > **Safety.** The arm does not yield on contact. Clear its path, keep the user
 > stop in hand, and use `--q-max-speed 0.1` the first time you try a new target.
 
 ```bash
-# Move to the home pose (robot.init_q in config/robot.yaml):
-#   q = [0, -π/4, 0, -3π/4, 0, π/2, π/4] rad
+# Home: q = [0, -π/4, 0, -3π/4, 0, π/2, π/4] rad
 python examples/move_to.py
 
-# Move to a joint configuration [rad], capped at 0.5 rad/s per joint
-python examples/move_to.py \
-    --target-joints 0 -0.785 0 -2.356 0 1.571 0.785 \
-    --q-max-speed 0.5
+# A joint configuration [rad], paced slowly
+python examples/move_to.py --target-joints 0 -0.4 0 -2.0 0 1.6 0.785 --q-max-speed 0.2
 
-# Move the end effector to x y z [m], tool pointing down
-python examples/move_to.py \
-    --target-ee 0.4 0.0 0.3 0 1 0 0 \
-    --q-max-speed 0.5
+# An end-effector pose: x y z [m] + quaternion wxyz, tool pointing down
+python examples/move_to.py --target-ee 0.4 0.0 0.3  0 1 0 0
 ```
 
 | flag | meaning |
