@@ -12,16 +12,6 @@ docs every command carries the tag of the machine it runs on:
 
 ![Deployment: Robot ↔ NUC over FCI/libfranka at 1 kHz, NUC ↔ PC over ZMQ 5555/5556, PC ↔ SIM by copying CSV/JSON files. IPs shown are the config/robot.yaml defaults; the PC takes any address on the same subnet as the NUC and Robot.](images/deployment.svg)
 
-:::{admonition} [TODO, checklist]
-:class: warning
-
-NUC and PC read the same `config/robot.yaml` from their checkout (`pip install -e .`
-is the intended install mode): `robot.ip` for the robot, `network.nuc_host` for
-the NUC, plus gains, safety clamps and payload. Override with `--config` on any
-command or `FRANKATWIN_CONFIG=/path/to/local.yaml`; keys are documented inline in
-the file and in [Configuration](configuration.md).
-:::
-
 ## Robot
 
 Nothing to install. The FCI feature has to be present on the controller and the
