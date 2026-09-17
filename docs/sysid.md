@@ -1,9 +1,9 @@
 # System identification
 
-FrankaTwin makes IsaacLab's Franka move like *your* Franka under the *same*
-controller. It replays real excitation runs in sim with identical setpoints,
-gains and control law, and fits the sim's joint dynamics until the trajectories
-match.
+FrankaTwin makes IsaacLab's Franka move like *your* real Franka robot under the
+*same* impedance control. It replays real excitation runs in sim with identical
+setpoints, gains and control law, and fits the sim's joint dynamics until the
+trajectories match.
 
 ## Approach
 
