@@ -44,9 +44,11 @@ Script: [`examples/move_to.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.
 **What the robot does.** The arm moves under stiff position control to a target
 named one of two ways:
 
-- **`--target-joints`** — seven joint angles, interpolated in joint space along
-  a min-jerk profile, so the end effector sweeps an arc. This is the default
-  mode: with no flag at all the target is home, `robot.init_q`.
+- **`--target-joints`** — seven joint angles. libfranka's `MotionGenerator`
+  gives each joint a cubic ramp up, a constant-velocity cruise and a cubic ramp
+  down, the seven synchronized to finish together, so the end effector sweeps an
+  arc. This is the default mode: with no flag at all the target is home,
+  `robot.init_q`.
 - **`--target-ee`** — a Cartesian pose. libfranka solves the IK and the end
   effector follows a straight 5th-order path.
 

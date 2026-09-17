@@ -7,9 +7,11 @@
 //
 // Two mutually-exclusive modes:
 //   1. --q q1 q2 q3 q4 q5 q6 q7 [--q-max-speed 0.5]
-//      Uses libfranka's joint MotionGenerator (vendored from examples). The
-//      min-jerk trajectory respects per-joint dq_max and ddq_max scaled by
-//      --speed-factor.
+//      Uses libfranka's joint MotionGenerator (vendored from examples): per
+//      joint a cubic acceleration ramp, a constant-velocity cruise and a cubic
+//      deceleration ramp -- a smoothed trapezoid, NOT a min-jerk profile --
+//      respecting dq_max and ddq_max scaled by --q-max-speed, with the seven
+//      joints synchronized to finish together.
 //   2. --pose tx ty tz qw qx qy qz [--q-max-speed 0.5]
 //      Uses libfranka's franka::CartesianPose motion type. Each tick the
 //      callback returns the desired 4x4 column-major matrix interpolated
