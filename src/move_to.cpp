@@ -31,10 +31,12 @@
 //   1  bad CLI
 //   2  (retired) joint goal out of nominal limits -- now a non-fatal warning
 //   3  (retired) start state outside nominal limits -- now a non-fatal warning
+//   5  robot busy: another frankatwin controller holds the FCI lock
 //  10  franka::Exception
 //  11  std::exception
 
 #include "examples_common.h"
+#include "fci_lock.h"
 
 #include <franka/duration.h>
 #include <franka/exception.h>
@@ -217,6 +219,26 @@ int main(int argc, char** argv) {
               << std::endl;
   }
 
+  // Claim the robot before touching libfranka. A second controlling session
+  // connects happily and only fails later, deep inside setDefaultBehavior, with
+  // a message that never mentions the real holder -- see fci_lock.h.
+  frankatwin::FciLock fci_lock;
+  {
+    std::string holder;
+    // Wait a little rather than failing outright: the daemon stops osc_shm and
+    // spawns us immediately, so the previous holder may still be exiting.
+    if (!fci_lock.acquire(args.robot_ip, "move_to", 3000, &holder)) {
+      std::cerr << "[move_to] robot " << args.robot_ip
+                << " is already held by another frankatwin session (" << holder
+                << ").\n"
+                << "[move_to] Drive it through the daemon instead "
+                   "(client.move_to_pose(...) / client.move_to_q(...)), "
+                   "or stop the daemon first."
+                << std::endl;
+      return frankatwin::kExitRobotBusy;
+    }
+  }
+
   try {
     franka::Robot robot(args.robot_ip);
     // Clear any latched reflex/error before commanding motion, else libfranka
@@ -318,6 +340,18 @@ int main(int argc, char** argv) {
     }
   } catch (const franka::Exception& e) {
     std::cerr << "[move_to] franka::Exception: " << e.what() << std::endl;
+    // The FCI lock above only covers frankatwin's own binaries. A foreign FCI
+    // client (franka_ros, franka-interface, a Desk operation) leaves the robot
+    // in a mode where our very first parameter command is rejected, and
+    // libfranka's wording never hints at a second client. Name the real cause.
+    const std::string msg = e.what();
+    if (msg.find("current mode") != std::string::npos) {
+      std::cerr << "[move_to] This usually means another FCI client owns the "
+                   "robot, or Desk is holding it.\n"
+                << "[move_to] Run `frankatwin doctor` to see the competing "
+                   "clients, and check that Desk has released control."
+                << std::endl;
+    }
     return 10;
   } catch (const std::exception& e) {
     std::cerr << "[move_to] std::exception: " << e.what() << std::endl;

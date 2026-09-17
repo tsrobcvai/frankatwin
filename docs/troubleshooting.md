@@ -69,6 +69,48 @@ requires a daemon restart. If you still see this, the robot is in a state the
 recovery cannot clear (e.g. user stop pressed): release the stop / re-enable FCI
 in Desk.
 
+### `command not possible in the current mode ("Move")` from `move_to` / `osc_shm`
+
+**Symptom.** A hand-run binary dies immediately on its first parameter command:
+
+```
+[move_to] franka::Exception: libfranka: Set Joint Impedance command rejected:
+          command not possible in the current mode ("Move")!
+```
+
+**Cause.** Something else already owns the robot — almost always your own
+`frankatwin.daemon`, whose `osc_shm` child is in its 1 kHz control loop. The FCI
+accepts the second TCP connection but keeps the motion/parameter authority with
+the first holder, so the failure surfaces several calls later, inside
+`setDefaultBehavior()`, in a message that never mentions the real owner.
+
+**Fix.** Don't run a second controlling session. Either drive the robot through
+the daemon (`client.move_to_pose(...)` / `client.move_to_q(...)`, which stops
+`osc_shm`, runs `move_to`, then restarts it), or stop the daemon first.
+
+Since v0.2 `osc_shm` and `move_to` take a per-robot advisory lock
+(`/tmp/frankatwin-fci-<ip>.lock`, see `src/fci_lock.h`) *before* connecting, so
+the clash is now reported up front and names the holder:
+
+```
+[move_to] robot 172.16.0.2 is already held by another frankatwin session
+          (pid=6494 exe=osc_shm).
+```
+
+with exit code **5**. `frankatwin doctor` prints the lock state as `fci lock`.
+The lock is held on an open file descriptor, so the kernel releases it even if
+the holder is SIGKILLed or segfaults — a stale lock file is never something you
+need to delete by hand.
+
+Read-only helpers (`read_current_q`, `read_current_pose`, `read_load`) and
+`gripper_cmd` take no lock: the first three only `readOnce()`, and the gripper
+server is a separate TCP endpoint (1338). All four work while the daemon runs.
+
+The lock is advisory and only covers frankatwin's own binaries. If a *foreign*
+FCI client holds the robot (`franka_ros`, `franka-interface`, or a Desk
+operation), you still get the raw libfranka message — `move_to` appends a hint
+pointing at `frankatwin doctor`, whose `fci clients` line lists them.
+
 ### `Move command aborted!` right after `move_to`
 
 Transient FCI session hand-over race when `osc_shm` restarts immediately after
