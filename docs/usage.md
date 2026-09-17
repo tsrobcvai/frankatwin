@@ -74,7 +74,7 @@ python examples/move_to.py --target-ee 0.4 0.0 0.3  0 1 0 0  --q-max-speed 0.5
 |---|---|
 | `--target-joints J1 … J7` | joint angles [rad] |
 | `--target-ee x y z qw qx qy qz` | TCP position [m] and quaternion (wxyz) in the base frame; `0 1 0 0` = tool down |
-| `--q-max-speed` | per-joint velocity cap [rad/s] for both modes, in (0, 1.25]; default `reset.q_max_speed` (0.5). The motion time follows from the travel, so a farther target takes longer instead of moving faster. |
+| `--q-max-speed` | per-joint velocity cap [rad/s] for both modes, in (0, 1.25]; default `reset.q_max_speed` (0.5) |
 
 > **`--q-max-speed` is approximate for `--target-ee`.** libfranka solves the IK
 > internally, so the cap is only estimated — from the Jacobian at the start
