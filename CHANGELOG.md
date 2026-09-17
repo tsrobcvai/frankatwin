@@ -34,6 +34,9 @@ All notable changes to this project are documented here. The format follows
   `snapshot_gains` / `restore_gains` already indexed correctly, which is why
   the existing tests passed. `tests/test_command_roundtrip.py` now covers the
   three methods.
+- `doctor` reports numpy's version on the `python` line. Nothing requires a
+  particular major version, but behaviour differs across them, so it belongs in
+  the report people already paste when something is off.
 
 ### Changed
 - **Breaking.** One pacing knob for both `move_to` modes: `--q-max-speed`, a

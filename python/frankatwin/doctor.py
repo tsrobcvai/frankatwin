@@ -113,7 +113,18 @@ def _run(cmd: List[str], timeout: float = 5.0) -> str:
 
 
 def _check_common(rep: _Report, cfg_path: pathlib.Path, cfg: Optional[RobotConfig], err: Optional[str]) -> None:
-    rep.add(_Report.OK, "python", f"{platform.python_version()}  frankatwin {__version__}")
+    # numpy's version rides along on the python line rather than getting a
+    # check of its own: nothing here requires a particular major version, but
+    # behaviour does differ across them (numpy 2.0 turned float() on a
+    # shape-(1,) array from a warning into a TypeError), so it is worth seeing
+    # in a report people already paste when something is off.
+    try:
+        import numpy
+        npv = numpy.__version__
+    except Exception:  # pragma: no cover - numpy is a hard dependency
+        npv = "?"
+    rep.add(_Report.OK, "python",
+            f"{platform.python_version()}  frankatwin {__version__}  numpy {npv}")
     if cfg is None:
         rep.add(_Report.FAIL, "config", f"{cfg_path}: {err}",
                 "fix config/robot.yaml, or pass --config / set $FRANKATWIN_CONFIG")
