@@ -103,7 +103,8 @@ reference anchored at the pose it starts from, in one of three shapes:
 - **`sine`** [default]{.badge-default} — ±5 cm along z at 0.5 Hz for 4 s,
   ending back at the start pose.
 - **`multiband`** — x, y, z, yaw and roll, each driven at a low and a high
-  frequency at once (0.15–1.1 Hz), for 12 s.
+  frequency at once (0.15–1.1 Hz), for 12 s. Roughly ±12 cm in x and y, ±10 cm
+  in z and ~0.5 rad of combined yaw/roll, peaking at 0.3 m/s.
 - **`chirp`** — all six axes swept from `--f0` to `--f1` (0.1 → 0.7 Hz), for
   8 s. This is the sysid excitation.
 
