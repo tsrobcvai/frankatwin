@@ -14,18 +14,6 @@ Run:
 The arm controller keeps running throughout: the hand is served on its own port
 (1338), so nothing here stops or restarts osc_shm.
 
-CLOSING IS A `grasp`, NOT A WIDTH COMMAND. libfranka's Gripper::grasp(width, speed,
-force, eps) drives the fingers TOWARDS width and squeezes with force once they
-stall on something. The default width (-0.01, past full closure) always reaches
-the object, so the resting width is decided by the OBJECT, not by the command:
-
-  * to change how HARD it holds, use --force (default gripper.grasp_force = 70 N,
-    the Franka Hand's rated continuous maximum; pass less for anything crushable);
-  * --close-width only stops the jaws EARLY -- set it above the object's width and
-    they halt before touching, nothing is held;
-  * --eps narrows the success band around --close-width that `result` reports.
-    The default 0.08 (whole stroke) makes every stall count as grasped.
-
 --width is metres, like every other length on the wire. It used to be a
 fraction of the stroke, inherited from the deoxys-based control_gripper.py this
 replaces; --width-m was the metres spelling and is kept as a hidden alias.
