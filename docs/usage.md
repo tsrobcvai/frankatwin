@@ -47,8 +47,12 @@ interpolates in joint space along a min-jerk profile, so the end effector sweeps
 an arc; with no flag it targets home (`robot.init_q`). `--target-ee` takes a
 Cartesian pose and follows a straight 5th-order path, libfranka solving the IK.
 
-> **Safety.** The arm does not yield on contact. Clear its path, keep the user
-> stop in hand, and use `--q-max-speed 0.1` the first time you try a new target.
+:::{admonition} Safety
+:class: danger
+
+The arm does not yield on contact. Clear its path, keep the user stop in hand,
+and use `--q-max-speed 0.1` the first time you try a new target.
+:::
 
 ```bash
 # Home: q = [0, -π/4, 0, -3π/4, 0, π/2, π/4] rad
@@ -84,8 +88,12 @@ and torque headroom.
 along z at 0.5 Hz for 4 s and ends back at its start pose. `multiband` and
 `chirp` move all six axes, much faster.
 
-> **Safety.** `multiband` and `chirp` are fast 6-DOF sysid motions, up to ±15 cm
-> and ±0.5 rad. Start them with at least 30 cm of free space around the tool.
+:::{admonition} Safety
+:class: danger
+
+`multiband` and `chirp` are fast 6-DOF sysid motions, up to ±15 cm and ±0.5
+rad. Start them with at least 30 cm of free space around the tool.
+:::
 
 ```bash
 # Default: ±5 cm along z at 0.5 Hz for 4 s
@@ -123,9 +131,13 @@ Runs a policy at a fixed rate under impedance control. Replace the stand-in
 The stand-in policy then raises the end effector 10 cm over 2 s and lowers it
 over the next 2 s, four times (16 s), and the arm holds where it ends.
 
-> **Safety.** The reset is stiff position control, as in Example 1. A new policy
-> moves the arm wherever its actions point: keep `--pos-scale` / `--rot-scale`
-> small and the user stop in hand on the first runs.
+:::{admonition} Safety
+:class: danger
+
+The reset is stiff position control, as in Example 1. A new policy moves the
+arm wherever its actions point: keep `--pos-scale` / `--rot-scale` small and the
+user stop in hand on the first runs.
+:::
 
 ```bash
 python examples/policy_loop.py                          # demo policy, 10 Hz, 16 s
@@ -180,8 +192,12 @@ pose under impedance control. The hand is served on its own port (1338), so no
 `osc_shm` stop/restart is involved — you can open and close while a policy loop
 is running.
 
-> **Safety.** The fingers close at up to 0.5 m/s and squeeze with up to 70 N.
-> Keep hands out of the jaws; `--homing` sweeps the full stroke.
+:::{admonition} Safety
+:class: danger
+
+The fingers close at up to 0.5 m/s and squeeze with up to 70 N. Keep hands out
+of the jaws; `--homing` sweeps the full stroke.
+:::
 
 ```bash
 python examples/gripper.py --homing                      # once after power-up: calibrates the stroke
