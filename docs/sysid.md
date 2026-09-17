@@ -11,13 +11,12 @@ We follow a procedure similar to [OmniReset](https://arxiv.org/abs/2603.15789) (
 itself based on PACE ([Bjelonic et al., 2025](https://arxiv.org/abs/2509.06342)):
 record excitation runs on the real arm, replay them in sim under the same
 controller, and fit friction, armature and motor delay with CMA-ES to minimize
-the sim–real joint-trajectory error. Two differences:
+the sim–real joint-trajectory error. One difference:
 
-- **Fit on one multiband run.** Parameters come from a single multi-band
-  sinusoidal excitation (v3, [Excitation design](#excitation-design)), not from
-  chirps.
-- **Validate on a held-out chirp.** A 6-DOF chirp (v4), the excitation OmniReset
-  fits on, is used only as the test: joint-position MSE 4.8 × 10⁻⁴ rad².
+- **The two excitations swap roles.** Parameters come from a single multi-band
+  sinusoidal run (v3, [Excitation design](#excitation-design)), not from chirps;
+  the 6-DOF chirp (v4) that OmniReset fits on is held out as the test
+  (joint-position MSE 4.8 × 10⁻⁴ rad²).
 
 ## What is identified
 
