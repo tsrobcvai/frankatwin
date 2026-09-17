@@ -189,13 +189,6 @@ with FrankaTwinClient(cfg) as robot:
     robot.set_ee_target(s.ee_pos, s.ee_quat)                  # 8. hold where the run ended
 ```
 
-Between policy steps `osc_shm` holds the last target at 1 kHz, the same
-zero-order hold the IsaacLab replay uses. Targets are absolute base-frame poses
-with **wxyz** quaternions; gains and clamps persist across `move_to` and
-restarts. More in
-[Architecture](architecture.md), [Interfaces](interfaces.md) and
-[Configuration](configuration.md).
-
 #### Example 4 · Open and close the gripper
 
 Script: [`examples/gripper.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/gripper.py)
@@ -208,8 +201,10 @@ is running.
 :::{admonition} Safety
 :class: danger
 
-The fingers close at up to 0.5 m/s and squeeze with up to 70 N. Keep hands out
-of the jaws; `--homing` sweeps the full stroke.
+The jaws close at up to 0.1 m/s and squeeze with 30–70 N. Keep hands out of
+them; `--homing` sweeps the full stroke twice. The gripper runs on its own TCP
+endpoint, so none of the arm's safety chain — the tracking abort, the collision
+reflex — applies to it.
 :::
 
 ```bash
@@ -219,14 +214,11 @@ python examples/gripper.py --homing
 # Fully open (80 mm)
 python examples/gripper.py --open
 
-# 42 % of the stroke = 33.6 mm
-python examples/gripper.py --open --width 0.42
+# Open to 30 mm
+python examples/gripper.py --open --width 0.03
 
 # Grasp: squeeze at gripper.grasp_force (70 N)
 python examples/gripper.py --close
-
-# A gentler hold
-python examples/gripper.py --close --force 30
 
 # width / max_width / is_grasped / temperature
 python examples/gripper.py --state
@@ -234,10 +226,10 @@ python examples/gripper.py --state
 
 | flag | meaning |
 |---|---|
-| `--open [--width FRAC \| --width-m M]` | open to a fraction of the stroke (default fully open) or to a width [m] |
+| `--open [--width M]` | open to a width in **metres** (default `gripper.max_width`, fully open) |
 | `--close [--force N] [--close-width M] [--eps M]` | grasp; defaults 70 N, −0.01 m, 0.08 m |
 | `--homing` / `--stop` / `--state` | calibrate / abort the motion / read the state |
-| `--speed` | finger speed [m/s]; default 0.1 open, 0.5 close |
+| `--speed` | rate the width changes [m/s]; default 0.1 for both, which is the hardware ceiling |
 | `--no-wait` | return once the daemon accepts the command |
 
 **Closing is a grasp, not a width command.** The fingers close until they stall

@@ -22,7 +22,9 @@ def test_default_gripper_config_matches_yaml():
     cfg = load_config(DEFAULT_CONFIG_PATH)
     g = cfg.gripper
     assert g.enabled is True
-    assert (g.move_speed, g.grasp_speed, g.grasp_force) == (0.1, 0.5, 70.0)
+    # 0.1 m/s is the Franka Hand's width-closing ceiling (50 mm/s per finger,
+    # both fingers move); grasp_speed used to be 0.5, which was over the spec.
+    assert (g.move_speed, g.grasp_speed, g.grasp_force) == (0.1, 0.1, 70.0)
     assert (g.grasp_width, g.epsilon_inner, g.epsilon_outer, g.max_width) == (-0.01, 0.08, 0.08, 0.08)
 
 
@@ -52,7 +54,7 @@ def test_gripper_args_defaults_from_config():
     assert gripper_command_args(g, "state") == ["state"]
     assert gripper_command_args(g, "move") == ["move", "--width", "0.08000", "--speed", "0.1000"]
     assert gripper_command_args(g, "grasp") == [
-        "grasp", "--width", "-0.01000", "--speed", "0.5000", "--force", "70.00",
+        "grasp", "--width", "-0.01000", "--speed", "0.1000", "--force", "70.00",
         "--eps-in", "0.0800", "--eps-out", "0.0800",
     ]
 

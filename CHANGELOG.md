@@ -58,6 +58,23 @@ All notable changes to this project are documented here. The format follows
 
 
 ### Changed
+- **Breaking.** `examples/gripper.py --width` is metres, not a fraction of the
+  stroke. `--width 0.42` used to mean 42 % (33.6 mm) and now means 42 cm, which
+  is out of range and rejected with a message saying so. `--width-m` stays as a
+  hidden alias. Nothing else in the project expressed a length as a fraction.
+- `gripper.grasp_speed` 0.5 -> 0.1 m/s. The Franka Hand product manual (1.2,
+  Technical Data) gives "Travel Speed (per finger) 50 mm/s"; both fingers move,
+  so the width closes at up to 0.1 m/s, which is also what libfranka's own
+  examples pass. 0.5 was 5x over and the firmware was silently capping it, so
+  the documented "closes at up to 0.5 m/s" was never true. `move_speed` was
+  already at the ceiling.
+- `gripper.grasp_force` is documented as **30-70 N**, not `(0, 70]`: the manual
+  states the continuous force is "adjustable 30-70 N", so asking for less than
+  30 does not buy a gentler hold. Use `--close-width` to stop the jaws early
+  instead. The value itself is unchanged and `gripper_cmd` still only rejects
+  <= 0.
+
+### Changed
 - `robot.yaml` ships `control.error_delta_pos: 0` (pure impedance) instead of
   `0.05`, so the file finally agrees with `osc_shm`, which has always compiled
   in `0.0` for the same stated reason ("pure impedance to match the unclipped

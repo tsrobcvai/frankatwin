@@ -21,10 +21,10 @@ once at start — restart it after edits.
 | `reset.q_max_speed` | 0.5 rad/s | Per-joint velocity cap for **both** `move_to` modes, (0, 1.25]. Motion time follows from the travel. Approximate for `--pose` — see [Usage](usage.md). |
 | `load.mass` / `com` / `inertia` | 0 / 0 / 0 | Extra payload for `setLoad`; see the comments in the file. |
 | `gripper.enabled` | true | `false` makes every `gripper_*` command fail fast (no Franka Hand). |
-| `gripper.move_speed` / `grasp_speed` | 0.1 / 0.5 m/s | Finger speed for `gripper_open` (`Gripper::move`) / `gripper_close` (`Gripper::grasp`). |
-| `gripper.grasp_force` | 70 N | Squeeze force once the fingers stall — the knob for how hard an object is held. (0, 70]; 70 is the Franka Hand's rated continuous maximum, lower it for anything crushable. |
+| `gripper.move_speed` / `grasp_speed` | 0.1 / 0.1 m/s | Rate the gripper **width** changes for `gripper_open` (`Gripper::move`) / `gripper_close` (`Gripper::grasp`). 0.1 m/s is the ceiling: the product manual gives 50 mm/s per finger, and both fingers move. |
+| `gripper.grasp_force` | 70 N | Squeeze force once the fingers stall — the knob for how hard an object is held. The manual gives the continuous force as **adjustable 30–70 N**, so 30 is the floor; below it you do not get a gentler hold. For something crushable, stop the jaws early with `--close-width` instead. |
 | `gripper.grasp_width` | −0.01 m | Width the fingers drive towards when closing. Past full closure ⇒ they always reach the object and the object sets the resting width. |
 | `gripper.epsilon_inner` / `epsilon_outer` | 0.08 / 0.08 m | Band around `grasp_width` inside which libfranka reports `is_grasped` / `result: true`. 0.08 = whole stroke = every stall counts (deoxys behaviour); tighten to make "grasped" meaningful. |
-| `gripper.max_width` | 0.08 m | Full stroke; `gripper_open()` default and the reference for `examples/gripper.py --width FRAC`. |
+| `gripper.max_width` | 0.08 m | Full stroke; the default and upper bound for `gripper_open()` and `examples/gripper.py --width`. |
 
 `FRANKATWIN_CONFIG=/path/to.yaml` overrides the default location.

@@ -105,9 +105,17 @@ reset:
 # 0.08 (whole stroke) makes every stall count as grasped (deoxys behaviour).
 gripper:
   enabled: true
+  # Speeds are the rate the gripper WIDTH changes, which is what libfranka's
+  # `speed` argument takes. The Franka Hand product manual (1.2, Technical Data)
+  # gives "Travel Speed (per finger) 50 mm/s"; both fingers move, so the width
+  # closes at up to 0.1 m/s. libfranka's own examples use 0.1 as well. Values
+  # above that are not rejected by gripper_cmd -- the firmware just caps them.
   move_speed: 0.1        # m/s, open (Gripper::move)
-  grasp_speed: 0.5       # m/s, close (Gripper::grasp)
-  grasp_force: 70.0      # N, (0, 70] -- 70 is the Franka Hand's rated continuous maximum
+  grasp_speed: 0.1       # m/s, close (Gripper::grasp) -- was 0.5, over the spec
+  # The manual states the continuous grasping force is "adjustable 30-70 N", so
+  # 30 is the floor, not 0: asking for less does not get you a gentler hold.
+  # Use --close-width to stop the jaws early if an object must not be squeezed.
+  grasp_force: 70.0      # N, [30, 70] per the product manual
   grasp_width: -0.01     # m
   epsilon_inner: 0.08    # m
   epsilon_outer: 0.08    # m

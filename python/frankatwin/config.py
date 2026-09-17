@@ -96,7 +96,8 @@ class GripperConfig:
 
     enabled: bool = True
     move_speed: float = 0.1       # m/s, `move` (open)
-    grasp_speed: float = 0.5      # m/s, `grasp` (close)
+    grasp_speed: float = 0.1      # m/s, `grasp` (close); 0.1 is the hardware
+                                  # ceiling -- 50 mm/s per finger, both move
     grasp_force: float = 70.0     # N, Franka Hand rated continuous maximum
     grasp_width: float = -0.01    # m, target the fingers drive towards when closing
     epsilon_inner: float = 0.08   # m
@@ -243,7 +244,7 @@ def load_config(path: Optional[os.PathLike] = None) -> RobotConfig:
         grip_cfg = GripperConfig(
             enabled=bool(grip.get("enabled", True)),
             move_speed=float(grip.get("move_speed", 0.1)),
-            grasp_speed=float(grip.get("grasp_speed", 0.5)),
+            grasp_speed=float(grip.get("grasp_speed", 0.1)),
             grasp_force=float(grip.get("grasp_force", 70.0)),
             grasp_width=float(grip.get("grasp_width", -0.01)),
             epsilon_inner=float(grip.get("epsilon_inner", 0.08)),
