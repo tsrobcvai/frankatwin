@@ -49,21 +49,27 @@ a typical pose. Then `osc_shm` restarts and holds the new pose compliantly.
 > lies between its current pose and the target, and does not yield on contact.
 > Before every move: clear the workspace of objects and people, check that the
 > target is reachable and that the path does not cross the table or fixtures,
-> and hold the user stop in your hand for the whole motion. Use `--speed 0.1`
-> the first time you try a new target.
+> and hold the user stop in your hand for the whole motion. Use
+> `--q-max-speed 0.1` the first time you try a new target.
 
 ```bash
 python examples/move_to.py                                                # home = robot.init_q
-python examples/move_to.py --target-joints 0 -0.785 0 -2.356 0 1.571 0.785 --speed 0.2
-python examples/move_to.py --target-ee 0.4 0.0 0.3  0 1 0 0 --duration 5
+python examples/move_to.py --target-joints 0 -0.785 0 -2.356 0 1.571 0.785 --q-max-speed 0.5
+python examples/move_to.py --target-ee 0.4 0.0 0.3  0 1 0 0 --q-max-speed 0.5
 ```
 
 | flag | meaning |
 |---|---|
 | `--target-joints J1 … J7` | 7 absolute joint angles [rad] |
 | `--target-ee x y z qw qx qy qz` | EE position [m] in the robot **base frame** (+x forward, +z up) and orientation as a **unit quaternion, wxyz** — `0 1 0 0` = tool pointing down. EE frame = the one configured in Desk (Franka Hand: TCP between the fingertips) |
-| `--speed` | joint move: speed factor (0, 0.5]; default `reset.joint_speed_factor` |
-| `--duration` | EE move: seconds in [0.5, 20]; default `reset.pose_duration` (2.0 s) |
+| `--q-max-speed` | **both** modes: per-joint velocity cap [rad/s], (0, 1.25]; default `reset.q_max_speed` (0.5). The motion time is derived from it, so a longer travel takes longer instead of moving faster. |
+
+> **`--q-max-speed` is approximate for `--target-ee`.** libfranka solves the
+> IK for a Cartesian move, so `move_to` never sees joint space; it estimates
+> the joint speed from the Jacobian at the **start pose only**. The estimate
+> degrades over large reorientations and near singularities. Treat it as
+> pacing, not as a guarantee — the robot's own limits are the real
+> protection. For `--target-joints` the cap is exact.
 
 #### Example 2 · Track a scripted reference
 

@@ -68,13 +68,15 @@ paths:
   shm_name: "/frankatwin_osc"
 
 reset:
-  # Default speed factor for move_to --q. Range (0, 0.5].
-  joint_speed_factor: 0.2
-  # Default duration (s) for move_to --pose. Range [0.5, 20].
-  # Short durations over a long travel raise the peak Cartesian velocity
-  # (1.875*distance/duration) and can trip a reflex; raise this if a reset
-  # spans most of the workspace.
-  pose_duration: 2.0
+  # Per-joint velocity cap [rad/s] for BOTH move_to modes. Range (0, 1.25].
+  # Motion time is derived from it, so a longer travel takes longer rather
+  # than moving faster. 0.5 reproduces the old joint_speed_factor 0.2.
+  #   0.1-0.3  slow, for contact work or debugging
+  #   0.5      default
+  #   0.8-1.25 fast reset -- make sure the workspace is clear
+  # For --pose the cap is APPROXIMATE: libfranka solves the IK, so move_to
+  # estimates the joint speed from the Jacobian at the start pose only.
+  q_max_speed: 0.5
 
 # Franka Hand, driven through `gripper_cmd` (libfranka Gripper, port 1338 -- its own
 # connection, so it works while osc_shm holds the arm). Client: FrankaTwinClient

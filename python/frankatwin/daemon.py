@@ -248,14 +248,14 @@ class FrankaTwinDaemon:
 
     def _op_move_to_q(self, req: Dict[str, Any]) -> None:
         q = np.asarray(req["q"], dtype=np.float64)
-        sf = req.get("speed_factor")
-        self.controller.move_to_q(q, speed_factor=sf)
+        v = req.get("q_max_speed")
+        self.controller.move_to_q(q, q_max_speed=v)
 
     def _op_move_to_pose(self, req: Dict[str, Any]) -> None:
         pos = np.asarray(req["pos"], dtype=np.float64)
         quat = np.asarray(req["quat"], dtype=np.float64)
-        duration = req.get("duration")
-        self.controller.move_to_pose(pos, quat, duration=duration)
+        v = req.get("q_max_speed")
+        self.controller.move_to_pose(pos, quat, q_max_speed=v)
 
     # -- gripper ------------------------------------------------------------
     # The Franka Hand has its own connection (port 1338), so these never touch

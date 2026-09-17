@@ -6,15 +6,29 @@
 // reset/home before handing the libfranka session back to `osc_shm`.
 //
 // Two mutually-exclusive modes:
-//   1. --q q1 q2 q3 q4 q5 q6 q7 [--speed-factor 0.2]
+//   1. --q q1 q2 q3 q4 q5 q6 q7 [--q-max-speed 0.5]
 //      Uses libfranka's joint MotionGenerator (vendored from examples). The
 //      min-jerk trajectory respects per-joint dq_max and ddq_max scaled by
 //      --speed-factor.
-//   2. --pose tx ty tz qw qx qy qz [--duration 2.0]
+//   2. --pose tx ty tz qw qx qy qz [--q-max-speed 0.5]
 //      Uses libfranka's franka::CartesianPose motion type. Each tick the
 //      callback returns the desired 4x4 column-major matrix interpolated
 //      between the start pose (captured at t=0) and the target pose via a 5th
 //      order min-jerk profile. NO IK is performed on our side.
+//
+// Pacing (--q-max-speed V, rad/s):
+//   Joint mode maps it exactly onto MotionGenerator's speed_factor, which
+//   scales the vendored dq_max_ = [2,2,2,2,2.5,2.5,2.5]: speed_factor =
+//   V / 2.5 caps every joint at or below V.
+//
+//   Pose mode has no joint space of its own -- libfranka solves the IK -- so
+//   it estimates one. On the first control tick it takes the Jacobian at the
+//   start configuration, maps the Cartesian travel to a joint displacement
+//   (damped least squares), and picks T so the min-jerk peak joint velocity
+//   1.875*max|dq| / T equals V. This is a FIRST-ORDER ESTIMATE: J is sampled
+//   once, at the start, so it degrades over large reorientations and near
+//   singularities, where J^+ blows up. It is a pacing heuristic, not a
+//   guarantee -- the robot's own limits remain the real protection.
 //
 // Both modes seed their trajectory from the robot's *commanded* state (q_d /
 // O_T_EE_c) rather than the measured one. Starting from the measured value puts
@@ -24,12 +38,9 @@
 // Safety:
 //   - Joint-limit check on the goal q (mode 1) and on every tick (both modes).
 //   - SIGINT / SIGTERM: stop the motion (relies on libfranka to wind down).
-//   - Cartesian mode caps |duration| at [0.5, 20.0] seconds. The bound is a
-//     blanket guard, not a physical limit: peak velocity of the min-jerk
-//     profile is 1.875*d/T and peak acceleration 5.77*d/T^2, and the travel
-//     d is unknown at parse time (the start pose is only captured on the
-//     first control tick). A short duration over a long travel can still
-//     trip a Cartesian reflex -- that is the caller's judgement to make.
+//   - Both modes are paced by one knob, --q-max-speed, a per-joint velocity
+//     cap in rad/s. Motion time is derived from it, so a longer travel takes
+//     longer instead of moving faster. See kQMaxSpeed* below.
 //
 // Exit codes:
 //   0  ok
@@ -74,6 +85,25 @@ const Eigen::Matrix<double, 7, 1> Q_MAX =
      3.7525, 2.8973)
         .finished();
 
+// --q-max-speed: per-joint velocity cap [rad/s], the single pacing knob.
+// The reference is MotionGenerator's largest dq_max_ entry (2.5 rad/s for
+// joints 5-7), so V / kDqMaxRef is the speed_factor that caps every joint at
+// V. The ceiling mirrors the old speed_factor <= 0.5 guard (0.5 * 2.5) and the
+// default mirrors the old speed_factor 0.2 (0.2 * 2.5), so behaviour is
+// unchanged for anyone who does not pass the flag.
+constexpr double kDqMaxRef = 2.5;
+constexpr double kQMaxSpeedDefault = 0.5;
+constexpr double kQMaxSpeedMax = 1.25;
+// Pose-mode motion time, after the Jacobian estimate, is clamped here. The
+// floor keeps a near-zero travel from becoming a step; the ceiling keeps a
+// pathological estimate inside the daemon's 30 s subprocess timeout.
+constexpr double kPoseTMin = 0.3;
+constexpr double kPoseTMax = 20.0;
+// Damping for the least-squares Jacobian inverse, so a near-singular start
+// configuration yields a large-but-finite dq estimate instead of a division
+// by ~0 (which would collapse T to the floor -- the opposite of safe).
+constexpr double kJacDamping = 0.05;
+
 std::atomic<bool> g_stop_flag{false};
 void signal_handler(int /*signo*/) { g_stop_flag.store(true); }
 
@@ -86,20 +116,20 @@ struct Args {
   // Pose mode: position + quaternion (wxyz)
   double tx{0.0}, ty{0.0}, tz{0.0};
   double qw{1.0}, qx{0.0}, qy{0.0}, qz{0.0};
-  double speed_factor{0.2};
-  double duration{2.0};
-  // Whether the flag was actually typed, so "left at the default" can be told
-  // apart from "asked for something this mode cannot deliver".
-  bool speed_factor_set{false};
-  bool duration_set{false};
+  double q_max_speed{kQMaxSpeedDefault};
 };
 
 void print_usage(const char* prog) {
   std::cerr
       << "Usage: " << prog << " <robot_ip>\n"
-      << "       --q q1 q2 q3 q4 q5 q6 q7 [--speed-factor 0.2]\n"
+      << "       --q q1 q2 q3 q4 q5 q6 q7      [--q-max-speed 0.5]\n"
       << "       (or)\n"
-      << "       --pose tx ty tz qw qx qy qz [--duration 2.0]" << std::endl;
+      << "       --pose tx ty tz qw qx qy qz   [--q-max-speed 0.5]\n"
+      << "\n"
+      << "  --q-max-speed V   per-joint velocity cap [rad/s], (0, "
+      << kQMaxSpeedMax << "]. Motion time\n"
+      << "                    follows from it; a longer travel takes longer."
+      << std::endl;
 }
 
 bool parse_args(int argc, char** argv, Args& out) {
@@ -133,15 +163,9 @@ bool parse_args(int argc, char** argv, Args& out) {
       out.qy = std::atof(argv[i + 6]);
       out.qz = std::atof(argv[i + 7]);
       i += 8;
-    } else if (key == "--speed-factor") {
+    } else if (key == "--q-max-speed") {
       if (i + 1 >= argc) return false;
-      out.speed_factor = std::atof(argv[i + 1]);
-      out.speed_factor_set = true;
-      i += 2;
-    } else if (key == "--duration") {
-      if (i + 1 >= argc) return false;
-      out.duration = std::atof(argv[i + 1]);
-      out.duration_set = true;
+      out.q_max_speed = std::atof(argv[i + 1]);
       i += 2;
     } else if (key == "-h" || key == "--help") {
       print_usage(argv[0]);
@@ -157,31 +181,11 @@ bool parse_args(int argc, char** argv, Args& out) {
     print_usage(argv[0]);
     return false;
   }
-  // Each mode has exactly one pacing knob: --speed-factor for --q,
-  // --duration for --pose. Reject the other one rather than ignoring it --
-  // someone who passes --duration with --q has a mental model of the motion
-  // that is not the one about to run, and a silent default hides that.
-  if (out.mode == Mode::kJoint && out.duration_set) {
-    std::cerr << "[move_to] --duration applies to --pose only; "
-                 "--q is paced by --speed-factor"
-              << std::endl;
-    return false;
-  }
-  if (out.mode == Mode::kPose && out.speed_factor_set) {
-    std::cerr << "[move_to] --speed-factor applies to --q only; "
-                 "--pose is paced by --duration"
-              << std::endl;
-    return false;
-  }
-  // Validate only the knob this mode actually uses.
-  if (out.mode == Mode::kJoint &&
-      (out.speed_factor <= 0.0 || out.speed_factor > 0.5)) {
-    std::cerr << "[move_to] --speed-factor out of range (0, 0.5]" << std::endl;
-    return false;
-  }
-  if (out.mode == Mode::kPose &&
-      (out.duration < 0.5 || out.duration > 20.0)) {
-    std::cerr << "[move_to] --duration out of range [0.5, 20.0] s" << std::endl;
+  // One knob, same meaning in both modes, so there is no mode-specific flag
+  // to accept or reject here.
+  if (out.q_max_speed <= 0.0 || out.q_max_speed > kQMaxSpeedMax) {
+    std::cerr << "[move_to] --q-max-speed out of range (0, " << kQMaxSpeedMax
+              << "] rad/s" << std::endl;
     return false;
   }
   return true;
@@ -288,7 +292,11 @@ int main(int argc, char** argv) {
     }
 
     if (args.mode == Mode::kJoint) {
-      std::cout << "[move_to] joint mode: speed_factor=" << args.speed_factor
+      // V / kDqMaxRef is the scale that caps every joint at or below V,
+      // because MotionGenerator multiplies its dq_max_ by this factor.
+      const double speed_factor = args.q_max_speed / kDqMaxRef;
+      std::cout << "[move_to] joint mode: q_max_speed=" << args.q_max_speed
+                << " rad/s (speed_factor=" << speed_factor << ")"
                 << "\n[move_to] q_goal = ";
       for (int j = 0; j < 7; ++j) {
         std::cout << args.q_goal[j];
@@ -296,7 +304,7 @@ int main(int argc, char** argv) {
       }
       std::cout << std::endl;
 
-      MotionGenerator gen(args.speed_factor, args.q_goal);
+      MotionGenerator gen(speed_factor, args.q_goal);
       robot.control([&](const franka::RobotState& s,
                         franka::Duration period) -> franka::JointPositions {
         // The FCI requires the first commanded position to equal the robot's
@@ -330,8 +338,13 @@ int main(int argc, char** argv) {
         q_goal.coeffs() *= -1.0;
       }
 
-      std::cout << "[move_to] pose mode: duration=" << args.duration
-                << " s\n[move_to] p_start = " << start.p.transpose()
+      std::cout << "[move_to] pose mode: q_max_speed=" << args.q_max_speed
+                << " rad/s (APPROXIMATE -- libfranka solves the IK, so the "
+                   "joint speed is\n"
+                   "[move_to]   estimated from the Jacobian at the start pose "
+                   "only. It degrades over\n"
+                   "[move_to]   large reorientations and near singularities.)"
+                << "\n[move_to] p_start = " << start.p.transpose()
                 << "\n[move_to] p_goal  = " << p_goal.transpose()
                 << "\n[move_to] q_start (wxyz) = " << start.q.w() << " "
                 << start.q.x() << " " << start.q.y() << " " << start.q.z()
@@ -339,9 +352,13 @@ int main(int argc, char** argv) {
                 << q_goal.x() << " " << q_goal.y() << " " << q_goal.z()
                 << std::endl;
 
+      // The Jacobian below needs the kinematic model; loading it here keeps
+      // the (blocking) download out of the 1 kHz callback.
+      franka::Model model = robot.loadModel();
+
       double t = 0.0;
       bool seeded = false;
-      const double T = args.duration;
+      double T = kPoseTMin;
       robot.control([&](const franka::RobotState& s,
                         franka::Duration period) -> franka::CartesianPose {
         if (!seeded) {
@@ -352,6 +369,29 @@ int main(int argc, char** argv) {
           if (start.q.dot(q_goal) < 0.0) {
             q_goal.coeffs() *= -1.0;
           }
+          // Pace this Cartesian motion by the joint-space cap. Map the whole
+          // travel through the start Jacobian to a joint displacement, then
+          // pick T so the min-jerk peak joint velocity (1.875 * dq / T) hits
+          // --q-max-speed. Damped least squares keeps a near-singular start
+          // from producing a tiny dq (and therefore a dangerously short T).
+          const std::array<double, 42> jac_arr =
+              model.zeroJacobian(franka::Frame::kEndEffector, s);
+          Eigen::Map<const Eigen::Matrix<double, 6, 7>> J(jac_arr.data());
+          Eigen::Matrix<double, 6, 1> dx;
+          dx.head<3>() = p_goal - start.p;
+          const Eigen::AngleAxisd aa(q_goal * start.q.conjugate());
+          dx.tail<3>() = aa.axis() * aa.angle();
+          const Eigen::Matrix<double, 6, 6> JJt =
+              J * J.transpose() +
+              (kJacDamping * kJacDamping) * Eigen::Matrix<double, 6, 6>::Identity();
+          const Eigen::Matrix<double, 7, 1> dq_est =
+              J.transpose() * JJt.ldlt().solve(dx);
+          const double dq_abs = dq_est.cwiseAbs().maxCoeff();
+          T = 1.875 * dq_abs / args.q_max_speed;
+          if (T < kPoseTMin) T = kPoseTMin;
+          if (T > kPoseTMax) T = kPoseTMax;
+          std::cout << "[move_to] |dq| estimate = " << dq_abs
+                    << " rad -> T = " << T << " s" << std::endl;
           seeded = true;
         }
         t += period.toSec();
