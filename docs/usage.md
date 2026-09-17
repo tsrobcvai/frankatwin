@@ -121,8 +121,8 @@ python examples/move_to.py
 # Default: ±5 cm along z at 0.5 Hz for 4 s
 python examples/cart_impedance.py
 
-# Build and check a reference without moving the robot
-python examples/cart_impedance.py --mode multiband --dry-run
+# Run the multiband trajectory
+python examples/cart_impedance.py --mode multiband
 
 # Sysid chirp with the gains and error clamps it needs, logged to CSV
 python examples/cart_impedance.py --mode chirp \
