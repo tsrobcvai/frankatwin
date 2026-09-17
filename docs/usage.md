@@ -173,7 +173,7 @@ python examples/policy_loop.py --hz 20 --pos-scale 0.0025 --no-reset
 | [`--err-delta-pos`]{.flag-safety} | [delta translation action clamp, for safety]{.flag-safety} — bounds how far the EE may lag its target [m] (0.15). Kept well above one step (0.005 m), so it never engages in normal running |
 | `--no-reset` | skip the initial `move_to` home |
 
-The whole loop:
+The whole loop of [`policy_loop.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/policy_loop.py):
 
 ```python
 def demo_policy(t, obs):                      # stand-in for a network; 6-D action in [-1, 1]
