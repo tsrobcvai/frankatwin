@@ -232,12 +232,6 @@ python examples/gripper.py --state
 | `--speed` | rate the width changes [m/s]; default 0.1 for both, which is the hardware ceiling |
 | `--no-wait` | return once the daemon accepts the command |
 
-**Closing is a grasp, not a width command.** The fingers close until they stall
-on the object, then squeeze at `--force`, so the object sets the held width and
-`--force` sets how hard. `--close-width` only stops the fingers early; set wider
-than the object, they hold nothing. `is_grasped` means the final width is within
-`--eps` of the target; the default 0.08 m counts every stall.
-
 In a policy loop:
 
 ```python
