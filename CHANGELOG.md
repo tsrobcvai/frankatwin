@@ -24,6 +24,17 @@ All notable changes to this project are documented here. The format follows
   `gripper_cmd` take no lock and still run alongside the daemon. `doctor`
   reports the lock state as `fci lock`.
 
+### Fixed
+- `set_gains`, `set_ee_target` and `enable` / `disable` failed under numpy 2.x
+  with `only 0-dimensional arrays can be converted to Python scalars`. All
+  three read the command block back to re-publish the fields they do not
+  change, but indexed it as `prev["kp_pos"]` instead of `prev["kp_pos"][0]`:
+  `read_command()` returns a shape-(1,) structured array, and numpy 2.0 turned
+  `float()` on a shape-(1,) array from a DeprecationWarning into a TypeError.
+  `snapshot_gains` / `restore_gains` already indexed correctly, which is why
+  the existing tests passed. `tests/test_command_roundtrip.py` now covers the
+  three methods.
+
 ### Changed
 - **Breaking.** One pacing knob for both `move_to` modes: `--q-max-speed`, a
   per-joint velocity cap in rad/s, range (0, 1.25], default 0.5. It replaces

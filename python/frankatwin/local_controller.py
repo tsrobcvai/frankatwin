@@ -562,18 +562,20 @@ class LocalController:
         if pos.shape != (3,):
             raise ValueError(f"target_pos must have shape (3,), got {pos.shape}")
         quat = _wxyz_from(target_quat)
-        # Re-publish gains untouched.
+        # Re-publish gains untouched. read_command() returns a shape-(1,)
+        # structured array (np.frombuffer(count=1)), so every field needs the
+        # [0] -- float() on a shape-(1,) array is a TypeError from numpy 2.0 on.
         prev = self._view.read_command()
         self._view.write_command(
             target_pos=pos,
             target_quat=quat,
-            kp_pos=float(prev["kp_pos"]),
-            kp_ori=float(prev["kp_ori"]),
-            kd_pos=float(prev["kd_pos"]),
-            kd_ori=float(prev["kd_ori"]),
-            error_delta_pos=float(prev["error_delta_pos"]),
-            error_delta_rot=float(prev["error_delta_rot"]),
-            enabled=bool(prev["enabled"]),
+            kp_pos=float(prev["kp_pos"][0]),
+            kp_ori=float(prev["kp_ori"][0]),
+            kd_pos=float(prev["kd_pos"][0]),
+            kd_ori=float(prev["kd_ori"][0]),
+            error_delta_pos=float(prev["error_delta_pos"][0]),
+            error_delta_rot=float(prev["error_delta_rot"][0]),
+            enabled=bool(prev["enabled"][0]),
         )
 
     def set_gains(
@@ -588,23 +590,23 @@ class LocalController:
         """Update controller gains. Any None argument keeps the current value."""
         prev = self._view.read_command()
         self._view.write_command(
-            target_pos=np.array(prev["target_pos"], dtype=np.float64),
-            target_quat=np.array(prev["target_quat"], dtype=np.float64),
-            kp_pos=float(prev["kp_pos"] if kp_pos is None else kp_pos),
-            kp_ori=float(prev["kp_ori"] if kp_ori is None else kp_ori),
-            kd_pos=float(prev["kd_pos"] if kd_pos is None else kd_pos),
-            kd_ori=float(prev["kd_ori"] if kd_ori is None else kd_ori),
+            target_pos=np.array(prev["target_pos"][0], dtype=np.float64),
+            target_quat=np.array(prev["target_quat"][0], dtype=np.float64),
+            kp_pos=float(prev["kp_pos"][0] if kp_pos is None else kp_pos),
+            kp_ori=float(prev["kp_ori"][0] if kp_ori is None else kp_ori),
+            kd_pos=float(prev["kd_pos"][0] if kd_pos is None else kd_pos),
+            kd_ori=float(prev["kd_ori"][0] if kd_ori is None else kd_ori),
             error_delta_pos=float(
-                prev["error_delta_pos"]
+                prev["error_delta_pos"][0]
                 if error_delta_pos is None
                 else error_delta_pos
             ),
             error_delta_rot=float(
-                prev["error_delta_rot"]
+                prev["error_delta_rot"][0]
                 if error_delta_rot is None
                 else error_delta_rot
             ),
-            enabled=bool(prev["enabled"]),
+            enabled=bool(prev["enabled"][0]),
         )
 
     def enable(self) -> None:
@@ -616,14 +618,14 @@ class LocalController:
     def _set_enabled(self, value: bool) -> None:
         prev = self._view.read_command()
         self._view.write_command(
-            target_pos=np.array(prev["target_pos"], dtype=np.float64),
-            target_quat=np.array(prev["target_quat"], dtype=np.float64),
-            kp_pos=float(prev["kp_pos"]),
-            kp_ori=float(prev["kp_ori"]),
-            kd_pos=float(prev["kd_pos"]),
-            kd_ori=float(prev["kd_ori"]),
-            error_delta_pos=float(prev["error_delta_pos"]),
-            error_delta_rot=float(prev["error_delta_rot"]),
+            target_pos=np.array(prev["target_pos"][0], dtype=np.float64),
+            target_quat=np.array(prev["target_quat"][0], dtype=np.float64),
+            kp_pos=float(prev["kp_pos"][0]),
+            kp_ori=float(prev["kp_ori"][0]),
+            kd_pos=float(prev["kd_pos"][0]),
+            kd_ori=float(prev["kd_ori"][0]),
+            error_delta_pos=float(prev["error_delta_pos"][0]),
+            error_delta_rot=float(prev["error_delta_rot"][0]),
             enabled=value,
         )
 
