@@ -62,10 +62,10 @@ and use `--q-max-speed 0.1` the first time you try a new target.
 python examples/move_to.py
 
 # A joint configuration [rad], paced slowly
-python examples/move_to.py --target-joints 0 -0.4 0 -2.0 0 1.6 0.785 --q-max-speed 0.2
+python examples/move_to.py --target-joints 0 -0.4 0 -2.0 0 1.6 0.785 --q-max-speed 0.5
 
 # An end-effector pose: x y z [m] + quaternion wxyz, tool pointing down
-python examples/move_to.py --target-ee 0.4 0.0 0.3  0 1 0 0
+python examples/move_to.py --target-ee 0.4 0.0 0.3  0 1 0 0  --q-max-speed 0.5
 ```
 
 | flag | meaning |
