@@ -30,6 +30,14 @@ table.table td, table.table th { vertical-align: top; }
   border-radius: 1em;
   vertical-align: 0.12em;
   white-space: nowrap;
-  background: var(--pst-color-success-bg, #e6f4ea);
-  color: var(--pst-color-success, #1a7f37);
+  /* Brand blue, sampled from the "Twin" lettering in images/logo.png.
+     Not --pst-color-primary: that tracks the theme and goes light on dark
+     backgrounds, which this pill needs to survive as a filled badge. */
+  background: #E7EEF9;
+  color: #305FAE;
+}
+
+html[data-theme="dark"] .badge-default {
+  background: #22334D;
+  color: #9CBEEC;
 }
