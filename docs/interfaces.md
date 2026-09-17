@@ -67,7 +67,7 @@ NUC (no ZMQ); scripts written against one run against the other.
 | `get_state_history()` → `list[RobotState]` | no | Up to `network.state_cache` (256) recent frames. |
 | `wait_for_state(timeout_s=3.0)` → `RobotState` | until a frame arrives | Use once after connecting / resetting. |
 | `move_to_q(q[7], speed_factor=None)` | yes (≤ 60 s) | Joint-space position move via `move_to`; `osc_shm` restarts at the new pose with gains preserved. `speed_factor ∈ (0, 0.5]`. |
-| `move_to_pose(pos[3], quat[4], duration=None)` | yes | Cartesian position move via libfranka `CartesianPose`; `duration ∈ [1.5, 20]` s. |
+| `move_to_pose(pos[3], quat[4], duration=None)` | yes | Cartesian position move via libfranka `CartesianPose`; `duration ∈ [0.5, 20]` s, default `reset.pose_duration` (2.0 s). |
 | `gripper_open(width=None, speed=None, *, wait=True)` | yes (< 2 s) | `Gripper::move` to `width` [m], default `gripper.max_width`. `osc_shm` keeps running (the hand has its own connection). |
 | `gripper_close(width=None, speed=None, force=None, epsilon_inner=None, epsilon_outer=None, *, wait=True)` (= `gripper_grasp`) | yes (< 2 s) | `Gripper::grasp`: fingers drive towards `width` (default −0.01 = past closure, so the object sets the resting width) and squeeze with `force` (default 70 N). Returns `{"result": is-within-epsilon, "state": {...}}`. |
 | `gripper_homing(*, wait=True)` | yes (~6 s) | Calibrate the stroke; once after power-up or a finger change. |

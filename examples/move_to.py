@@ -61,7 +61,7 @@ def main() -> int:
     p.add_argument("--speed", type=float, default=None,
                    help="joint move: MotionGenerator speed factor (0, 0.5]; default reset.joint_speed_factor")
     p.add_argument("--duration", type=float, default=None,
-                   help="EE move: seconds in [1.5, 20]; default reset.pose_duration")
+                   help="EE move: seconds in [0.5, 20]; default reset.pose_duration")
     p.add_argument("--config", type=str, default=None, help="path to robot.yaml")
     p.add_argument("--settle", type=float, default=0.5, help="seconds to let osc_shm settle before readback")
     args = p.parse_args()

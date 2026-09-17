@@ -25,6 +25,14 @@ All notable changes to this project are documented here. The format follows
   reports the lock state as `fci lock`.
 
 ### Changed
+- `move_to --pose` duration: lower bound relaxed 1.5 s -> 0.5 s and the default
+  lowered 5.0 s -> 2.0 s (`reset.pose_duration`). The bound is a blanket guard,
+  not a physical limit -- the travel distance is unknown at parse time, so a
+  short duration over a long travel can still trip a Cartesian reflex.
+- `move_to` validates only the pacing knob its mode uses, and rejects the other
+  one outright: `--duration` with `--q` (or `--speed-factor` with `--pose`) was
+  previously range-checked and then silently ignored, which hid the fact that
+  the requested pacing would not happen.
 - Installation is conda-only: one `frankatwin` env per machine, libfranka from
   conda-forge matched to the robot's FCI protocol (system 5.9 → `libfranka=0.20`;
   a mismatch only shows up when a session is opened). `CMakeLists.txt` finds

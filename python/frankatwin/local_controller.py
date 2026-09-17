@@ -670,8 +670,8 @@ class LocalController:
             raise ValueError(f"target_pos must have shape (3,), got {pos.shape}")
         quat = _wxyz_from(target_quat)
         dur = duration if duration is not None else self.cfg.reset.pose_duration
-        if not (1.5 <= dur <= 20.0):
-            raise ValueError(f"duration must be in [1.5, 20.0] s, got {dur}")
+        if not (0.5 <= dur <= 20.0):
+            raise ValueError(f"duration must be in [0.5, 20.0] s, got {dur}")
         args = [
             str(self._move_to_bin),
             self.cfg.robot.ip,

@@ -10,7 +10,7 @@
 //      Uses libfranka's joint MotionGenerator (vendored from examples). The
 //      min-jerk trajectory respects per-joint dq_max and ddq_max scaled by
 //      --speed-factor.
-//   2. --pose tx ty tz qw qx qy qz [--duration 5.0]
+//   2. --pose tx ty tz qw qx qy qz [--duration 2.0]
 //      Uses libfranka's franka::CartesianPose motion type. Each tick the
 //      callback returns the desired 4x4 column-major matrix interpolated
 //      between the start pose (captured at t=0) and the target pose via a 5th
@@ -24,7 +24,12 @@
 // Safety:
 //   - Joint-limit check on the goal q (mode 1) and on every tick (both modes).
 //   - SIGINT / SIGTERM: stop the motion (relies on libfranka to wind down).
-//   - Cartesian mode caps |duration| at [1.5, 20.0] seconds.
+//   - Cartesian mode caps |duration| at [0.5, 20.0] seconds. The bound is a
+//     blanket guard, not a physical limit: peak velocity of the min-jerk
+//     profile is 1.875*d/T and peak acceleration 5.77*d/T^2, and the travel
+//     d is unknown at parse time (the start pose is only captured on the
+//     first control tick). A short duration over a long travel can still
+//     trip a Cartesian reflex -- that is the caller's judgement to make.
 //
 // Exit codes:
 //   0  ok
@@ -82,7 +87,11 @@ struct Args {
   double tx{0.0}, ty{0.0}, tz{0.0};
   double qw{1.0}, qx{0.0}, qy{0.0}, qz{0.0};
   double speed_factor{0.2};
-  double duration{5.0};
+  double duration{2.0};
+  // Whether the flag was actually typed, so "left at the default" can be told
+  // apart from "asked for something this mode cannot deliver".
+  bool speed_factor_set{false};
+  bool duration_set{false};
 };
 
 void print_usage(const char* prog) {
@@ -90,7 +99,7 @@ void print_usage(const char* prog) {
       << "Usage: " << prog << " <robot_ip>\n"
       << "       --q q1 q2 q3 q4 q5 q6 q7 [--speed-factor 0.2]\n"
       << "       (or)\n"
-      << "       --pose tx ty tz qw qx qy qz [--duration 5.0]" << std::endl;
+      << "       --pose tx ty tz qw qx qy qz [--duration 2.0]" << std::endl;
 }
 
 bool parse_args(int argc, char** argv, Args& out) {
@@ -127,10 +136,12 @@ bool parse_args(int argc, char** argv, Args& out) {
     } else if (key == "--speed-factor") {
       if (i + 1 >= argc) return false;
       out.speed_factor = std::atof(argv[i + 1]);
+      out.speed_factor_set = true;
       i += 2;
     } else if (key == "--duration") {
       if (i + 1 >= argc) return false;
       out.duration = std::atof(argv[i + 1]);
+      out.duration_set = true;
       i += 2;
     } else if (key == "-h" || key == "--help") {
       print_usage(argv[0]);
@@ -146,12 +157,31 @@ bool parse_args(int argc, char** argv, Args& out) {
     print_usage(argv[0]);
     return false;
   }
-  if (out.speed_factor <= 0.0 || out.speed_factor > 0.5) {
+  // Each mode has exactly one pacing knob: --speed-factor for --q,
+  // --duration for --pose. Reject the other one rather than ignoring it --
+  // someone who passes --duration with --q has a mental model of the motion
+  // that is not the one about to run, and a silent default hides that.
+  if (out.mode == Mode::kJoint && out.duration_set) {
+    std::cerr << "[move_to] --duration applies to --pose only; "
+                 "--q is paced by --speed-factor"
+              << std::endl;
+    return false;
+  }
+  if (out.mode == Mode::kPose && out.speed_factor_set) {
+    std::cerr << "[move_to] --speed-factor applies to --q only; "
+                 "--pose is paced by --duration"
+              << std::endl;
+    return false;
+  }
+  // Validate only the knob this mode actually uses.
+  if (out.mode == Mode::kJoint &&
+      (out.speed_factor <= 0.0 || out.speed_factor > 0.5)) {
     std::cerr << "[move_to] --speed-factor out of range (0, 0.5]" << std::endl;
     return false;
   }
-  if (out.duration < 1.5 || out.duration > 20.0) {
-    std::cerr << "[move_to] --duration out of range [1.5, 20.0] s" << std::endl;
+  if (out.mode == Mode::kPose &&
+      (out.duration < 0.5 || out.duration > 20.0)) {
+    std::cerr << "[move_to] --duration out of range [0.5, 20.0] s" << std::endl;
     return false;
   }
   return true;
