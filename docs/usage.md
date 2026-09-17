@@ -148,7 +148,7 @@ Runs a policy at a fixed rate under impedance control. Replace the stand-in
 `demo_policy` with your policy.
 
 **What the robot does.** The arm first resets to home (skip with `--no-reset`).
-The stand-in policy then raises the end effector 10 cm over 2 s and lowers it
+The stand-in policy then raises the end effector 40 cm over 2 s and lowers it
 over the next 2 s, four times (16 s), and the arm holds where it ends.
 
 :::{admonition} Safety
@@ -167,9 +167,9 @@ python examples/policy_loop.py --hz 20 --pos-scale 0.0025 --no-reset
 | flag | meaning |
 |---|---|
 | `--hz`, `--duration` | policy rate [Hz] (10) and run time [s] (16) |
-| `--pos-scale`, `--rot-scale` | action → Δpos [m/step] (0.005) and Δrot [rad/step] (0.02) |
+| `--pos-scale`, `--rot-scale` | action → Δpos [m/step] (0.02) and Δrot [rad/step] (0.03) |
 | `--kp-pos`, `--kp-ori` | impedance gains (500 / 30) |
-| [`--err-delta-pos`]{.flag-safety} | [delta translation action clamp, for safety]{.flag-safety} — bounds how far the EE may lag its target [m]. Default `0`: no clamp, pure impedance, as in sim. Set it above one step (0.005 m) and it never engages in normal running but still aborts if tracking runs away |
+| [`--err-delta-pos`]{.flag-safety} | [delta translation action clamp, for safety]{.flag-safety} — bounds how far the EE may lag its target [m]. Default `0`: no clamp, pure impedance, as in sim. Set it above one step (0.02 m) and it never engages in normal running but still aborts if tracking runs away |
 | `--no-reset` | skip the initial `move_to` home |
 
 The whole loop of [`policy_loop.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/policy_loop.py):
@@ -177,7 +177,7 @@ The whole loop of [`policy_loop.py`](https://github.com/tsrobcvai/frankatwin/blo
 ```python
 def demo_policy(t, obs):                      # stand-in for a network; 6-D action in [-1, 1]
     a = np.zeros(6)                           # a[0:3] = Δxyz, a[3:6] = Δrot (axis-angle), base frame
-    a[2] = 1.0 if t % 4.0 < 2.0 else -1.0     # up for 2 s, down for 2 s: 10 cm at 0.005 m/step, 10 Hz
+    a[2] = 1.0 if t % 4.0 < 2.0 else -1.0     # up for 2 s, down for 2 s: 40 cm at 0.02 m/step, 10 Hz
     return a
 
 with FrankaTwinClient(cfg) as robot:
@@ -188,7 +188,7 @@ with FrankaTwinClient(cfg) as robot:
     for k in range(int(16 * 10)):                             # 3. 16 s at 10 Hz
         obs = np.concatenate([s.q, s.dq, s.ee_pos, s.ee_quat, s.ee_linvel, s.ee_angvel])
         a = np.clip(demo_policy(k / 10, obs), -1, 1)
-        pos  = s.ee_pos + 0.005 * a[:3]                       # 4. Δ on the measured pose (as in the sim task)
+        pos  = s.ee_pos + 0.02 * a[:3]                        # 4. Δ on the measured pose (as in the sim task)
         quat = mul_wxyz(from_rotvec_wxyz(0.02 * a[3:]), s.ee_quat)
         robot.set_ee_target(pos, quat)                        # 5. non-blocking; osc_shm holds it at 1 kHz
         time.sleep(max(0.0, t0 + (k + 1) / 10 - time.monotonic()))   # 6. fixed-rate tick

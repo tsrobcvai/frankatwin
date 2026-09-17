@@ -7,7 +7,7 @@ osc_shm holds that target at 1 kHz until the next step (zero-order hold -- the
 same staircase the IsaacLab replay reproduces).
 
 Run (daemon running on the NUC):
-  python examples/policy_loop.py                          # demo policy: 10 cm up / down every 4 s, for 16 s
+  python examples/policy_loop.py                          # demo policy: 40 cm up / down every 4 s, for 16 s
   python examples/policy_loop.py --hz 20 --pos-scale 0.0025
   python examples/policy_loop.py --kp-pos 500 --kp-ori 30 --no-reset
 
@@ -35,7 +35,7 @@ from frankatwin.remote_client import FrankaTwinClient
 def demo_policy(t: float, obs: np.ndarray) -> np.ndarray:
     """Stand-in for a network: up for 2 s, down for 2 s, repeat.
 
-    At 10 Hz with pos_scale = 0.005 m/step that is a 10 cm stroke every 4 s.
+    At 10 Hz with pos_scale = 0.02 m/step that is a 40 cm stroke every 4 s.
     """
     a = np.zeros(6)
     a[2] = 1.0 if t % 4.0 < 2.0 else -1.0
@@ -46,8 +46,8 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--hz", type=float, default=10.0, help="policy rate [Hz]")
     p.add_argument("--duration", type=float, default=16.0, help="run time [s]")
-    p.add_argument("--pos-scale", type=float, default=0.005, help="|Δpos| per unit action [m/step]")
-    p.add_argument("--rot-scale", type=float, default=0.02, help="|Δrot| per unit action [rad/step]")
+    p.add_argument("--pos-scale", type=float, default=0.02, help="|Δpos| per unit action [m/step]")
+    p.add_argument("--rot-scale", type=float, default=0.03, help="|Δrot| per unit action [rad/step]")
     p.add_argument("--kp-pos", type=float, default=500.0)
     p.add_argument("--kp-ori", type=float, default=30.0)
     p.add_argument("--err-delta-pos", type=float, default=0.0,
