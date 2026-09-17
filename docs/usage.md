@@ -42,8 +42,11 @@ One-shot position control (`move_to`). Home by default; prints the pose
 **What the robot does.** `osc_shm` stops; libfranka drives all seven joints to
 the target along a min-jerk profile (for `--target-joints` / home the EE sweeps
 an arc, *not* a straight line; for `--target-ee` it follows a straight 5th-order
-path), at `--speed` × the joint speed limits — the default 0.2 takes 3–5 s from
-a typical pose. Then `osc_shm` restarts and holds the new pose compliantly.
+path), capped at `--q-max-speed` rad/s per joint (default 0.5). The motion time
+is derived from the travel, so a farther target takes longer rather than moving
+faster — exactly for `--target-joints`, only approximately for `--target-ee`
+(see the note below). Then `osc_shm` restarts and holds the new pose
+compliantly.
 
 > **Safety.** This is stiff position control: the arm moves through whatever
 > lies between its current pose and the target, and does not yield on contact.
