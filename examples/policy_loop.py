@@ -16,7 +16,7 @@ Action convention (6-D, each component in [-1, 1]):
   a[3:6]  Δrotation = rot_scale * a[3:6]  [rad/step], axis-angle in the base frame:
           q_target = q(Δ) ⊗ q_current
 Deltas are applied to the *measured* EE pose (as the IsaacLab tasks do:
-ctrl_target = fingertip_pos + action). Replace `demo_policy` with your network
+ctrl_target = fingertip_pos + action). Replace `demo_policy` with your policy
 and build `obs` to match its training layout.
 """
 

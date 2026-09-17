@@ -146,7 +146,7 @@ designs are explained in [System identification](sysid.md#excitation-design).
 Script: [`examples/policy_loop.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/policy_loop.py)
 
 Runs a policy at a fixed rate under impedance control. Replace the stand-in
-`demo_policy` with your network.
+`demo_policy` with your policy.
 
 **What the robot does.** The arm first resets to home (skip with `--no-reset`).
 The stand-in policy then raises the end effector 10 cm over 2 s and lowers it
