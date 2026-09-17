@@ -151,14 +151,6 @@ Runs a policy at a fixed rate under impedance control. Replace the stand-in
 The stand-in policy then raises the end effector 40 cm over 2 s and lowers it
 over the next 2 s, four times (16 s), and the arm holds where it ends.
 
-:::{admonition} Safety
-:class: danger
-
-The reset is stiff position control, as in Example 1. A new policy moves the
-arm wherever its actions point: keep `--pos-scale` / `--rot-scale` small and the
-user stop in hand on the first runs.
-:::
-
 ```bash
 python examples/policy_loop.py                          # demo policy, 10 Hz, 16 s
 python examples/policy_loop.py --hz 20 --pos-scale 0.0025 --no-reset
