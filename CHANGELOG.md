@@ -15,6 +15,14 @@ All notable changes to this project are documented here. The format follows
   semantics as the deoxys-based `control_gripper.py`), and real
   `robot.yaml → gripper:` keys (speeds, grasp force / width, epsilons).
   `doctor` checks the binary and the gripper port.
+- Per-robot FCI lock (`src/fci_lock.h`): `osc_shm` and `move_to` take an
+  advisory `flock` on `/tmp/frankatwin-fci-<ip>.lock` before connecting, so a
+  second controlling session exits 5 with the holder's pid instead of dying
+  inside libfranka on `Set Joint Impedance command rejected: command not
+  possible in the current mode ("Move")`. Held on an open fd, so the kernel
+  releases it even on SIGKILL — no stale locks. Read-only helpers and
+  `gripper_cmd` take no lock and still run alongside the daemon. `doctor`
+  reports the lock state as `fci lock`.
 
 ### Changed
 - Installation is conda-only: one `frankatwin` env per machine, libfranka from

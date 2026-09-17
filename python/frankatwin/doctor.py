@@ -6,6 +6,7 @@ One line per check, a hint per failure, exit 1 on any hard failure.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import os
 import pathlib
 import platform
@@ -20,6 +21,39 @@ from frankatwin.config import RobotConfig, load_config, resolve_config_path
 
 FCI_TCP_PORT = 1337  # libfranka command channel
 GRIPPER_TCP_PORT = 1338  # libfranka gripper server (separate from the FCI session)
+
+
+def _fci_lock_path(robot_ip: str) -> pathlib.Path:
+    """Mirror of frankatwin::fci_lock_path() in src/fci_lock.h -- keep in sync."""
+    safe = "".join(c if (c.isalnum() and c.isascii()) or c in ".-" else "_"
+                   for c in robot_ip)
+    return pathlib.Path(f"/tmp/frankatwin-fci-{safe}.lock")
+
+
+def _fci_lock_holder(robot_ip: str) -> Optional[str]:
+    """Who currently owns the robot, or None if the lock is free.
+
+    Probes with a non-blocking flock on a read-only fd, so this can never
+    disturb a running controller nor rewrite the holder line. A missing file
+    means no frankatwin binary has ever claimed this robot.
+    """
+    path = _fci_lock_path(robot_ip)
+    try:
+        fd = os.open(str(path), os.O_RDONLY)
+    except OSError:
+        return None
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            holder = os.read(fd, 256).decode(errors="replace").strip()
+            return holder or "unknown process"
+        # We got it -> nobody held it. Drop it again immediately; we never
+        # write, so the stale holder line (if any) is left untouched.
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        return None
+    finally:
+        os.close(fd)
 
 
 class _Report:
@@ -162,6 +196,17 @@ def _check_nuc(rep: _Report, cfg: RobotConfig) -> None:
                 "only one FCI session at a time -- stop them unless it is your own frankatwin daemon")
     else:
         rep.add(_Report.OK, "fci clients", "none running")
+
+    # FCI lock (src/fci_lock.h). Unlike the pgrep scan above this is
+    # authoritative for frankatwin's own binaries: osc_shm and move_to hold it
+    # for as long as they own the robot, and the kernel drops it if they die.
+    holder = _fci_lock_holder(cfg.robot.ip)
+    if holder is None:
+        rep.add(_Report.OK, "fci lock", f"{_fci_lock_path(cfg.robot.ip)} free")
+    else:
+        rep.add(_Report.OK, "fci lock", f"held by {holder}",
+                "expected while your daemon runs; a second osc_shm/move_to will "
+                "exit 5 instead of failing inside libfranka")
 
     # shm segment
     seg = pathlib.Path("/dev/shm") / cfg.paths.shm_name.lstrip("/")
