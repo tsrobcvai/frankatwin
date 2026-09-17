@@ -50,8 +50,8 @@ def main() -> int:
     p.add_argument("--rot-scale", type=float, default=0.02, help="|Δrot| per unit action [rad/step]")
     p.add_argument("--kp-pos", type=float, default=500.0)
     p.add_argument("--kp-ori", type=float, default=30.0)
-    p.add_argument("--err-delta-pos", type=float, default=0.15,
-                   help="osc_shm error clamp [m]; keep it > one step so it never engages (the sim has no clip)")
+    p.add_argument("--err-delta-pos", type=float, default=0.0,
+                   help="osc_shm error clamp [m]; 0 (default) = pure impedance, as in sim. Above one step it never engages but still catches runaway tracking")
     p.add_argument("--no-reset", action="store_true", help="skip the initial move_to home")
     p.add_argument("--config", type=str, default=None, help="path to robot.yaml")
     args = p.parse_args()

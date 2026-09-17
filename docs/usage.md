@@ -169,7 +169,7 @@ python examples/policy_loop.py --hz 20 --pos-scale 0.0025 --no-reset
 | `--hz`, `--duration` | policy rate [Hz] (10) and run time [s] (16) |
 | `--pos-scale`, `--rot-scale` | action → Δpos [m/step] (0.005) and Δrot [rad/step] (0.02) |
 | `--kp-pos`, `--kp-ori` | impedance gains (500 / 30) |
-| [`--err-delta-pos`]{.flag-safety} | [delta translation action clamp, for safety]{.flag-safety} — bounds how far the EE may lag its target [m]. This example passes `0.15`, well above one step (0.005 m), so it never engages in normal running. `robot.yaml` ships `0`, which turns the clamp off entirely |
+| [`--err-delta-pos`]{.flag-safety} | [delta translation action clamp, for safety]{.flag-safety} — bounds how far the EE may lag its target [m]. Default `0`: no clamp, pure impedance, as in sim. Set it above one step (0.005 m) and it never engages in normal running but still aborts if tracking runs away |
 | `--no-reset` | skip the initial `move_to` home |
 
 The whole loop of [`policy_loop.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/policy_loop.py):
@@ -182,8 +182,7 @@ def demo_policy(t, obs):                      # stand-in for a network; 6-D acti
 
 with FrankaTwinClient(cfg) as robot:
     robot.move_to_q(cfg.robot.init_q)                         # 1. position control: reset to home
-    robot.set_gains(kp_pos=500, kp_ori=30,                    # 2. impedance gains (Kd = 2*sqrt(Kp));
-                    error_delta_pos=0.15)                     #    clamp > one step, so it never engages
+    robot.set_gains(kp_pos=500, kp_ori=30)                    # 2. impedance gains (Kd = 2*sqrt(Kp))
     s = robot.wait_for_state()
     t0 = time.monotonic()
     for k in range(int(16 * 10)):                             # 3. 16 s at 10 Hz
@@ -197,8 +196,7 @@ with FrankaTwinClient(cfg) as robot:
 ```
 
 Between policy steps `osc_shm` holds the last target at 1 kHz, the same
-zero-order hold the IsaacLab replay uses. Keep `--err-delta-pos` above one step
-so the clamp never engages, as in sim. Targets are absolute base-frame poses
+zero-order hold the IsaacLab replay uses. Targets are absolute base-frame poses
 with **wxyz** quaternions; gains and clamps persist across `move_to` and
 restarts. More in
 [Architecture](architecture.md), [Interfaces](interfaces.md) and
