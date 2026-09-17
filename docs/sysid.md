@@ -34,6 +34,24 @@ Everything else — link masses/inertias, kinematics, the controller — is take
 known. Gravity is disabled on the sim articulation, mirroring libfranka's
 gravity compensation on the real side.
 
+The control *law* is indeed the same on both sides — `τ = Jᵀ F`, pure task-space
+PD (`control_mode="task_impedance"` in
+`isaaclab_sysid/.../franka_sysid/control.py`). The Jacobian in it is not
+obtained the same way:
+
+- **Real** ([`src/osc_shm.cpp`](https://github.com/tsrobcvai/frankatwin/blob/v0.2_dev/src/osc_shm.cpp)):
+  libfranka's analytic model, `model.zeroJacobian(Frame::kEndEffector)`, about
+  the EE frame configured in Desk — the same frame the pose is read from.
+- **Sim** (`franka_replay_env.py`): PhysX body Jacobians from
+  `root_physx_view.get_jacobians()`, averaged over `panda_leftfinger` and
+  `panda_rightfinger`, while the pose and velocity are read from a third body,
+  `panda_fingertip_centered`.
+
+So `J` differs between the two in both its source and its reference point.
+CMA-ES absorbs that mismatch into the friction, armature and delay it fits — the
+identified parameters therefore carry some geometric error that does not belong
+to the joint dynamics at all.
+
 ## Optimizer
 
 The fit runs [CMA-ES](https://github.com/CyberAgentAILab/cmaes) in
