@@ -63,7 +63,7 @@ python examples/move_to.py --target-ee 0.4 0.0 0.3  0 1 0 0 --duration 5
 | `--target-joints J1 … J7` | 7 absolute joint angles [rad] |
 | `--target-ee x y z qw qx qy qz` | EE position [m] in the robot **base frame** (+x forward, +z up) and orientation as a **unit quaternion, wxyz** — `0 1 0 0` = tool pointing down. EE frame = the one configured in Desk (Franka Hand: TCP between the fingertips) |
 | `--speed` | joint move: speed factor (0, 0.5]; default `reset.joint_speed_factor` |
-| `--duration` | EE move: seconds in [1.5, 20]; default `reset.pose_duration` |
+| `--duration` | EE move: seconds in [0.5, 20]; default `reset.pose_duration` (2.0 s) |
 
 #### Example 2 · Track a scripted reference
 

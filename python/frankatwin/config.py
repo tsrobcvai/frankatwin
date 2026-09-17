@@ -78,7 +78,7 @@ class PathsConfig:
 @dataclass
 class ResetConfig:
     joint_speed_factor: float = 0.2
-    pose_duration: float = 5.0
+    pose_duration: float = 2.0
 
 
 @dataclass
@@ -232,7 +232,7 @@ def load_config(path: Optional[os.PathLike] = None) -> RobotConfig:
         reset = raw.get("reset", {}) or {}
         reset_cfg = ResetConfig(
             joint_speed_factor=float(reset.get("joint_speed_factor", 0.2)),
-            pose_duration=float(reset.get("pose_duration", 5.0)),
+            pose_duration=float(reset.get("pose_duration", 2.0)),
         )
         if not (0.0 < reset_cfg.joint_speed_factor <= 0.5):
             raise ValueError(
