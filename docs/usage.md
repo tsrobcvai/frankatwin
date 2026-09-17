@@ -127,7 +127,7 @@ python examples/cart_impedance.py --mode chirp     $SYSID --log data/chirp.csv
 | `--dry-run` | build the reference and print peak rates, no robot |
 
 Shape and duration flags are listed by `--help`; the `multiband` and `chirp`
-designs are explained in [System identification](sysid.md#excitation-design).
+designs are explained in [SysID details](sysid_details.md#excitation-design).
 
 #### Example 3 · Run a policy closed-loop
 

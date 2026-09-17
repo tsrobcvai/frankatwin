@@ -69,6 +69,7 @@ sysid
 :hidden:
 :caption: Reference
 
+sysid_details
 architecture
 daemon
 configuration
