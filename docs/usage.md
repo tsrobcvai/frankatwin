@@ -1,5 +1,16 @@
 # Usage
 
+:::{admonition} [TODO, checklist]
+:class: warning
+
+1. **Visualize the trajectories.** The three reference shapes in Example 2
+   (`sine`, `multiband`, `chirp`) are described in prose only. Add a plot of each one so the shape,
+   amplitude and duration can be seen before running it on the robot.
+   `scripts/plot_ee_tracking.py` already plots actual-vs-target from a log, and
+   `cart_impedance.py --dry-run` builds the reference without a robot, so the
+   figures can be generated offline.
+:::
+
 ## Basic control
 
 Three steps: power on the arm, bring the controller up on the NUC, then drive
