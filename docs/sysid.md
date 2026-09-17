@@ -7,7 +7,7 @@ trajectories match.
 
 ## Approach
 
-We follow the procedure of [OmniReset](https://arxiv.org/abs/2603.15789) (UR7e),
+We follow a procedure similar to [OmniReset](https://arxiv.org/abs/2603.15789) (UR7e),
 itself based on PACE ([Bjelonic et al., 2025](https://arxiv.org/abs/2509.06342)):
 record excitation runs on the real arm, replay them in sim under the same
 controller, and fit friction, armature and motor delay with CMA-ES to minimize
