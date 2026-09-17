@@ -215,7 +215,8 @@ def load_config(path: Optional[os.PathLike] = None) -> RobotConfig:
             kp_ori=float(ctrl["kp_ori"]),
             kd_pos=None if ctrl.get("kd_pos") is None else float(ctrl["kd_pos"]),
             kd_ori=None if ctrl.get("kd_ori") is None else float(ctrl["kd_ori"]),
-            error_delta_pos=float(ctrl.get("error_delta_pos", 0.05)),
+            # 0 = pure impedance, matching osc_shm's own compiled-in default.
+            error_delta_pos=float(ctrl.get("error_delta_pos", 0.0)),
         )
 
         p = raw.get("paths", {}) or {}

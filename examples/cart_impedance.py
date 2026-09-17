@@ -89,7 +89,9 @@ def parse_args() -> argparse.Namespace:
     # error instead of latching its tau output to zero.  The orientation
     # channel is pure impedance and has no clamp to relax.
     p.add_argument("--err-delta-pos", type=float, default=None,
-                   help="Override osc_shm |e_pos|_inf abort threshold [m] (default: keep daemon value, typically 0.05).")
+                   help="Override osc_shm's position error clamp [m]: bounds the push to "
+                        "kp_pos*this AND aborts past it. 0 = pure impedance. "
+                        "Default: keep the daemon's value (robot.yaml, 0.0).")
 
     # sine-mode parameters
     p.add_argument("--amp", type=float, default=0.05,

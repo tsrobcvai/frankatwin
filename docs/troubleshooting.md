@@ -54,8 +54,10 @@ setup it made things worse (`control_command_success_rate: 0`).
 
 ### `cartesian_reflex` during contact / insertion
 
-**Cause.** libfranka's factory collision thresholds (20 N) are below the force the
-controller legitimately applies: `kp_pos · error_delta_pos = 500 · 0.05 = 25 N`.
+**Cause.** libfranka's factory collision thresholds (20 N) are below the force
+the controller legitimately applies. With a clamp set, that force is
+`kp_pos · error_delta_pos` (= 25 N at `500 · 0.05`); at the shipped
+`error_delta_pos: 0` it is bounded only by the per-joint torque clamp.
 
 **Fix.** `collision.cartesian_threshold` / `torque_threshold` in `robot.yaml`
 (default 100, applied via `setCollisionBehavior` at `osc_shm` start). Lower
@@ -126,11 +128,23 @@ and `|q̇|∞ < 0.05 rad/s` (1 s cap). Don't `kill -9` the controller.
 
 ### Tracking-error abort (`|e_pos|_inf > error_delta_pos`)
 
-Your reference moves faster than the impedance can follow at the current `kp`.
-Either raise `kp`, lower the reference speed, or loosen the clamp
-(`--err-delta-pos` on `python examples/cart_impedance.py`, or `set_gains`). The
-chirp defaults need `0.15 m`. Only position can trigger this abort: the
-orientation channel is pure impedance, so a large `|e_ori|` never stops a run.
+Your reference moves faster than the impedance can follow at the current `kp`,
+*and* a clamp is set — `error_delta_pos` bounds the push to `kp_pos · clamp`
+(10 N at `200 · 0.05`), which the sysid excitations outrun within a few ticks.
+
+`robot.yaml` ships `error_delta_pos: 0`, which disables the clamp and this
+abort, so a stock checkout does not hit it. If you have set a positive value:
+raise `kp`, lower the reference speed, loosen the clamp, or set it back to `0`
+(`--err-delta-pos` on `python examples/cart_impedance.py`, or `set_gains`).
+
+Watch for a **restart loop**: the abort stops `osc_shm`, the arm sags while the
+torque ramps to zero, the watchdog relaunches and re-anchors at the sagged
+pose — and a client that is still streaming targets from its own anchor is now
+commanding a pose far away, so the next run aborts within ~70 ms. The arm
+appears to start and stop repeatedly. Stop the client, not the daemon.
+
+Only position can trigger this abort: the orientation channel is pure
+impedance, so a large `|e_ori|` never stops a run.
 
 ### Arm is softer than expected after a reset
 

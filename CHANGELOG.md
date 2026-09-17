@@ -58,6 +58,22 @@ All notable changes to this project are documented here. The format follows
 
 
 ### Changed
+- `robot.yaml` ships `control.error_delta_pos: 0` (pure impedance) instead of
+  `0.05`, so the file finally agrees with `osc_shm`, which has always compiled
+  in `0.0` for the same stated reason ("pure impedance to match the unclipped
+  sim"). Until the daemon began restoring gains after every controller start
+  (c5bac75), `osc_shm`'s 0 is what actually ran, and it is what the v3 sysid
+  data was collected under; the restore silently flipped the clamp on.
+
+  The clamp does two things at once: it bounds the controller's push to
+  `kp_pos * error_delta_pos` and aborts the loop when the unclipped error
+  exceeds it. At `kp_pos` 200 a 0.05 clamp allows 10 N, which cannot follow
+  `multiband`'s 0.30 m/s reference, so `cart_impedance.py --mode multiband`
+  aborted after ~70 ms and the watchdog relaunched into the same abort -- the
+  arm visibly starting and stopping. The `config.py` fallback moves to 0 as
+  well. Set a positive value to get the clamp and the abort back.
+
+### Changed
 - **Breaking.** The orientation channel is pure impedance: `error_delta_rot` is
   gone everywhere — the per-tick `|e_ori|` clip and the orientation
   tracking-error abort in `osc_shm`, the `ShmCommand` field (the struct is now

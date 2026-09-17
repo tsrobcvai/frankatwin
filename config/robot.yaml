@@ -34,27 +34,42 @@ control:
   kp_ori: 20.0       # Nm/rad
   kd_pos: null       # null -> 2 * sqrt(kp_pos)
   kd_ori: null       # null -> 2 * sqrt(kp_ori)
-  # Per-tick error clamp in osc_shm: when > 0, |e_pos|_inf is clipped to
-  # error_delta_pos (bounding the push to kp * error_delta) and an error beyond
-  # it aborts the loop. 0 disables both (pure impedance, matching the sim).
-  # The orientation channel has no clamp and no tracking abort at all.
+  # Per-tick position error clamp in osc_shm. When > 0 it does TWO things:
+  # clips |e_pos|_inf to this value -- which bounds the controller's own push
+  # to kp_pos * error_delta_pos -- AND aborts the loop when the *unclipped*
+  # error exceeds it. 0 disables both.
+  #
+  # 0 is the default so that this file agrees with osc_shm, which compiles in
+  # 0.0 for the same reason ("pure impedance to match the unclipped sim").
+  # Until the daemon began restoring gains after every restart, osc_shm's 0
+  # is what actually ran, and it is what the v3 sysid data was collected under.
+  # The excitations need it: at kp_pos 200 a 0.05 clamp caps the push at 10 N,
+  # which cannot follow multiband's 0.30 m/s reference, so the loop aborts.
+  #
+  # With 0 the safety net is the per-joint TAU_LIMIT clamp, the torque slew
+  # limiter, and libfranka's collision reflex + hard joint limits. Set a
+  # positive value (0.05 was the old default) to get the clamp and the
+  # tracking abort back. The orientation channel has neither, at any setting.
+  #
   # Runtime override via robot.set_gains(error_delta_pos=...) or
   # python examples/cart_impedance.py --err-delta-pos.
-  error_delta_pos: 0.05    # m
+  error_delta_pos: 0.0     # m  (0 = pure impedance)
 
 # libfranka collision-reflex thresholds (passed to setCollisionBehavior at
 # osc_shm startup; daemon restart applies a change, no rebuild needed once the
 # osc_shm binary supports --collision-torque/--collision-cartesian).
 #
 # Why 100 (not libfranka's low defaults): the task-impedance controller's OWN
-# push is bounded by kp * error_delta = kp_pos*0.05 (~25 N at kp_pos=500) and
-# kp_ori*0.30 (~9 Nm at kp_ori=30). The contact reaction during peg-hole
+# push reaches tens of newtons. With error_delta_pos > 0 it is bounded by
+# kp_pos * error_delta_pos (~25 N at kp_pos=500, 0.05 m); at the default 0 the
+# only bound is the per-joint TAU_LIMIT clamp. The contact reaction during peg-hole
 # insertion therefore reaches ~25 N -- above a 20 N threshold -- which fires
 # "cartesian_reflex" (red light, controller aborts). 100 mirrors the deoxys
 # stack, which never reflexed during insertion. Lower these (e.g. 40 / 50) if
 # you want a tighter crash guard with some margin over the ~25 N working force;
-# raising them trades collision safety for letting the controller push freely
-# (its force is still capped by error_delta_pos above).
+# raising them trades collision safety for letting the controller push freely.
+# Note the controller is NOT force-capped at the default error_delta_pos 0, so
+# these thresholds and TAU_LIMIT are what stand between it and a hard contact.
 collision:
   torque_threshold: 100.0      # Nm,    per joint  (fills setCollisionBehavior torque arrays)
   cartesian_threshold: 100.0   # N/Nm,  per axis   (fills the Cartesian force arrays)

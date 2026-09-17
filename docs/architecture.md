@@ -134,14 +134,16 @@ Ordered from first to last line of defence:
    orientation offset of the commanded trajectory. Reported for inspection
    only -- nothing caps them; `osc_shm`'s tracking-error clamp is the
    safety net.
-2. **Error clamp** (`error_delta_pos/rot`, per tick): when > 0, clips the
+2. **Error clamp** (`error_delta_pos`, per tick): when > 0, clips the
    position error coordinate-wise *and* aborts the loop if the unclipped
    error exceeds it — bounds the controller's own translational push to
-   `Kp_pos · error_delta_pos` (≈ 25 N at `kp_pos=500`, `0.05 m`). `robot.yaml`
-   sets 0.05 m as the daemon's initial value; `0` disables both (pure
-   impedance, what the sim does). The orientation channel has no clamp and no
-   tracking abort at all. Override at runtime with
-   `set_gains(error_delta_pos=…)` or
+   `Kp_pos · error_delta_pos` (≈ 25 N at `kp_pos=500`, `0.05 m`). **`robot.yaml`
+   ships `0`**, which disables both: pure impedance, matching what `osc_shm`
+   compiles in and what the sim does, and what the sysid excitations need — a
+   0.05 clamp caps the push at 10 N at `kp_pos=200`, too little to follow
+   `multiband`, so the loop aborts. Set a positive value to get the clamp and
+   the abort back. The orientation channel has no clamp and no tracking abort
+   at any setting. Override at runtime with `set_gains(error_delta_pos=…)` or
    `python examples/cart_impedance.py --err-delta-pos`.
 3. **Torque clamp** `τ_max` per joint.
 4. **Torque slew limiter** 800 N·m/s per joint (libfranka's own limit is
