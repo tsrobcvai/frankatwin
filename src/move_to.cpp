@@ -14,8 +14,12 @@
 //      Uses libfranka's franka::CartesianPose motion type. Each tick the
 //      callback returns the desired 4x4 column-major matrix interpolated
 //      between the start pose (captured at t=0) and the target pose via a 5th
-//      order min-jerk profile. libfranka's internal rate limiter clamps
-//      velocity/acceleration/jerk. NO IK is performed on our side.
+//      order min-jerk profile. NO IK is performed on our side.
+//
+// Both modes seed their trajectory from the robot's *commanded* state (q_d /
+// O_T_EE_c) rather than the measured one. Starting from the measured value puts
+// a step the size of the tracking error into the first 1 ms tick, which trips
+// joint_motion_generator_acceleration_discontinuity.
 //
 // Safety:
 //   - Joint-limit check on the goal q (mode 1) and on every tick (both modes).
@@ -243,7 +247,14 @@ int main(int argc, char** argv) {
       MotionGenerator gen(args.speed_factor, args.q_goal);
       robot.control([&](const franka::RobotState& s,
                         franka::Duration period) -> franka::JointPositions {
-        franka::JointPositions out = gen(s, period);
+        // The FCI requires the first commanded position to equal the robot's
+        // current *desired* q_d, not the measured q -- they differ by the
+        // impedance tracking error (gravity sag, or wherever an aborted motion
+        // left things). MotionGenerator is vendored verbatim and seeds from
+        // robot_state.q, so hand it a state whose q is q_d.
+        franka::RobotState seeded = s;
+        seeded.q = s.q_d;
+        franka::JointPositions out = gen(seeded, period);
         if (g_stop_flag.load()) {
           out = franka::MotionFinished(out);
         }
@@ -252,8 +263,8 @@ int main(int argc, char** argv) {
       std::cout << "[move_to] joint motion finished" << std::endl;
     } else {
       // Pose mode: minimum-jerk in task space between captured start pose and
-      // user-specified goal pose. libfranka enforces rate limits internally.
-      const PoseFromArray start = extract_pose(initial_state.O_T_EE);
+      // user-specified goal pose.
+      PoseFromArray start = extract_pose(initial_state.O_T_EE);
       const Eigen::Vector3d p_goal(args.tx, args.ty, args.tz);
       const Eigen::Quaterniond q_goal_raw(args.qw, args.qx, args.qy, args.qz);
       if (std::abs(q_goal_raw.norm() - 1.0) > 1e-3) {
@@ -277,9 +288,20 @@ int main(int argc, char** argv) {
                 << std::endl;
 
       double t = 0.0;
+      bool seeded = false;
       const double T = args.duration;
-      robot.control([&](const franka::RobotState& /*s*/,
+      robot.control([&](const franka::RobotState& s,
                         franka::Duration period) -> franka::CartesianPose {
+        if (!seeded) {
+          // Same rule as joint mode: the trajectory must start at the robot's
+          // commanded pose O_T_EE_c, which is only populated once the control
+          // loop is running (readOnce() above gives the measured O_T_EE).
+          start = extract_pose(s.O_T_EE_c);
+          if (start.q.dot(q_goal) < 0.0) {
+            q_goal.coeffs() *= -1.0;
+          }
+          seeded = true;
+        }
         t += period.toSec();
         double s_t = minjerk_s(t, T);
         const Eigen::Vector3d p = start.p + s_t * (p_goal - start.p);

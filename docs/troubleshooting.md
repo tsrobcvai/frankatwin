@@ -28,6 +28,30 @@ does not help; the step is the problem.
 limit, so the limiter only shapes the few-ms transitions. If you disabled it
 (`<= 0`), don't.
 
+### `joint_motion_generator_acceleration_discontinuity` at the start of `move_to`
+
+**Symptom.** `move_to` (either mode) aborts almost immediately with
+`control_command_success_rate: 1` — communication was perfect, so this is the
+commanded trajectory, not the link.
+
+**Cause.** The FCI requires the first command of a motion to equal the robot's
+current *commanded* setpoint (`q_d`), not its *measured* position (`q`). The
+vendored `MotionGenerator` seeds `q_start_` from `robot_state.q`. The two differ
+by the tracking error — a fraction of a mrad under gravity sag, far more after a
+previous motion aborted mid-flight — and closing that gap in one 1 ms tick is an
+acceleration far above `kMaxJointAcceleration` (10 rad/s²). The trajectory
+itself is gentle; only the first tick is the problem.
+
+**Fix.** `src/move_to.cpp` hands the generator a `RobotState` whose `q` has been
+replaced by `q_d`; pose mode likewise seeds from `O_T_EE_c` on the first tick
+(`O_T_EE_c` is only populated once the loop is running, so `readOnce()` cannot
+supply it). Do not "fix" this in `src/examples_common.cpp` — it is vendored
+verbatim.
+
+Enabling libfranka's rate limiter (`limit_rate=true`) looks like a fix for this
+and is not: it clamps the offending step instead of removing it, and on this
+setup it made things worse (`control_command_success_rate: 0`).
+
 ### `cartesian_reflex` during contact / insertion
 
 **Cause.** libfranka's factory collision thresholds (20 N) are below the force the
