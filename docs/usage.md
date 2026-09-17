@@ -46,30 +46,35 @@ control, then `osc_shm` resumes and holds the new pose. A joint target (home by
 default) sweeps an arc; an end-effector target moves in a straight line.
 
 > **Safety.** The arm does not yield on contact. Clear its path, keep the user
-> stop in hand, and go slow on new targets (`--speed 0.1` or a longer `--duration`).
+> stop in hand, and use `--q-max-speed 0.1` the first time you try a new target.
 
 ```bash
 # Move to the home pose (robot.init_q in config/robot.yaml):
 #   q = [0, -π/4, 0, -3π/4, 0, π/2, π/4] rad
 python examples/move_to.py
 
-# Move to a joint configuration [rad] at 20 % of the joint speed limits
+# Move to a joint configuration [rad], capped at 0.5 rad/s per joint
 python examples/move_to.py \
     --target-joints 0 -0.785 0 -2.356 0 1.571 0.785 \
-    --speed 0.2
+    --q-max-speed 0.5
 
-# Move the end effector to x y z [m], tool pointing down, in 5 s
+# Move the end effector to x y z [m], tool pointing down
 python examples/move_to.py \
     --target-ee 0.4 0.0 0.3 0 1 0 0 \
-    --duration 5
+    --q-max-speed 0.5
 ```
 
 | flag | meaning |
 |---|---|
 | `--target-joints J1 … J7` | joint angles [rad] |
 | `--target-ee x y z qw qx qy qz` | TCP position [m] and quaternion (wxyz) in the base frame; `0 1 0 0` = tool down |
-| `--speed` | joint-move speed factor in (0, 0.5]; default 0.2 |
-| `--duration` | end-effector move time in [1.5, 20] s; default 5 |
+| `--q-max-speed` | per-joint velocity cap [rad/s] for both modes, in (0, 1.25]; default `reset.q_max_speed` (0.5). The motion time follows from the travel, so a farther target takes longer instead of moving faster. |
+
+> **Approximate for `--target-ee`.** libfranka solves the IK for a Cartesian
+> move, so `move_to` never sees joint space; it estimates the joint speed from
+> the Jacobian at the start pose alone. Treat the cap as pacing, not a
+> guarantee — the robot's own limits are the real protection. For
+> `--target-joints` it is exact.
 
 #### Example 2 · Track a scripted reference
 

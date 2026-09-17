@@ -77,8 +77,9 @@ class PathsConfig:
 
 @dataclass
 class ResetConfig:
-    joint_speed_factor: float = 0.2
-    pose_duration: float = 5.0
+    # Single pacing knob for both move_to modes: per-joint velocity cap
+    # [rad/s]. See src/move_to.cpp for how each mode consumes it.
+    q_max_speed: float = 0.5
 
 
 @dataclass
@@ -231,13 +232,12 @@ def load_config(path: Optional[os.PathLike] = None) -> RobotConfig:
 
         reset = raw.get("reset", {}) or {}
         reset_cfg = ResetConfig(
-            joint_speed_factor=float(reset.get("joint_speed_factor", 0.2)),
-            pose_duration=float(reset.get("pose_duration", 5.0)),
+            q_max_speed=float(reset.get("q_max_speed", 0.5)),
         )
-        if not (0.0 < reset_cfg.joint_speed_factor <= 0.5):
+        if not (0.0 < reset_cfg.q_max_speed <= 1.25):
             raise ValueError(
-                f"reset.joint_speed_factor must be in (0, 0.5], got "
-                f"{reset_cfg.joint_speed_factor}"
+                f"reset.q_max_speed must be in (0, 1.25] rad/s, got "
+                f"{reset_cfg.q_max_speed}"
             )
 
         grip = raw.get("gripper", {}) or {}

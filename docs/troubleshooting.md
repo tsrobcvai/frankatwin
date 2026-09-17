@@ -28,6 +28,30 @@ does not help; the step is the problem.
 limit, so the limiter only shapes the few-ms transitions. If you disabled it
 (`<= 0`), don't.
 
+### `joint_motion_generator_acceleration_discontinuity` at the start of `move_to`
+
+**Symptom.** `move_to` (either mode) aborts almost immediately with
+`control_command_success_rate: 1` — communication was perfect, so this is the
+commanded trajectory, not the link.
+
+**Cause.** The FCI requires the first command of a motion to equal the robot's
+current *commanded* setpoint (`q_d`), not its *measured* position (`q`). The
+vendored `MotionGenerator` seeds `q_start_` from `robot_state.q`. The two differ
+by the tracking error — a fraction of a mrad under gravity sag, far more after a
+previous motion aborted mid-flight — and closing that gap in one 1 ms tick is an
+acceleration far above `kMaxJointAcceleration` (10 rad/s²). The trajectory
+itself is gentle; only the first tick is the problem.
+
+**Fix.** `src/move_to.cpp` hands the generator a `RobotState` whose `q` has been
+replaced by `q_d`; pose mode likewise seeds from `O_T_EE_c` on the first tick
+(`O_T_EE_c` is only populated once the loop is running, so `readOnce()` cannot
+supply it). Do not "fix" this in `src/examples_common.cpp` — it is vendored
+verbatim.
+
+Enabling libfranka's rate limiter (`limit_rate=true`) looks like a fix for this
+and is not: it clamps the offending step instead of removing it, and on this
+setup it made things worse (`control_command_success_rate: 0`).
+
 ### `cartesian_reflex` during contact / insertion
 
 **Cause.** libfranka's factory collision thresholds (20 N) are below the force the
@@ -44,6 +68,48 @@ relaunches `osc_shm` within 0.5 s of it dying, so a single reflex no longer
 requires a daemon restart. If you still see this, the robot is in a state the
 recovery cannot clear (e.g. user stop pressed): release the stop / re-enable FCI
 in Desk.
+
+### `command not possible in the current mode ("Move")` from `move_to` / `osc_shm`
+
+**Symptom.** A hand-run binary dies immediately on its first parameter command:
+
+```
+[move_to] franka::Exception: libfranka: Set Joint Impedance command rejected:
+          command not possible in the current mode ("Move")!
+```
+
+**Cause.** Something else already owns the robot — almost always your own
+`frankatwin.daemon`, whose `osc_shm` child is in its 1 kHz control loop. The FCI
+accepts the second TCP connection but keeps the motion/parameter authority with
+the first holder, so the failure surfaces several calls later, inside
+`setDefaultBehavior()`, in a message that never mentions the real owner.
+
+**Fix.** Don't run a second controlling session. Either drive the robot through
+the daemon (`client.move_to_pose(...)` / `client.move_to_q(...)`, which stops
+`osc_shm`, runs `move_to`, then restarts it), or stop the daemon first.
+
+Since v0.2 `osc_shm` and `move_to` take a per-robot advisory lock
+(`/tmp/frankatwin-fci-<ip>.lock`, see `src/fci_lock.h`) *before* connecting, so
+the clash is now reported up front and names the holder:
+
+```
+[move_to] robot 172.16.0.2 is already held by another frankatwin session
+          (pid=6494 exe=osc_shm).
+```
+
+with exit code **5**. `frankatwin doctor` prints the lock state as `fci lock`.
+The lock is held on an open file descriptor, so the kernel releases it even if
+the holder is SIGKILLed or segfaults — a stale lock file is never something you
+need to delete by hand.
+
+Read-only helpers (`read_current_q`, `read_current_pose`, `read_load`) and
+`gripper_cmd` take no lock: the first three only `readOnce()`, and the gripper
+server is a separate TCP endpoint (1338). All four work while the daemon runs.
+
+The lock is advisory and only covers frankatwin's own binaries. If a *foreign*
+FCI client holds the robot (`franka_ros`, `franka-interface`, or a Desk
+operation), you still get the raw libfranka message — `move_to` appends a hint
+pointing at `frankatwin doctor`, whose `fci clients` line lists them.
 
 ### `Move command aborted!` right after `move_to`
 

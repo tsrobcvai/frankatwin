@@ -15,8 +15,35 @@ All notable changes to this project are documented here. The format follows
   semantics as the deoxys-based `control_gripper.py`), and real
   `robot.yaml → gripper:` keys (speeds, grasp force / width, epsilons).
   `doctor` checks the binary and the gripper port.
+- Per-robot FCI lock (`src/fci_lock.h`): `osc_shm` and `move_to` take an
+  advisory `flock` on `/tmp/frankatwin-fci-<ip>.lock` before connecting, so a
+  second controlling session exits 5 with the holder's pid instead of dying
+  inside libfranka on `Set Joint Impedance command rejected: command not
+  possible in the current mode ("Move")`. Held on an open fd, so the kernel
+  releases it even on SIGKILL — no stale locks. Read-only helpers and
+  `gripper_cmd` take no lock and still run alongside the daemon. `doctor`
+  reports the lock state as `fci lock`.
 
 ### Changed
+- **Breaking.** One pacing knob for both `move_to` modes: `--q-max-speed`, a
+  per-joint velocity cap in rad/s, range (0, 1.25], default 0.5. It replaces
+  `--speed-factor` and `--duration` on the binary, `speed_factor=` / `duration=`
+  on `LocalController` / `FrankaTwinClient` (`q_max_speed=`), the `speed_factor`
+  / `duration` wire fields (`q_max_speed`), `--speed` / `--duration` on
+  `examples/move_to.py` (`--q-max-speed`), and `reset.joint_speed_factor` /
+  `reset.pose_duration` in `robot.yaml` (`reset.q_max_speed`). The default
+  reproduces the old behaviour exactly: 0.5 rad/s is `speed_factor` 0.2 against
+  MotionGenerator's largest `dq_max_` (2.5), and the 1.25 ceiling is the old
+  `speed_factor <= 0.5`. A `robot.yaml` still carrying the old keys falls back
+  to the default rather than erroring.
+
+  Motion time is now derived from the travel in both modes, so a longer move
+  takes longer instead of moving faster -- which a fixed duration could not do.
+  For `--pose` the cap is **approximate**: libfranka owns the IK, so `move_to`
+  estimates the joint displacement from the Jacobian at the start pose
+  (damped least squares) and sizes the min-jerk profile from that. The estimate
+  degrades over large reorientations and near singularities; the binary says so
+  on stdout, and the docs repeat it.
 - Installation is conda-only: one `frankatwin` env per machine, libfranka from
   conda-forge matched to the robot's FCI protocol (system 5.9 → `libfranka=0.20`;
   a mismatch only shows up when a session is opened). `CMakeLists.txt` finds

@@ -37,6 +37,7 @@
 // Initial pose target is captured at startup from forward kinematics so the
 // robot holds in place until a real client takes over.
 
+#include "fci_lock.h"
 #include "shm_layout.h"
 
 #include <franka/duration.h>
@@ -324,6 +325,25 @@ int main(int argc, char** argv) {
 
   std::signal(SIGINT, signal_handler);
   std::signal(SIGTERM, signal_handler);
+
+  // Claim the robot before allocating anything. Two controllers on one robot
+  // is never valid, and the FCI reports the clash only much later as a mode
+  // error that names no one -- see fci_lock.h.
+  frankatwin::FciLock fci_lock;
+  {
+    std::string holder;
+    // Brief wait: the daemon relaunches us right after a move_to, which may
+    // still be releasing the lock as it exits.
+    if (!fci_lock.acquire(args.robot_ip, "osc_shm", 3000, &holder)) {
+      std::cerr << "[osc_shm] robot " << args.robot_ip
+                << " is already held by another frankatwin session (" << holder
+                << ").\n"
+                << "[osc_shm] Stop the running daemon/controller before "
+                   "starting a second one."
+                << std::endl;
+      return frankatwin::kExitRobotBusy;
+    }
+  }
 
   int shm_fd = -1;
   ShmSegment* shm = open_shm(args.shm_name, args.init_shm, &shm_fd);

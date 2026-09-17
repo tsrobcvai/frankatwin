@@ -3,8 +3,8 @@
 
 Run:
   python examples/move_to.py                                        # home = robot.init_q (config/robot.yaml)
-  python examples/move_to.py --target-joints 0 -0.785 0 -2.356 0 1.571 0.785 [--speed 0.2]
-  python examples/move_to.py --target-ee 0.4 0.0 0.3  0 1 0 0 [--duration 5]
+  python examples/move_to.py --target-joints 0 -0.785 0 -2.356 0 1.571 0.785 [--q-max-speed 0.5]
+  python examples/move_to.py --target-ee 0.4 0.0 0.3  0 1 0 0 [--q-max-speed 0.5]
   python examples/move_to.py ... --config /path/to/robot.yaml
 
 Target formats
@@ -23,9 +23,13 @@ Target formats
 
 What happens (both modes are blocking, done by the C++ `move_to` binary):
   1. the daemon stops osc_shm (libfranka allows one session at a time),
-  2. joints: libfranka MotionGenerator, min-jerk, speed scaled by --speed
-     EE pose: libfranka CartesianPose, 5th-order profile over --duration
-     (libfranka solves the IK internally; no IK on our side),
+  2. joints: libfranka MotionGenerator, per-joint velocity capped at
+        --q-max-speed; the motion time follows from the travel.
+     EE pose: libfranka CartesianPose, 5th-order min-jerk. libfranka solves
+        the IK internally, so --q-max-speed is APPROXIMATE here: move_to
+        estimates the joint speed from the Jacobian at the start pose alone,
+        and the estimate degrades over large reorientations and near
+        singularities.
   3. osc_shm restarts anchored at the new pose, gains/clamps preserved.
 
 Readback: after the move the script prints the pose osc_shm is now holding.
@@ -58,10 +62,9 @@ def main() -> int:
     g.add_argument("--target-ee", type=float, nargs=7,
                    metavar=("X", "Y", "Z", "QW", "QX", "QY", "QZ"),
                    help="EE pose: position [m] in the base frame + unit quaternion wxyz")
-    p.add_argument("--speed", type=float, default=None,
-                   help="joint move: MotionGenerator speed factor (0, 0.5]; default reset.joint_speed_factor")
-    p.add_argument("--duration", type=float, default=None,
-                   help="EE move: seconds in [1.5, 20]; default reset.pose_duration")
+    p.add_argument("--q-max-speed", type=float, default=None, dest="q_max_speed",
+                   help="both modes: per-joint velocity cap [rad/s], (0, 1.25]; "
+                        "default reset.q_max_speed (0.5). Approximate for --target-ee")
     p.add_argument("--config", type=str, default=None, help="path to robot.yaml")
     p.add_argument("--settle", type=float, default=0.5, help="seconds to let osc_shm settle before readback")
     args = p.parse_args()
@@ -72,7 +75,7 @@ def main() -> int:
             pos = np.asarray(args.target_ee[:3], dtype=np.float64)
             quat = np.asarray(args.target_ee[3:], dtype=np.float64)
             print(f"moving EE to pos = {pos.tolist()}  quat(wxyz) = {quat.tolist()}")
-            robot.move_to_pose(pos, quat, duration=args.duration)
+            robot.move_to_pose(pos, quat, q_max_speed=args.q_max_speed)
             q_target = None
         else:
             q_target = np.asarray(
@@ -80,7 +83,7 @@ def main() -> int:
                 dtype=np.float64,
             )
             print(f"moving to {'joints' if args.target_joints is not None else 'home'}: {np.round(q_target, 4).tolist()}")
-            robot.move_to_q(q_target, speed_factor=args.speed)
+            robot.move_to_q(q_target, q_max_speed=args.q_max_speed)
 
         # Readback of the pose osc_shm is now holding.
         time.sleep(max(args.settle, 0.0))
