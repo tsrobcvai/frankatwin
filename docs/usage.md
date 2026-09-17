@@ -44,10 +44,10 @@ Script: [`examples/move_to.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.
 **What the robot does.** The arm moves under stiff position control to a target
 named one of two ways:
 
-- **`--target-joints`** — seven joint angles. libfranka's `MotionGenerator`
-  gives each joint a cubic ramp up, a constant-velocity cruise and a cubic ramp
-  down, the seven synchronized to finish together, so the end effector sweeps an
-  arc. This is the default mode.
+- **`--target-joints`** [default]{.badge-default} — seven joint angles.
+  libfranka's `MotionGenerator` gives each joint a cubic ramp up, a
+  constant-velocity cruise and a cubic ramp down, the seven synchronized to
+  finish together, so the end effector sweeps an arc.
 - **`--target-ee`** — a Cartesian pose. libfranka solves the IK and the end
   effector follows a straight 5th-order path.
 
@@ -89,8 +89,8 @@ and torque headroom.
 **What the robot does.** Under impedance control the end effector tracks a
 reference anchored at the pose it starts from, in one of three shapes:
 
-- **`sine`** — ±5 cm along z at 0.5 Hz for 4 s, ending back at the start pose.
-  This is the default mode.
+- **`sine`** [default]{.badge-default} — ±5 cm along z at 0.5 Hz for 4 s,
+  ending back at the start pose.
 - **`multiband`** — x, y, z, yaw and roll, each driven at a low and a high
   frequency at once (0.15–1.1 Hz), for 12 s.
 - **`chirp`** — all six axes swept from `--f0` to `--f1` (0.1 → 0.7 Hz), for
@@ -100,7 +100,7 @@ reference anchored at the pose it starts from, in one of three shapes:
 :class: danger
 
 `multiband` and `chirp` are fast sysid motions, up to ±15 cm and ±0.5 rad.
-Start them with at least 30 cm of free space around the tool.
+Clear the space around the robot before running them.
 :::
 
 ```bash
@@ -122,7 +122,7 @@ python examples/cart_impedance.py --mode chirp \
 
 | flag | meaning |
 |---|---|
-| `--mode` | `sine` (default), `multiband` or `chirp` |
+| `--mode` | `sine` [default]{.badge-default}, `multiband` or `chirp` |
 | `--kp-pos`, `--kp-ori` | impedance gains; default from `robot.yaml` |
 | `--err-delta-pos`, `--err-delta-rot` | error clamps [m] / [rad]; `chirp` needs `0.15` / `0.80` |
 | `--log run.csv` | save a per-tick CSV and JSON sidecar ([format](data_format.md)) |

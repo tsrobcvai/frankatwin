@@ -18,3 +18,18 @@ table.table td, table.table th { vertical-align: top; }
   line-height: 0.75em;
   vertical-align: -0.0667em;
 }
+
+/* "default" pill marking the option a command uses when given no flag */
+.badge-default {
+  font-family: var(--pst-font-family-monospace);
+  font-size: 0.7em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.15em 0.6em;
+  border-radius: 1em;
+  vertical-align: 0.12em;
+  white-space: nowrap;
+  background: var(--pst-color-success-bg, #e6f4ea);
+  color: var(--pst-color-success, #1a7f37);
+}
