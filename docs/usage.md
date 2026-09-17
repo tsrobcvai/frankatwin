@@ -134,7 +134,6 @@ python examples/cart_impedance.py --mode chirp     $SYSID --log data/chirp.csv
 |---|---|
 | `--mode` | `sine` [default]{.badge-default}, `multiband` or `chirp` |
 | `--kp-pos`, `--kp-ori` | impedance gains; default from `robot.yaml` |
-| `--err-delta-pos` | position error clamp [m]; bounds the push to `kp_pos ·` this **and** aborts past it. Default `0` (pure impedance) from `robot.yaml`. Orientation has no clamp |
 | `--log run.csv` | save a per-tick CSV and JSON sidecar ([format](data_format.md)) |
 | `--dry-run` | build the reference and print peak rates, no robot |
 
