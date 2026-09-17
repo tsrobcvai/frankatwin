@@ -79,7 +79,7 @@ python examples/move_to.py --target-ee 0.4 0.0 0.3  0 1 0 0  --q-max-speed 0.5
 > internally, so the cap is only estimated — from the Jacobian at the start
 > pose; for `--target-joints` it is exact.
 
-#### Example 2 · Track a scripted reference
+#### Example 2 · Track scripted trajectories
 
 Script: [`examples/cart_impedance.py`](https://github.com/tsrobcvai/frankatwin/blob/v0.2/examples/cart_impedance.py)
 
