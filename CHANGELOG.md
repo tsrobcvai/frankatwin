@@ -38,6 +38,25 @@ All notable changes to this project are documented here. The format follows
   particular major version, but behaviour differs across them, so it belongs in
   the report people already paste when something is off.
 
+### Removed
+- The 0.30 m/s Cartesian speed and 0.50 rad/s angular rate conventions, and the
+  four pre-flight checks that warned against them (`cart_impedance.py`,
+  `gen_excitation_traj.py`, `gen_chirp_traj.py`,
+  `frankatwin.excitation.chirp`). The pair was inherited from the UR5e
+  `collect_sysid_data.py` pipeline this excitation code was ported from, not
+  from Franka: libfranka's own ceilings are 3.0 m/s and 2.5 rad/s
+  (`franka/rate_limiting.h`), roughly 10x and 5x higher. They were also
+  mis-calibrated against the configurations this repo ships and documents --
+  `multiband` peaks at 0.3012 m/s and `chirp` at 0.457 m/s / 1.47 rad/s, so
+  both known-good excitations warned about themselves on every run.
+
+  The peak-rate diagnostics stay, now printed without a threshold: they
+  describe the commanded trajectory (`dx_des` is its analytic derivative),
+  which is worth seeing before committing an excitation to the robot.
+  `osc_shm`'s per-tick tracking-error clamp is the safety net that actually
+  runs.
+
+
 ### Changed
 - **Breaking.** The orientation channel is pure impedance: `error_delta_rot` is
   gone everywhere — the per-tick `|e_ori|` clip and the orientation
