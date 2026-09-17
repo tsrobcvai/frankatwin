@@ -213,12 +213,12 @@ of the jaws; `--homing` sweeps the full stroke.
 :::
 
 ```bash
-python examples/gripper.py --homing                      # once after power-up: calibrates the stroke
-python examples/gripper.py --open                        # fully open (80 mm)
-python examples/gripper.py --open --width 0.42           # 42 % of the stroke = 33.6 mm
-python examples/gripper.py --close                       # grasp: squeeze at gripper.grasp_force (70 N)
-python examples/gripper.py --close --force 30            # gentler hold
-python examples/gripper.py --state                       # width / max_width / is_grasped / temperature
+python examples/gripper.py --homing             # once after power-up: calibrates the stroke
+python examples/gripper.py --open               # fully open (80 mm)
+python examples/gripper.py --open --width 0.42  # 42 % of the stroke = 33.6 mm
+python examples/gripper.py --close              # grasp: squeeze at gripper.grasp_force (70 N)
+python examples/gripper.py --close --force 30   # gentler hold
+python examples/gripper.py --state              # width / max_width / is_grasped / temperature
 ```
 
 | flag | meaning |
