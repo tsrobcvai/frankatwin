@@ -106,7 +106,8 @@ reference anchored at the pose it starts from, in one of three shapes:
   frequency at once (0.15–1.1 Hz), for 12 s. Roughly ±12 cm in x and y, ±10 cm
   in z and ~0.5 rad of combined yaw/roll, peaking at 0.3 m/s.
 - **`chirp`** — all six axes swept from `--f0` to `--f1` (0.1 → 0.7 Hz), for
-  8 s. This is the sysid excitation.
+  8 s. Roughly ±10 cm in x and y, ±15 cm in z and ~0.6 rad of rotation, peaking
+  at 0.46 m/s and 1.5 rad/s. This is the sysid excitation.
 
 :::{admonition} Safety
 :class: danger
