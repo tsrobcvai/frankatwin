@@ -28,12 +28,12 @@ flowchart LR
 
 | process | file | role |
 |---|---|---|
-| `osc_shm` | `src/osc_shm.cpp` | Long-running 1 kHz torque controller. Reads setpoint + gains from shm every tick, publishes the robot state into shm every tick. Owns the libfranka session while it runs. |
-| `move_to` | `src/move_to.cpp` | One-shot joint-space (`--q`, libfranka `MotionGenerator`, min-jerk) or Cartesian (`--pose`, `franka::CartesianPose`, 5th-order profile) motion. Used for resets. |
+| `osc_shm` | `src/osc_shm.cpp` | Long-running 1 kHz torque controller. Reads setpoint + gains from shm every tick, publishes the robot state into shm every tick. Owns the libfranka session while it runs. **Daemon-internal**: spawned by `LocalController`, not meant to be started by hand. |
+| `move_to` | `src/move_to.cpp` | One-shot joint-space (`--q`, libfranka `MotionGenerator`, min-jerk) or Cartesian (`--pose`, `franka::CartesianPose`, 5th-order profile) motion. Used for resets. **Daemon-internal**: `examples/move_to.py` reaches it through the daemon, which stops `osc_shm`, runs this, then restarts `osc_shm` anchored at the new pose. Running it by hand skips that restart and leaves the arm with no controller; the FCI lock (`src/fci_lock.h`) refuses it outright while the daemon is up. |
 | `frankatwin.daemon` | `python/frankatwin/daemon.py` | Creates the shm segment, supervises `osc_shm`, serialises `move_to` against it, bridges ZMQ ↔ shm. |
 | `LocalController` | `python/frankatwin/local_controller.py` | The daemon's in-process controller handle (also usable directly on the NUC without ZMQ). |
 | `FrankaTwinClient` | `python/frankatwin/remote_client.py` | PC-side client; same method signatures as `LocalController`. |
-| `read_current_q` / `read_current_pose` / `read_load` | `src/read_*.cpp` | One-shot `readOnce()` utilities (need the FCI session, so stop the daemon first). |
+| `read_current_q` / `read_current_pose` / `read_load` | `src/read_*.cpp` | One-shot `readOnce()` utilities. They only read, never command, so they take no FCI lock and work while the daemon holds the arm. |
 | `gripper_cmd` | `src/gripper_cmd.cpp` | One-shot Franka Hand command (`homing` / `move` / `grasp` / `stop` / `state`) over libfranka's gripper server — its own connection (port 1338), so the daemon runs it while `osc_shm` holds the arm. The daemon runs it on a thread and exposes the result through `gripper_state`. |
 
 ## Control law (`osc_shm`)

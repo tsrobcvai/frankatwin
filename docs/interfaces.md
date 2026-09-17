@@ -36,9 +36,16 @@ The walkthrough is in [Usage](usage.md).
 | `scripts/compare_sim_real.py --real-csv a.csv --sim-csv a_sim.csv [--save] [--show]` | PC | Overlay target / real / sim EE pose and per-joint q, dq; print RMS. |
 | `scripts/check_torque_limits.py run.csv` | PC | Per-joint max `\|tau_J\|` vs 87/87/87/87/12/12/12 N·m from a `cart_impedance.py` log. |
 | `scripts/plot_ee_tracking.py run.csv` | PC | Actual vs target per dimension. |
-| `scripts/read_q.sh` | NUC | `read_current_q` wrapper (`ROBOT_IP=…`). Stop the daemon first. |
+| `scripts/read_q.sh` | NUC | `read_current_q` wrapper (`ROBOT_IP=…`). Read-only; works while the daemon runs. |
 | `build/read_current_pose <ip> [out.json]` | NUC | Current EE pose as a sidecar for `--base-sidecar`. |
 | `build/read_load <ip>` | NUC | Print `m_ee / m_load / m_total` as the robot sees them. |
+
+`build/osc_shm` and `build/move_to` are deliberately absent from this table:
+they are the daemon's own workers, not a user interface. Drive them through
+`examples/move_to.py` and the daemon. The three `read_*` binaries and
+`gripper_cmd` above are the only C++ binaries meant to be run by hand, and all
+of them coexist with a running daemon — the `read_*` ones only `readOnce()`,
+and `gripper_cmd` uses the gripper's own TCP endpoint (1338).
 
 ## Python client
 
