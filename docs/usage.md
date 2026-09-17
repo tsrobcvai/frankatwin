@@ -86,14 +86,21 @@ Script: [`examples/cart_impedance.py`](https://github.com/tsrobcvai/frankatwin/b
 Streams a Cartesian reference to `osc_shm` at 50 Hz, then prints tracking error
 and torque headroom.
 
-**What the robot does.** Under impedance control the end effector moves ±5 cm
-along z at 0.5 Hz for 4 s and ends back at its start pose.
+**What the robot does.** Under impedance control the end effector tracks a
+reference anchored at the pose it starts from, in one of three shapes:
+
+- **`sine`** — ±5 cm along z at 0.5 Hz for 4 s, ending back at the start pose.
+  This is the default mode.
+- **`multiband`** — x, y, z, yaw and roll, each driven at a low and a high
+  frequency at once (0.15–1.1 Hz), for 12 s.
+- **`chirp`** — all six axes swept from `--f0` to `--f1` (0.1 → 0.7 Hz), for
+  8 s. This is the sysid excitation.
 
 :::{admonition} Safety
 :class: danger
 
-`multiband` and `chirp` are fast 6-DOF sysid motions, up to ±15 cm and ±0.5
-rad. Start them with at least 30 cm of free space around the tool.
+`multiband` and `chirp` are fast sysid motions, up to ±15 cm and ±0.5 rad.
+Start them with at least 30 cm of free space around the tool.
 :::
 
 ```bash
