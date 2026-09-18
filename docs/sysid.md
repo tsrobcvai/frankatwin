@@ -15,18 +15,19 @@ optimizer works and how the excitations are designed, see
 
 <kbd>PC</kbd> with the daemon running on the NUC.
 
-Collect at least two runs with different frequency content. One of them is
-never shown to the optimizer — that is the held-out run step 3 validates on.
+Collect two runs. They use the same excitation but different gains: the fit
+sees only the first, so the second tests whether the identified dynamics still
+hold when the controller pushes harder.
 
 ```bash
 conda activate frankatwin
 python examples/move_to.py
 
 # For the fit
-python examples/cart_impedance.py --mode multiband --kp-pos 200 --kp-ori 20 \
-    --log data/multiband.csv
+python examples/cart_impedance.py --mode chirp --rate 50 --kp-pos 200 --kp-ori 20 \
+    --log data/fit.csv
 
-# Held out: collected the same way, but not passed to step 2
+# Held out: same excitation, stiffer gains, never passed to step 2
 python examples/cart_impedance.py --mode chirp --rate 50 --kp-pos 500 --kp-ori 30 \
     --log data/heldout.csv
 ```
@@ -42,7 +43,7 @@ downstream.
 conda activate <isaaclab env>
 cd /path/to/IsaacLab
 python scripts/tools/sysid_franka_osc.py --headless --num_envs 128 --max_iter 40 --sigma 0.3 \
-    --real_csv /data/multiband.csv --real_sidecar /data/multiband.json
+    --real_csv /data/fit.csv --real_sidecar /data/fit.json
 ```
 
 Repeat `--real_csv` / `--real_sidecar` to fit on several runs at once, and give
