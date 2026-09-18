@@ -114,11 +114,9 @@ Design notes:
 ### Target trajectories
 
 The end-effector target each design streams, as `cart_impedance.py` builds it
-with its default flags, starting from the home pose of `move_to.py`: on our FR3
-with a Franka Hand, the EE sits at x = 0.307, y = 0, z = 0.477 m, tool pointing
-down. The offsets are applied to whatever pose the arm starts from, so from
-another start pose the curves move with it. Regenerate the figures with
-`python scripts/plot_excitation_traj.py`.
+with its default flags. Both start from the home pose that
+[Example 1](usage.md#example-1-reset-the-arm) resets the arm to: the EE at
+x = 0.307, y = 0, z = 0.477 m, tool pointing down (FR3 with a Franka Hand).
 
 #### Multiband (v3)
 
