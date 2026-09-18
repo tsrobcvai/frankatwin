@@ -15,15 +15,24 @@ optimizer works and how the excitations are designed, see
 
 <kbd>PC</kbd> with the daemon running on the NUC.
 
+Collect at least two runs with different frequency content. One of them is
+never shown to the optimizer — that is the held-out run step 3 validates on.
+
 ```bash
 conda activate frankatwin
 python examples/move_to.py
-python examples/cart_impedance.py --mode chirp --rate 50 --kp-pos 500 --kp-ori 30 \
-    --log data/chirp_$(date +%Y%m%d_%H%M%S).csv
-# optionally also a multiband run:
+
+# For the fit
 python examples/cart_impedance.py --mode multiband --kp-pos 200 --kp-ori 20 \
-    --log data/multiband_$(date +%Y%m%d_%H%M%S).csv
+    --log data/multiband.csv
+
+# Held out: collected the same way, but not passed to step 2
+python examples/cart_impedance.py --mode chirp --rate 50 --kp-pos 500 --kp-ori 30 \
+    --log data/heldout.csv
 ```
+
+Each run writes the CSV plus a JSON sidecar of the same name; both are needed
+downstream.
 
 ### 2. Fit
 
@@ -33,16 +42,19 @@ python examples/cart_impedance.py --mode multiband --kp-pos 200 --kp-ori 20 \
 conda activate <isaaclab env>
 cd /path/to/IsaacLab
 python scripts/tools/sysid_franka_osc.py --headless --num_envs 128 --max_iter 40 --sigma 0.3 \
-    --real_csv /data/chirp.csv     --real_sidecar /data/chirp.json \
-    --real_csv /data/multiband.csv --real_sidecar /data/multiband.json \
-    --traj_weights 1.0,1.5
+    --real_csv /data/multiband.csv --real_sidecar /data/multiband.json
 ```
+
+Repeat `--real_csv` / `--real_sidecar` to fit on several runs at once, and give
+them relative weights with `--traj_weights 1.0,1.5` (one per run; default 1.0
+each). Whatever you fit on, keep the held-out run out of this list.
 
 ### 3. Validate
 
 <kbd>SIM</kbd>
 
-Replay a run — ideally one **not** used in the fit — with the fitted parameters:
+Replay the held-out run from step 1 — the one the fit never saw — with the
+fitted parameters:
 
 ```bash
 python scripts/tools/apply_sysid_params.py \
