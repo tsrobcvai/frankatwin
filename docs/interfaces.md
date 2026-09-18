@@ -229,11 +229,11 @@ scripts under `scripts/tools/`):
 | task id | env class | purpose | key cfg fields |
 |---|---|---|---|
 | `Isaac-FrankaTwin-Replay-v0` | `FrankaTwinReplayEnv` | Replay a target trajectory under the mirrored controller; log the sim state. | `control_mode` (`task_impedance` \| `osc`), `use_nullspace`, `q_init`, `traj_log_path`, gains in `ctrl` |
-| `Isaac-FrankaTwin-Sysid-v0` | `FrankaTwinSysidEnv` | Same controller, 128 envs, `DelayedPDActuator` on the arm; `set_targets()` / `step_replay()` drive it from the optimizer. | as above + per-env armature / friction / delay written by the sysid script |
+| `Isaac-FrankaTwin-Sysid-v0` | `FrankaTwinSysidEnv` | Same controller, `DelayedPDActuator` on the arm, one env block per trajectory; the optimizer drives it with `set_q_init_per_env()`, `physics_step()` and `arm_state()`. | as above + per-env q_init / gains / armature / friction / delay written by the sysid script |
 
 | script | role |
 |---|---|
-| `sysid_franka_osc.py --real_csv … --real_sidecar … [--num_envs 128] [--max_iter 40] [--traj_weights …]` | CMA-ES over 29 parameters → `logs/sysid_franka/<ts>/sysid_best_params.json` |
+| `sysid_franka_osc.py --real_csv … --real_sidecar … [--num_envs 128] [--max_iter 40] [--traj_weights …] [--eval_params …]` | CMA-ES over 29 parameters → `logs/sysid_franka/<ts>/sysid_best_params.json`; with `--eval_params`, scores one fixed parameter set instead |
 | `apply_sysid_params.py --best … [--invoke-replay --real-csv … --real-sidecar …] [--print-snippet]` | Replay with the fitted parameters, or print actuator-config overrides |
 | `replay_python_csv_sim.py --real-csv … --real-sidecar … [--sysid-params …] [--gain-source sidecar\|env_cfg]` | ZOH replay of a 50 Hz log at 1 kHz |
 

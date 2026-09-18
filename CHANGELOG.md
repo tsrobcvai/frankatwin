@@ -23,6 +23,9 @@ All notable changes to this project are documented here. The format follows
   releases it even on SIGKILL — no stale locks. Read-only helpers and
   `gripper_cmd` take no lock and still run alongside the daemon. `doctor`
   reports the lock state as `fci lock`.
+- `sysid_franka_osc.py --eval_params <file>`: roll out one fixed parameter set
+  (a `sysid_best_params.json` or checkpoint) without CMA-ES; prints the loss per
+  trajectory and writes `eval_rollout_<run>.csv` + `eval_result.json`.
 
 ### Fixed
 - `set_gains`, `set_ee_target` and `enable` / `disable` failed under numpy 2.x
@@ -37,6 +40,13 @@ All notable changes to this project are documented here. The format follows
 - `doctor` reports numpy's version on the `python` line. Nothing requires a
   particular major version, but behaviour differs across them, so it belongs in
   the report people already paste when something is off.
+- `sysid_franka_osc.py` advanced one 1 ms tick per CSV row, so a 50 Hz run was
+  replayed 20× too fast and the loss compared sim time `k` ms against real time
+  `20k` ms. The fit now uses the same zero-order-hold time base as
+  `replay_python_csv_sim.py` (50-tick warmup, `round(Δt / 1 ms)` ticks per row,
+  sample then re-target); a fit rollout matches the replay of the same
+  parameters to < 0.003° per joint. Parameters fitted with the affected version
+  should be re-fitted.
 
 ### Removed
 - The 0.30 m/s Cartesian speed and 0.50 rad/s angular rate conventions, and the
@@ -128,6 +138,16 @@ All notable changes to this project are documented here. The format follows
   conda-forge matched to the robot's FCI protocol (system 5.9 → `libfranka=0.20`;
   a mismatch only shows up when a session is opened). `CMakeLists.txt` finds
   conda's boost of any version and only when Pinocchio is linked.
+- `sysid_franka_osc.py` replays the trajectories in parallel env blocks:
+  `--num_envs` is the CMA population, and the sim holds `num_envs × trajectories`
+  envs. Each block starts from its run's `q_init` and uses its run's gains from
+  the sidecar, so runs recorded under different gains (chirp at kp 500 / 30,
+  multiband at 200 / 20) can be fitted together; the shared-gains check is gone.
+- The optimizer steps through the new `FrankaTwinSysidEnv.physics_step()`
+  (controller + physics only, without `DirectRLEnv.step()`'s dones / rewards /
+  observations and their per-tick GPU→CPU sync) and scores only at the CSV
+  sample instants. The env no longer fetches the mass matrix in
+  `task_impedance` mode without nullspace, where the controller does not use it.
 
 ## [0.2.0] — 2026-09-03
 

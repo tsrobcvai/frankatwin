@@ -135,6 +135,27 @@ class FrankaTwinSysidEnv(DirectRLEnv):
             "fingertip_quat_wxyz": self.fingertip_midpoint_quat.clone(),
         }
 
+    def set_q_init_per_env(self, q_init: torch.Tensor | None):
+        """Per-env (N, 7) arm reset pose used by ``_reset_idx``; overrides ``cfg.q_init``. None clears it."""
+        self._q_init_per_env = None if q_init is None else torch.as_tensor(q_init, dtype=torch.float32, device=self.device)
+
+    def physics_step(self):
+        """One controller + physics tick, i.e. the physics part of ``DirectRLEnv.step()``.
+
+        Skips the RL bookkeeping (dones/rewards/resets/observations) and its per-step
+        GPU->CPU sync. Episode counters do not advance, so no time-out reset can occur.
+        """
+        self._apply_action()
+        self.scene.write_data_to_sim()
+        self.sim.step(render=False)
+        self.scene.update(dt=self.physics_dt)
+
+    def arm_state(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Current (q, dq, fingertip_pos) for all envs: (N, 7), (N, 7), (N, 3)."""
+        if self.last_update_timestamp < self._robot._data._sim_timestamp:
+            self._compute_intermediate_values(dt=self.physics_dt)
+        return self.joint_pos[:, :7], self.joint_vel[:, :7], self.fingertip_midpoint_pos
+
     def _pre_physics_step(self, action):
         del action
         if self.last_update_timestamp < self._robot._data._sim_timestamp:
@@ -188,7 +209,9 @@ class FrankaTwinSysidEnv(DirectRLEnv):
         right_finger_jacobian = jacobians[:, self.right_finger_body_idx - 1, 0:6, 0:7]
         self.fingertip_midpoint_jacobian = (left_finger_jacobian + right_finger_jacobian) * 0.5
 
-        self.arm_mass_matrix = self._robot.root_physx_view.get_generalized_mass_matrices()[:, 0:7, 0:7]
+        # The mass matrix is only consumed by the "osc" mode and the nullspace term.
+        if self.cfg.control_mode == "osc" or self.cfg.use_nullspace:
+            self.arm_mass_matrix = self._robot.root_physx_view.get_generalized_mass_matrices()[:, 0:7, 0:7]
         self.joint_pos = self._robot.data.joint_pos.clone()
         self.joint_vel = self._robot.data.joint_vel.clone()
         self.last_update_timestamp = self._robot._data._sim_timestamp
@@ -204,7 +227,10 @@ class FrankaTwinSysidEnv(DirectRLEnv):
         super()._reset_idx(env_ids)
 
         joint_pos = self._robot.data.default_joint_pos[env_ids].clone()
-        if self.cfg.q_init is not None:
+        q_init_per_env = getattr(self, "_q_init_per_env", None)
+        if q_init_per_env is not None:
+            joint_pos[:, :7] = q_init_per_env[env_ids]
+        elif self.cfg.q_init is not None:
             if len(self.cfg.q_init) != 7:
                 raise ValueError(f"Expected 7 values in q_init, got {len(self.cfg.q_init)}.")
             joint_pos[:, :7] = torch.tensor(self.cfg.q_init, device=self.device)[None, :]

@@ -46,7 +46,7 @@ python scripts/tools/sysid_franka_osc.py --headless --num_envs 128 --max_iter 40
     --real_csv /data/fit.csv --real_sidecar /data/fit.json
 ```
 
-The optimization takes about 2.5 h on one GPU.
+The optimization takes about 2 h on one GPU.
 
 Repeat `--real_csv` / `--real_sidecar` to fit on several runs at once, and give
 them relative weights with `--traj_weights 1.0,1.5` (one per run; default 1.0

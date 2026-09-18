@@ -56,9 +56,14 @@ to the joint dynamics at all.
 
 The fit runs [CMA-ES](https://github.com/CyberAgentAILab/cmaes) in
 `isaaclab_sysid/scripts/tools/sysid_franka_osc.py`, with the 29 parameters
-normalized to `[0, 1]` within the bounds above. Each generation replays the real
-run at 1 kHz in `--num_envs` parallel envs, one candidate per env, and scores
-each with
+normalized to `[0, 1]` within the bounds above. Each generation evaluates
+`--num_envs` candidates on every run at once: each run gets its own block of
+`--num_envs` envs (the sim holds `num_envs × runs` envs), started from the run's
+`q_init` and driven with the run's gains from its sidecar, and env `i` of every
+block uses candidate `i`. The blocks replay on the same zero-order-hold time
+base as `replay_python_csv_sim.py` — a 50-tick warmup, then each 50 Hz setpoint
+held for its 20 × 1 ms ticks — and each candidate is scored at the CSV sample
+instants with
 
 ```
 loss = w_q · MSE(q_sim − q_real) + w_dq · MSE(q̇_sim − q̇_real) + w_x · MSE(x_sim − x_real)
@@ -66,9 +71,15 @@ loss = w_q · MSE(q_sim − q_real) + w_dq · MSE(q̇_sim − q̇_real) + w_x ·
 ```
 
 summed over trajectories (weights: `--traj_weights`). 128 envs × 40 iterations
-take about 2.5 h on one GPU. The best parameters are saved every
-`--save_interval` generations to
+take about 2 h on one GPU; the cost of a 1 kHz tick barely depends on the env
+count, so a larger population is nearly free. The best parameters so far are
+saved every `--save_interval` generations to
+`logs/sysid_franka/<timestamp>/checkpoint_<iter>.json`, and the final result to
 `logs/sysid_franka/<timestamp>/sysid_best_params.json`.
+
+`--eval_params <file>` skips the optimizer and rolls out one parameter set (a
+`sysid_best_params.json` or a checkpoint) on the given runs: it prints the loss
+per run and writes `eval_rollout_<run>.csv` and `eval_result.json`.
 
 ## Excitation design
 
