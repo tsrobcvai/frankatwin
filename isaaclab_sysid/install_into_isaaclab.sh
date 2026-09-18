@@ -6,7 +6,8 @@
 #      Isaac-FrankaTwin-Sysid-v0, Isaac-FrankaTwin-Replay-v0; auto-registered
 #      by isaaclab_tasks' package scanner)
 #   2. source/isaaclab_assets/data/Robots/Franka/franka_mimic.usd (robot asset)
-#   3. scripts/tools/{sysid_franka_osc,apply_sysid_params,replay_python_csv_sim}.py
+#   3. scripts/tools/{sysid_franka_osc,apply_sysid_params,replay_python_csv_sim,
+#      compare_sim_real}.py
 #
 # Usage: ./install_into_isaaclab.sh /path/to/IsaacLab
 set -euo pipefail
@@ -32,4 +33,4 @@ cp -v "$HERE/scripts/tools/"*.py "$ISAACLAB/scripts/tools/"
 
 echo ""
 echo "Installed. Remaining one-time step (inside your IsaacLab python env):"
-echo "    pip install cmaes"
+echo "    pip install cmaes pandas matplotlib"

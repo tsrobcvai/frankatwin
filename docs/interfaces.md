@@ -33,7 +33,7 @@ The walkthrough is in [Usage](usage.md).
 | `examples/cart_impedance.py --mode {sine,multiband,chirp} …` | PC | Run a scripted Cartesian reference at `--rate` Hz, log CSV + sidecar, print tracking RMS and torque headroom. `--dry-run` needs no robot. |
 | `examples/gripper.py --open [--width M] \| --close [--force N] [--close-width M] \| --homing \| --stop \| --state` | PC | Franka Hand via the daemon; the arm controller keeps running. `--width` is metres. Closing is a libfranka *grasp*: the object sets the width, `--force` (default 70 N) sets the hold. |
 | `scripts/gen_excitation_traj.py` / `scripts/gen_chirp_traj.py --base-sidecar ref.json` | PC | Write a 1 kHz reference CSV + sidecar (for plotting / other collectors). The math is `frankatwin.excitation`. |
-| `scripts/compare_sim_real.py --real-csv a.csv --sim-csv a_sim.csv [--save] [--show]` | PC | Overlay target / real / sim EE pose and per-joint q, dq; print RMS. |
+| `scripts/tools/compare_sim_real.py --real-csv a.csv --sim-csv a_sim.csv [--save] [--show]` | SIM | Overlay target / real / sim EE pose and per-joint q, dq; print RMS. |
 | `scripts/check_torque_limits.py run.csv` | PC | Per-joint max `\|tau_J\|` vs 87/87/87/87/12/12/12 N·m from a `cart_impedance.py` log. |
 | `scripts/plot_ee_tracking.py run.csv` | PC | Actual vs target per dimension. |
 | `scripts/read_q.sh` | NUC | `read_current_q` wrapper (`ROBOT_IP=…`). Read-only; works while the daemon runs. |

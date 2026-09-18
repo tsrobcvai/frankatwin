@@ -33,7 +33,8 @@ dependencies = [
 test = [
     "pytest>=7",
 ]
-# For scripts/compare_sim_real.py and friends (PC-side analysis).
+# For scripts/plot_ee_tracking.py and check_torque_limits.py (PC-side analysis).
+# compare_sim_real.py runs on the SIM machine; see isaaclab_sysid/.
 analysis = [
     "pandas>=1.5",
     "matplotlib>=3.5",

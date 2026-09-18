@@ -10,9 +10,14 @@ For each subplot we overlay three traces:
 
 Both CSVs follow the schema documented in `docs/data_format.md`.
 
-Typical usage:
+Runs on the SIM machine, next to the replay that wrote the sim CSV:
+`isaaclab_sysid/install_into_isaaclab.sh` copies it into `<IsaacLab>/scripts/tools/`.
+It needs only numpy, pandas and matplotlib -- no Isaac Sim -- so plain `python`
+in the IsaacLab env is enough.
 
-    python scripts/compare_sim_real.py \\
+Typical usage (from the IsaacLab root):
+
+    python scripts/tools/compare_sim_real.py \\
         --real-csv data/<run>.csv \\
         --sim-csv  data/<run>_sim_sysid.csv \\
         --save --show

@@ -70,16 +70,17 @@ python scripts/tools/apply_sysid_params.py \
 
 ### 4. Compare
 
-<kbd>PC</kbd>, in the `frankatwin` env (installed with `".[analysis]"`).
+<kbd>SIM</kbd>, in the same IsaacLab env, right where step 3 wrote the sim CSV —
+nothing to copy back to the PC.
 
 ```bash
-conda activate frankatwin
-python scripts/compare_sim_real.py --real-csv /data/heldout.csv \
+python scripts/tools/compare_sim_real.py --real-csv /data/heldout.csv \
     --sim-csv /data/heldout_sim_sysid.csv --save
 ```
 
 Produces position / orientation / per-joint overlays and prints RMS per axis and
-joint.
+joint. The PNGs land in `/data/compare_heldout_sim_sysid/` unless you pass
+`--out-dir`.
 
 ## Limits and honest caveats
 

@@ -186,8 +186,8 @@ python/frankatwin/   daemon, FrankaTwinClient (PC), LocalController (NUC), confi
                      doctor, excitation/ (multiband + chirp reference math)
 config/robot.yaml    network, robot IP, gains, safety clamps, collision thresholds, payload
 examples/            move_to (home / joints / EE pose), cart_impedance (sine / multiband / chirp), policy_loop
-scripts/             gen_*_traj (write references), compare_sim_real, check_torque_limits, plot_ee_tracking
-isaaclab_sysid/      self-contained IsaacLab extension: tasks, robot USD, sysid/replay scripts
+scripts/             gen_*_traj (write references), check_torque_limits, plot_ee_tracking
+isaaclab_sysid/      self-contained IsaacLab extension: tasks, robot USD, sysid/replay/compare scripts
 tests/               shm ABI pinning test (C++ offsets vs numpy dtype)
 docs/                installation · architecture · usage · sysid · data_format · troubleshooting
 ```

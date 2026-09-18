@@ -8,7 +8,7 @@ docs every command carries the tag of the machine it runs on:
 | — | **Robot** | — | Franka Research 3 or Panda, Franka Hand attached, FCI enabled in Desk; libfranka is chosen from the robot system version (see NUC) |
 | <kbd>NUC</kbd> | real-time PC wired to the robot (FCI) | `python -m frankatwin.daemon` → `osc_shm` / `move_to` | Ubuntu 20.04 / 22.04 with `PREEMPT_RT` kernel · conda env `frankatwin` (all conda-forge): libfranka matched to the robot system (0.20 for system 5.9), Eigen3, CMake, C++ compiler, Python 3.11 |
 | <kbd>PC</kbd> | your workstation | `examples/*.py`, analysis scripts | conda env `frankatwin`: Python 3.11 (numpy, pyyaml, pyzmq; pandas + matplotlib for the analysis scripts) |
-| <kbd>SIM</kbd> | any GPU box with IsaacLab (can be the PC) | sysid fit, sim replay | IsaacLab 2.3.0 (≥ 2.3 for the dynamic/viscous joint-friction API) · `cmaes` |
+| <kbd>SIM</kbd> | any GPU box with IsaacLab (can be the PC) | sysid fit, sim replay | IsaacLab 2.3.0 (≥ 2.3 for the dynamic/viscous joint-friction API) · `cmaes`, `pandas`, `matplotlib` |
 
 ![Deployment: Robot ↔ NUC over FCI/libfranka at 1 kHz, NUC ↔ PC over ZMQ 5555/5556, PC ↔ SIM by copying CSV/JSON files. IPs shown are the config/robot.yaml defaults; the PC takes any address on the same subnet as the NUC and Robot.](images/deployment.svg)
 
@@ -162,13 +162,14 @@ IsaacLab source edits. On the <kbd>SIM</kbd> device:
 ```bash
 git clone git@github.com:tsrobcvai/frankatwin.git && cd frankatwin
 ./isaaclab_sysid/install_into_isaaclab.sh /path/to/IsaacLab
-conda activate <isaaclab env> && pip install cmaes
+conda activate <isaaclab env> && pip install cmaes pandas matplotlib
 ```
 
 Installs `Isaac-FrankaTwin-Sysid-v0` / `Isaac-FrankaTwin-Replay-v0`
 (`source/isaaclab_tasks/isaaclab_tasks/direct/franka_sysid/`, auto-registered),
-`franka_mimic.usd` (Franka with a `panda_fingertip_centered` frame) and the three
-scripts under `scripts/tools/`. Always launch the scripts from the IsaacLab root —
+`franka_mimic.usd` (Franka with a `panda_fingertip_centered` frame) and the four
+scripts under `scripts/tools/`. `cmaes` is for the fit; `pandas` and `matplotlib`
+are for `compare_sim_real.py` (IsaacLab does not declare either). Always launch the scripts from the IsaacLab root —
 the task configs reference the USD relative to it.
 
 ---
