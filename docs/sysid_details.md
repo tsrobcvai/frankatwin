@@ -66,7 +66,7 @@ loss = w_q · MSE(q_sim − q_real) + w_dq · MSE(q̇_sim − q̇_real) + w_x ·
 ```
 
 summed over trajectories (weights: `--traj_weights`). 128 envs × 40 iterations
-take about 10 min on one GPU. The best parameters are saved every
+take about 2.5 h on one GPU. The best parameters are saved every
 `--save_interval` generations to
 `logs/sysid_franka/<timestamp>/sysid_best_params.json`.
 
