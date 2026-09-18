@@ -110,3 +110,35 @@ Design notes:
   path.
 - **Fit on several runs.** Use at least two runs with different frequency
   content, and hold one out.
+
+### Target trajectories
+
+The end-effector target each design streams, as `cart_impedance.py` builds it
+with its default flags, starting from the home pose of `move_to.py`: on our FR3
+with a Franka Hand, the EE sits at x = 0.307, y = 0, z = 0.477 m, tool pointing
+down. The offsets are applied to whatever pose the arm starts from, so from
+another start pose the curves move with it. Regenerate the figures with
+`python scripts/plot_excitation_traj.py`.
+
+#### Multiband (v3)
+
+![Multiband target: EE position x/y/z](images/excitation_multiband_position.png)
+
+![Multiband target: EE orientation quaternion qx/qy/qz/qw](images/excitation_multiband_orientation.png)
+
+- **qz and qw stay at 0.** With the tool pointing straight down, base yaw (about
+  world z) and EE roll (about the tool axis) turn about the same vertical line,
+  so the target orientation is a single rotation about z by yaw − roll, peaking
+  at 0.47 rad.
+- **No fade-out.** The envelope fades in over 2 s and then stays at full
+  amplitude, so the target ends 12 cm and 0.42 rad from the start pose;
+  `cart_impedance.py` then commands the start pose in a single step.
+
+#### Chirp (v4)
+
+![Chirp target: EE position x/y/z](images/excitation_chirp_position.png)
+
+![Chirp target: EE orientation quaternion qx/qy/qz/qw](images/excitation_chirp_orientation.png)
+
+The envelope fades in over 2 s and out over 3 s, so the target ends at the start
+pose. The kinks at 2 s and 5 s are the corners of that linear envelope.

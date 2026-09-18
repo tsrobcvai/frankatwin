@@ -98,6 +98,9 @@ reference anchored at the pose it starts from, in one of three shapes:
   8 s. Roughly ±10 cm in x and y, ±15 cm in z and ~0.6 rad of rotation, peaking
   at 0.46 m/s and 1.5 rad/s. This is the sysid excitation.
 
+The `multiband` and `chirp` targets are plotted axis by axis in
+[SysID details › Target trajectories](sysid_details.md#target-trajectories).
+
 :::{admonition} Safety
 :class: danger
 
