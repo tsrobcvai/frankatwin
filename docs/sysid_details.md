@@ -82,7 +82,7 @@ designs ship:
 | Amplitude | 10 / 10 / 8 cm; 0.25 / 0.20 rad | 10 / 10 / 15 cm; 0.50 / 0.25 / 0.50 rad |
 | Envelope | symmetric 2 s half-cosine | 2 s up / 3 s down, linear |
 | Duration | 12 s | 8 s |
-| Gains | `kp 200 / 20` | `kp 500 / 30`, clamps `0.15 m / 0.80 rad` |
+| Gains | `kp 200 / 20` | `kp 500 / 30` |
 
 Design notes:
 

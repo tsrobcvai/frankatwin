@@ -19,7 +19,6 @@ optimizer works and how the excitations are designed, see
 conda activate frankatwin
 python examples/move_to.py
 python examples/cart_impedance.py --mode chirp --rate 50 --kp-pos 500 --kp-ori 30 \
-    --err-delta-pos 0.15 \
     --log data/chirp_$(date +%Y%m%d_%H%M%S).csv
 # optionally also a multiband run:
 python examples/cart_impedance.py --mode multiband --kp-pos 200 --kp-ori 20 \
