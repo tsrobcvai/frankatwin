@@ -113,11 +113,6 @@ Design notes:
 
 ### Target trajectories
 
-The end-effector target each design streams, as `cart_impedance.py` builds it
-with its default flags. Both start from the home pose that
-[Example 1](usage.md#example-1-reset-the-arm) resets the arm to: the EE at
-x = 0.307, y = 0, z = 0.477 m, tool pointing down (FR3 with a Franka Hand).
-
 #### Multiband (v3)
 
 ![Multiband target: EE position x/y/z](images/excitation_multiband_position.png)
