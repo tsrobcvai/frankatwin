@@ -25,9 +25,6 @@ python examples/cart_impedance.py --mode multiband --kp-pos 200 --kp-ori 20 \
     --log data/multiband_$(date +%Y%m%d_%H%M%S).csv
 ```
 
-Check the printed torque headroom (`max |tau_J| … (limits 87/…/12)`) and that
-`abort.name == "none"` in the sidecar.
-
 ### 2. Fit
 
 <kbd>SIM</kbd>
