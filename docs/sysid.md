@@ -30,6 +30,7 @@ python examples/cart_impedance.py --mode multiband --kp-pos 200 --kp-ori 20 \
 <kbd>SIM</kbd>
 
 ```bash
+conda activate <isaaclab env>
 cd /path/to/IsaacLab
 python scripts/tools/sysid_franka_osc.py --headless --num_envs 128 --max_iter 40 --sigma 0.3 \
     --real_csv /data/chirp.csv     --real_sidecar /data/chirp.json \
