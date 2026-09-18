@@ -91,7 +91,7 @@ designs ship:
 | Spectrum | two stationary bands per axis (≈ 0.15–0.30 Hz + 0.7–1.1 Hz at 0.2× amplitude) | linear sweep 0.1 → 0.7 Hz on every axis |
 | Active DOF | x, y, z + base-yaw + EE-roll | x, y, z, rx, ry, rz, π/3 phase-staggered |
 | Amplitude | 10 / 10 / 8 cm; 0.25 / 0.20 rad | 10 / 10 / 15 cm; 0.50 / 0.25 / 0.50 rad |
-| Envelope | symmetric 2 s half-cosine | 2 s up / 3 s down, linear |
+| Envelope | 2 s half-cosine fade-in, no fade-out | 2 s up / 3 s down, linear |
 | Duration | 12 s | 8 s |
 | Gains | `kp 200 / 20` | `kp 500 / 30` |
 
