@@ -17,6 +17,8 @@ authors:
     affiliation: McGill University
 version: 0.2.0
 date-released: 2026-09-03
+# Once a Zenodo DOI exists, add it here (and to the BibTeX entry in README.md):
+# doi: 10.5281/zenodo.<id>
 license: Apache-2.0
 repository-code: https://github.com/tsrobcvai/frankatwin
 keywords:
@@ -26,3 +28,30 @@ keywords:
   - system identification
   - sim-to-real
   - isaac lab
+references:
+  - type: article
+    status: preprint
+    title: "Visual Sim-to-Real Learning for Robotic Insertion under Geometric Variations: Application to Rebar Installation"
+    authors:
+      - family-names: Sun
+        given-names: Tao
+      - family-names: Han
+        given-names: Beining
+      - family-names: Yin
+        given-names: Patrick
+      - family-names: Xu
+        given-names: Rui
+      - family-names: He
+        given-names: Harry
+      - family-names: Gupta
+        given-names: Abhishek
+      - family-names: Rusinkiewicz
+        given-names: Szymon
+      - family-names: Shao
+        given-names: Yi
+    year: 2026
+    url: https://arxiv.org/abs/2609.20477
+    identifiers:
+      - type: other
+        value: "arXiv:2609.20477"
+        description: arXiv identifier

@@ -28,15 +28,35 @@ matches the task-space impedance used by sim-to-real work such as
 [IndustReal](https://arxiv.org/abs/2305.17110) and
 [OmniReset](https://weirdlabuw.github.io/omnireset/).
 
-## Citing
+## Citation
 
+If you use FrankaTwin in your research, please cite the software:
+
+<!-- Once a Zenodo DOI exists, add `doi = {10.5281/zenodo.<id>}` and
+     `publisher = {Zenodo}` to this entry, and `doi:` to CITATION.cff. -->
 ```bibtex
-@software{frankatwin2026,
+@software{sun_frankatwin_2026,
   author  = {Sun, Tao and Yin, Patrick and He, Harry},
   title   = {FrankaTwin: Sim-to-Real Aligned Control and System Identification for Franka Robots},
   year    = {2026},
   version = {0.2.0},
   url     = {https://github.com/tsrobcvai/frankatwin}
+}
+```
+
+FrankaTwin was developed in support of our visual sim-to-real manipulation
+research. If you use the controller, methodology, or experimental setup in this
+context, please also cite:
+
+```bibtex
+@misc{sun2026visualsimtoreallearningrobotic,
+  title={Visual Sim-to-Real Learning for Robotic Insertion under Geometric Variations: Application to Rebar Installation},
+  author={Tao Sun and Beining Han and Patrick Yin and Rui Xu and Harry He and Abhishek Gupta and Szymon Rusinkiewicz and Yi Shao},
+  year={2026},
+  eprint={2609.20477},
+  archivePrefix={arXiv},
+  primaryClass={cs.RO},
+  url={https://arxiv.org/abs/2609.20477}
 }
 ```
 
