@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use FrankaTwin in your research, please cite it as below."
-title: "FrankaTwin: a sim-to-real aligned 1 kHz task impedance controller for the Franka Research 3"
+title: "FrankaTwin: Sim-to-Real Aligned Control and System Identification for Franka Robots"
 type: software
 authors:
   - family-names: Sun

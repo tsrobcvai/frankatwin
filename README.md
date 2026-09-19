@@ -33,7 +33,7 @@ matches the task-space impedance used by sim-to-real work such as
 ```bibtex
 @software{frankatwin2026,
   author  = {Sun, Tao and Yin, Patrick and He, Harry},
-  title   = {FrankaTwin: a sim-to-real aligned 1 kHz task impedance controller for the Franka Research 3},
+  title   = {FrankaTwin: Sim-to-Real Aligned Control and System Identification for Franka Robots},
   year    = {2026},
   version = {0.2.0},
   url     = {https://github.com/tsrobcvai/frankatwin}
