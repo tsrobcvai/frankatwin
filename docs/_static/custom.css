@@ -1,0 +1,56 @@
+/* kbd tags used for the NUC / PC / SIM machine labels */
+kbd {
+  font-family: var(--pst-font-family-monospace);
+  font-size: 0.8em;
+  padding: 0.1em 0.45em;
+  border: 1px solid var(--pst-color-border);
+  border-bottom-width: 2px;
+  border-radius: 0.3em;
+  background: var(--pst-color-surface);
+  color: var(--pst-color-text-base);
+}
+table.table td, table.table th { vertical-align: top; }
+
+/* Header buttons: the repository icon lacks Font Awesome's fa-lg that the
+   light/dark toggle uses; give it the same size and baseline. */
+.article-header-buttons .btn-source-repository-button .fab {
+  font-size: 1.25em;
+  line-height: 0.75em;
+  vertical-align: -0.0667em;
+}
+
+/* "default" pill marking the option a command uses when given no flag */
+.badge-default {
+  font-family: var(--pst-font-family-monospace);
+  font-size: 0.7em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.15em 0.6em;
+  border-radius: 1em;
+  vertical-align: 0.12em;
+  white-space: nowrap;
+  /* Brand blue, sampled from the "Twin" lettering in images/logo.png.
+     Not --pst-color-primary: that tracks the theme and goes light on dark
+     backgrounds, which this pill needs to survive as a filled badge. */
+  background: #E7EEF9;
+  color: #305FAE;
+}
+
+html[data-theme="dark"] .badge-default {
+  background: #22334D;
+  color: #9CBEEC;
+}
+
+/* Highlighted table row for a flag that exists for safety */
+.flag-safety {
+  padding: 0.1em 0.4em;
+  border-radius: 0.25em;
+  background: var(--pst-color-warning-bg, #fff3cd);
+  color: var(--pst-color-text-base);
+}
+/* the pill supplies the background; don't stack the code tag's own on top */
+.flag-safety code {
+  background: transparent;
+  border: none;
+}

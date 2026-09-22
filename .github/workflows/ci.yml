@@ -1,0 +1,33 @@
+name: ci
+
+on:
+  push:
+    branches: [main, "v*"]
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.11"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        run: pip install -e ".[test]"
+      # tests/test_shm_layout.py compiles src/shm_layout.h with the system g++
+      # (no libfranka needed) and diffs struct offsets against the numpy dtypes.
+      - name: Test
+        run: python -m pytest tests -q
+      - name: Byte-compile examples and scripts
+        run: python -m py_compile examples/*.py scripts/*.py isaaclab_sysid/scripts/tools/*.py
+      - name: Scripts
+        run: |
+          python examples/cart_impedance.py --mode chirp --dry-run
+          python examples/cart_impedance.py --mode multiband --dry-run
+          python examples/cart_impedance.py --mode multiband --profile heldout --dry-run
+          python scripts/gen_chirp_traj.py --help > /dev/null
+          python -m frankatwin.doctor --role pc || test $? -eq 1   # no daemon in CI -> reported, exit 1

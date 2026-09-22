@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "frankatwin"
+version = "0.3.0"
+description = "1 kHz task impedance controller for Franka FR3/Panda with a sim-to-real system-ID pipeline (IsaacLab)."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "Tao Sun", email = "tao.sun@mail.mcgill.ca" },
+    { name = "Patrick Yin" },
+    { name = "Harry He" },
+]
+keywords = ["franka", "libfranka", "impedance-control", "system-identification", "sim-to-real", "isaac-lab"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Robotics",
+]
+dependencies = [
+    "numpy>=1.23",
+    "pyyaml>=6.0",
+    "pyzmq>=25",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7",
+    # tests/test_compare_sim_real.py drives compare_sim_real.py, which needs both.
+    # Without them pytest skips that file and CI is five tests lighter than it looks.
+    "pandas>=1.5",
+    "matplotlib>=3.5",
+]
+# For scripts/plot_ee_tracking.py and check_torque_limits.py (PC-side analysis).
+# compare_sim_real.py runs on the SIM machine; see isaaclab_sysid/.
+analysis = [
+    "pandas>=1.5",
+    "matplotlib>=3.5",
+]
+# Sphinx docs: `sphinx-autobuild docs docs/_build/html` for a live preview.
+docs = [
+    "sphinx>=7",
+    "sphinx-book-theme>=1.1",
+    "myst-parser>=2",
+    "sphinx-copybutton",
+    "sphinxcontrib-mermaid",
+    "sphinx-autobuild",
+]
+
+[project.urls]
+Homepage = "https://github.com/tsrobcvai/frankatwin"
+Documentation = "https://tsrobcvai.github.io/frankatwin/"
+Issues = "https://github.com/tsrobcvai/frankatwin/issues"
+
+[tool.setuptools]
+package-dir = { "" = "python" }
+
+[tool.setuptools.packages.find]
+where = ["python"]
+include = ["frankatwin*"]

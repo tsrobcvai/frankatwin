@@ -1,0 +1,168 @@
+# frankatwin runtime config.
+#
+# The NUC daemon reads this to know where the robot lives and what to default
+# gains to. The PC client reads the same file to know where the NUC daemon
+# listens.
+#
+# Override path via the FRANKATWIN_CONFIG environment variable:
+#   FRANKATWIN_CONFIG=/path/to/local.yaml python examples/cart_impedance.py
+
+network:
+  # Hostname or IP of the NUC running frankatwin.daemon. The PC client
+  # connects to tcp://nuc_host:cmd_port (REQ/REP) and tcp://nuc_host:state_port
+  # (SUB).
+  nuc_host: "172.16.0.1"
+  cmd_port: 5555
+  state_port: 5556
+  # PC-side cache depth (number of state frames buffered locally for get_state).
+  state_cache: 256
+
+robot:
+  # FCI IP (visible only from the NUC).
+  ip: "172.16.0.2"
+  # Default home / init joint configuration in radians (7 floats).
+  init_q: [0.0, -0.785398, 0.0, -2.356194, 0.0, 1.570796, 0.785398]
+
+control:
+  # 1 kHz fixed; documented for clarity.
+  frequency_hz: 1000
+  # Cartesian impedance gains the daemon writes into the controller at startup.
+  # They persist across osc_shm restarts (move_to_*, watchdog): after every
+  # start the daemon re-applies the last values set via robot.set_gains(...).
+  # Also the defaults of examples/cart_impedance.py --kp-pos / --kp-ori.
+  kp_pos: 200.0      # N/m
+  kp_ori: 20.0       # Nm/rad
+  kd_pos: null       # null -> 2 * sqrt(kp_pos)
+  kd_ori: null       # null -> 2 * sqrt(kp_ori)
+  # Per-tick position error clamp in osc_shm. When > 0 it does TWO things:
+  # clips |e_pos|_inf to this value -- which bounds the controller's own push
+  # to kp_pos * error_delta_pos -- AND aborts the loop when the *unclipped*
+  # error exceeds it. 0 disables both.
+  #
+  # 0 is the default so that this file agrees with osc_shm, which compiles in
+  # 0.0 for the same reason ("pure impedance to match the unclipped sim").
+  # Until the daemon began restoring gains after every restart, osc_shm's 0
+  # is what actually ran, and it is what the earlier sysid data was collected under.
+  # The excitations need it: at kp_pos 200 a 0.05 clamp caps the push at 10 N,
+  # which cannot follow multiband's 0.30 m/s reference, so the loop aborts.
+  #
+  # With 0 the safety net is the per-joint TAU_LIMIT clamp, the torque slew
+  # limiter, and libfranka's collision reflex + hard joint limits. Set a
+  # positive value (0.05 was the old default) to get the clamp and the
+  # tracking abort back. The orientation channel has neither, at any setting.
+  #
+  # Runtime override via robot.set_gains(error_delta_pos=...) or
+  # python examples/cart_impedance.py --err-delta-pos.
+  error_delta_pos: 0.0     # m  (0 = pure impedance)
+
+# libfranka collision-reflex thresholds (passed to setCollisionBehavior at
+# osc_shm startup; daemon restart applies a change, no rebuild needed once the
+# osc_shm binary supports --collision-torque/--collision-cartesian).
+#
+# Why 100 (not libfranka's low defaults): the task-impedance controller's OWN
+# push reaches tens of newtons. With error_delta_pos > 0 it is bounded by
+# kp_pos * error_delta_pos (~25 N at kp_pos=500, 0.05 m); at the default 0 the
+# only bound is the per-joint TAU_LIMIT clamp. The contact reaction during peg-hole
+# insertion therefore reaches ~25 N -- above a 20 N threshold -- which fires
+# "cartesian_reflex" (red light, controller aborts). 100 mirrors the deoxys
+# stack, which never reflexed during insertion. Lower these (e.g. 40 / 50) if
+# you want a tighter crash guard with some margin over the ~25 N working force;
+# raising them trades collision safety for letting the controller push freely.
+# Note the controller is NOT force-capped at the default error_delta_pos 0, so
+# these thresholds and TAU_LIMIT are what stand between it and a hard contact.
+collision:
+  torque_threshold: 100.0      # Nm,    per joint  (fills setCollisionBehavior torque arrays)
+  cartesian_threshold: 100.0   # N/Nm,  per axis   (fills the Cartesian force arrays)
+
+paths:
+  # Path to the frankatwin build directory (where osc_shm and move_to live).
+  # Resolved relative to the repo root unless absolute.
+  build_dir: "build"
+  # POSIX shm name (must start with '/'). Daemon and osc_shm must agree.
+  shm_name: "/frankatwin_osc"
+
+reset:
+  # Per-joint velocity cap [rad/s] for BOTH move_to modes. Range (0, 1.25].
+  # Motion time is derived from it, so a longer travel takes longer rather
+  # than moving faster. 0.5 reproduces the old joint_speed_factor 0.2.
+  #   0.1-0.3  slow, for contact work or debugging
+  #   0.5      default
+  #   0.8-1.25 fast reset -- make sure the workspace is clear
+  # For --pose the cap is APPROXIMATE: libfranka solves the IK, so move_to
+  # estimates the joint speed from the Jacobian at the start pose only.
+  q_max_speed: 0.5
+
+# Franka Hand, driven through `gripper_cmd` (libfranka Gripper, port 1338 -- its own
+# connection, so it works while osc_shm holds the arm). Client: FrankaTwinClient
+# .gripper_open() / .gripper_close() / .gripper_homing() / .gripper_state();
+# script: python examples/gripper.py --open | --close.
+#
+# Closing is a libfranka GRASP, not a width command: the fingers drive towards
+# grasp_width and squeeze with grasp_force once they stall on the object, so the
+# object sets the resting width and grasp_force sets how hard it is held.
+# grasp_width -0.01 (past full closure) = "close as far as you can and hold".
+# epsilon_* is the band around grasp_width in which libfranka reports is_grasped;
+# 0.08 (whole stroke) makes every stall count as grasped (deoxys behaviour).
+gripper:
+  enabled: true
+  # Speeds are the rate the gripper WIDTH changes, which is what libfranka's
+  # `speed` argument takes. The Franka Hand product manual (1.2, Technical Data)
+  # gives "Travel Speed (per finger) 50 mm/s"; both fingers move, so the width
+  # closes at up to 0.1 m/s. libfranka's own examples use 0.1 as well. Values
+  # above that are not rejected by gripper_cmd -- the firmware just caps them.
+  move_speed: 0.1        # m/s, open (Gripper::move)
+  grasp_speed: 0.1       # m/s, close (Gripper::grasp) -- was 0.5, over the spec
+  # The manual states the continuous grasping force is "adjustable 30-70 N", so
+  # 30 is the floor, not 0: asking for less does not get you a gentler hold.
+  # Use --close-width to stop the jaws early if an object must not be squeezed.
+  grasp_force: 70.0      # N, [30, 70] per the product manual
+  grasp_width: -0.01     # m
+  epsilon_inner: 0.08    # m
+  epsilon_outer: 0.08    # m
+  max_width: 0.08        # m, full stroke; gripper_open() default and the reference for width fractions
+
+# End-effector payload for libfranka gravity/inertia compensation.
+# osc_shm calls robot.setLoad(mass, com, inertia) at startup when mass > 0;
+# mass = 0 disables it (uses the Desk-configured load). Restart the daemon after
+# changing these -- no recompile needed (only osc_shm.cpp needed the one-time
+# rebuild that added setLoad support).
+#
+# How to fill this in (worked example: a stereo camera + bracket on the flange):
+#   - mass: weigh the whole assembly. If you can't, bracket it from the static
+#     z sag at home: m ~= k_z * sag / g (0.006 m sag at kp_pos=500 -> ~0.3 kg),
+#     then refine with the symmetric over/under-compensation test described in
+#     docs/troubleshooting.md ("Payload compensation").
+#   - com: vector from the FLANGE frame origin to the load COM [m] (flange z is
+#     the tool axis). Mass dominates the gravity force; com mainly shifts the
+#     joint-torque split. A wrong LATERAL (x/y) com injects a bogus moment arm,
+#     so keep x/y at 0 unless rotation tests show a directional residual.
+#   - inertia: 3x3 about the COM, row-major [kg m^2]. MUST be positive-definite;
+#     libfranka REJECTS an all-zero matrix ("Set Load command rejected: invalid
+#     argument!"). The exact value barely matters (gravity comp uses mass + com
+#     only); estimate as a box: I_ii ~ (1/12)*m*(sum of the other two side
+#     lengths^2), O(1e-4) kg m^2 for a ~0.3 kg camera.
+load:
+  # Default: BARE ARM. mass 0 disables setLoad entirely (Desk-configured load
+  # untouched). Override per-run on the daemon command line, e.g.:
+  #
+  #   # camera only (0.15 kg, calibrated from the symmetric z signature:
+  #   # m_comp=0 sagged -27 mm, 0.3 kg lifted +27 mm -> ~0.15 kg):
+  #   python -m frankatwin.daemon \
+  #       --load-mass 0.15 --load-com 0 0 0.05
+  #
+  #   # camera + 0.68 kg grasped object (object com ~0.175 m out along the
+  #   # tool axis, beyond the Franka Hand grasp center z=0.1034):
+  #   # mass = 0.15 + 0.68 = 0.83, com_z = (0.15*0.05 + 0.68*0.175)/0.83 ~= 0.152
+  #   python -m frankatwin.daemon \
+  #       --load-mass 0.83 --load-com 0 0 0.152
+  #
+  # com is simplified to [0, 0, z] (everything assumed roughly on the tool
+  # axis; flange +Z points out along it). A wrong LATERAL (x/y) com injects a
+  # bogus moment arm -- worse than zero -- so refine x/y only if rotation
+  # phases show a directional residual.
+  mass: 0.0
+  com: [0.0, 0.0, 0.0]
+  # libfranka rejects setLoad with an all-zero inertia; the daemon auto-fills
+  # a small positive diagonal (1e-3) whenever mass > 0 and this is left zero.
+  # Exact value barely matters (gravity comp uses mass + com only).
+  inertia: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]

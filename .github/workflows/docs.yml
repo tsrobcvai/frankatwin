@@ -1,0 +1,40 @@
+name: docs
+
+on:
+  push:
+    branches: [main, "v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e . -r docs/requirements.txt
+      - run: sphinx-build -b html -n --keep-going docs docs/_build/html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/_build/html
+
+  # Publishes https://tsrobcvai.github.io/frankatwin/ on pushes to (or a manual
+  # "Run workflow" on) v0.3. Requires Settings -> Pages -> Source set to
+  # "GitHub Actions" (not "Deploy from a branch", which serves a Jekyll README),
+  # and the github-pages environment to allow deployments from this branch
+  # (Settings -> Environments -> github-pages -> Deployment branches).
+  deploy:
+    needs: build
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/v0.3'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

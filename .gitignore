@@ -1,0 +1,46 @@
+# Build artifacts
+build/
+build-*/
+cmake-build-*/
+*.o
+*.so
+*.a
+
+# Logged data
+data/*.csv
+data/*.npz
+data/*.h5
+!data/.gitkeep
+
+# Generic generated files
+*.png
+*.json
+*.csv
+# Ship the README example-results figures.
+!docs/images/*.png
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*~
+.cache/
+compile_commands.json
+
+# Python (for future steps)
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# Test / scratch
+.pytest_cache/
+tmp/
+logs/
+
+# Sphinx
+docs/_build/
+
+# libfranka source tree, when built inside a conda env (docs/installation.md).
+libfranka/

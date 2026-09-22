@@ -1,0 +1,930 @@
+"""LocalController: NUC-side, same-machine controller wrapper.
+
+Responsibilities:
+- Own the POSIX shm segment (`shm_open(name, O_CREAT)`).
+- Start the C++ `osc_shm` subprocess as the 1 kHz controller.
+- Provide `set_ee_target`, `set_gains`, `enable`, `disable`, `get_state`.
+- For one-shot resets, stop `osc_shm`, spawn `move_to`, wait, restart `osc_shm`.
+  Mutual exclusion is required because libfranka grants only one TCP session
+  to the FCI port at a time.
+- Drive the Franka Hand through `gripper_cmd` (`gripper_open`, `gripper_grasp`,
+  `gripper_homing`, `gripper_stop`, `gripper_state`). The gripper server is a
+  separate connection (port 1338), so these run while `osc_shm` is up.
+
+This class is intended to be used either standalone on the NUC for local
+testing, or composed inside `frankatwin.daemon.FrankaTwinDaemon` for the
+PC-driven remote use case.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import signal
+import subprocess
+import threading
+import time
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
+
+import numpy as np
+
+from frankatwin.config import ControlConfig, GripperConfig, RobotConfig
+from frankatwin.ring_log import DEFAULT_POLL_HZ, TABLES, RunRecorder
+from frankatwin.shm_layout import (
+    FRANKATWIN_SHM_STATE_FRAMES,
+    STATE_FRAME_DTYPE,
+    SharedMemoryAccess,
+)
+
+logger = logging.getLogger(__name__)
+
+_OSC_STARTUP_TIMEOUT_S = 10.0
+_OSC_SHUTDOWN_TIMEOUT_S = 3.0
+_MOVE_TO_TIMEOUT_S = 30.0
+# homing sweeps the full stroke twice (~6 s); move/grasp finish in < 2 s. The
+# margin covers the TCP connect to the gripper server on a loaded NUC.
+_GRIPPER_TIMEOUT_S = 30.0
+_GRIPPER_STOP_WAIT_S = 5.0
+# osc_shm's first robot.control() can be rejected with libfranka
+# "Move command aborted!" (Move::Status::kAborted) when it is relaunched right
+# after move_to -- a transient FCI session / controller-mode transition race as
+# the previous (move_to) session winds down. A fresh connection a moment later
+# succeeds, so we relaunch a few times before giving up. Without this, one such
+# abort leaves the controller dead and bricks the daemon (state frames stop ->
+# every client command times out) until a manual daemon restart.
+_OSC_START_MAX_ATTEMPTS = 3
+_OSC_START_RETRY_DELAY_S = 0.5
+# After osc_shm's PID is alive, require state_head to advance this many frames
+# before considering it "ready".  state_head ticks at 1 kHz so 5 frames = 5 ms;
+# the meaningful wait is the libfranka session setup + first control tick
+# which can take 0.5-2 s, not the 5 ms.
+_OSC_READY_STATE_HEAD_ADVANCE = 5
+
+
+# ---------------------------------------------------------------------------
+# Gain persistence across osc_shm restarts
+# ---------------------------------------------------------------------------
+# osc_shm re-seeds the whole shm command block every time it starts: the
+# current EE pose as anchor (wanted) AND its compiled-in defaults for
+# kp/kd/error_delta/enabled (not wanted -- it silently discards whatever the
+# client last set via set_gains). Every osc_shm start therefore goes through
+# snapshot_gains() before the launch and restore_gains() once it is running.
+# The first start (zeroed segment) falls back to robot.yaml's `control:` block.
+_GAIN_FIELDS = (
+    "kp_pos", "kp_ori", "kd_pos", "kd_ori",
+    "error_delta_pos", "enabled",
+)
+
+
+def gains_from_config(ctrl: ControlConfig) -> Dict[str, float]:
+    """Initial gain/clamp set from robot.yaml `control:` (kd None -> 0 = auto)."""
+    return {
+        "kp_pos": float(ctrl.kp_pos),
+        "kp_ori": float(ctrl.kp_ori),
+        "kd_pos": 0.0 if ctrl.kd_pos is None else float(ctrl.kd_pos),
+        "kd_ori": 0.0 if ctrl.kd_ori is None else float(ctrl.kd_ori),
+        "error_delta_pos": float(ctrl.error_delta_pos),
+        "enabled": True,
+    }
+
+
+def snapshot_gains(view: ShmView) -> Optional[Dict[str, float]]:
+    """Copy gains/clamps/enabled out of the shm command block.
+
+    Returns None when the block has never been written (kp_pos == 0, i.e. a
+    freshly zeroed segment before the first osc_shm start).
+    """
+    cmd = view.read_command()
+    if float(cmd["kp_pos"][0]) <= 0.0:
+        return None
+    out: Dict[str, float] = {f: float(cmd[f][0]) for f in _GAIN_FIELDS if f != "enabled"}
+    out["enabled"] = bool(cmd["enabled"][0])
+    return out
+
+
+def restore_gains(view: ShmView, gains: Dict[str, float]) -> None:
+    """Write `gains` over the command block, keeping the current target.
+
+    Called right after osc_shm is up, so the target it just seeded (the new
+    anchor pose) is preserved and only the gain fields are overwritten.
+    """
+    cur = view.read_command()
+    view.write_command(
+        target_pos=np.array(cur["target_pos"][0], dtype=np.float64),
+        target_quat=np.array(cur["target_quat"][0], dtype=np.float64),
+        kp_pos=float(gains["kp_pos"]),
+        kp_ori=float(gains["kp_ori"]),
+        kd_pos=float(gains["kd_pos"]),
+        kd_ori=float(gains["kd_ori"]),
+        error_delta_pos=float(gains["error_delta_pos"]),
+        enabled=bool(gains["enabled"]),
+    )
+
+
+# ---------------------------------------------------------------------------
+# gripper_cmd argument builder (pure; exercised by tests/test_gripper.py)
+# ---------------------------------------------------------------------------
+def gripper_command_args(
+    grip: GripperConfig,
+    cmd: str,
+    *,
+    width: Optional[float] = None,
+    speed: Optional[float] = None,
+    force: Optional[float] = None,
+    epsilon_inner: Optional[float] = None,
+    epsilon_outer: Optional[float] = None,
+) -> List[str]:
+    """Arguments after `<robot_ip>` for `gripper_cmd`; None falls back to robot.yaml."""
+    if cmd in ("homing", "stop", "state"):
+        return [cmd]
+    if cmd == "move":
+        w = grip.max_width if width is None else float(width)
+        if not (0.0 <= w <= grip.max_width):
+            raise ValueError(f"gripper move width must be in [0, {grip.max_width}] m, got {w}")
+        sp = grip.move_speed if speed is None else float(speed)
+        if sp <= 0.0:
+            raise ValueError(f"gripper speed must be > 0, got {sp}")
+        return ["move", "--width", f"{w:.5f}", "--speed", f"{sp:.4f}"]
+    if cmd == "grasp":
+        w = grip.grasp_width if width is None else float(width)
+        if w > grip.max_width:
+            raise ValueError(f"gripper grasp width must be <= {grip.max_width} m, got {w}")
+        sp = grip.grasp_speed if speed is None else float(speed)
+        f = grip.grasp_force if force is None else float(force)
+        ei = grip.epsilon_inner if epsilon_inner is None else float(epsilon_inner)
+        eo = grip.epsilon_outer if epsilon_outer is None else float(epsilon_outer)
+        if sp <= 0.0:
+            raise ValueError(f"gripper speed must be > 0, got {sp}")
+        if not (0.0 < f <= 70.0):
+            raise ValueError(f"gripper force must be in (0, 70] N, got {f}")
+        if ei < 0.0 or eo < 0.0:
+            raise ValueError("gripper epsilons must be >= 0")
+        return ["grasp", "--width", f"{w:.5f}", "--speed", f"{sp:.4f}", "--force", f"{f:.2f}",
+                "--eps-in", f"{ei:.4f}", "--eps-out", f"{eo:.4f}"]
+    raise ValueError(f"unknown gripper command {cmd!r}")
+
+
+def parse_gripper_output(stdout: str) -> Dict[str, Any]:
+    """The JSON object `gripper_cmd` prints (last non-empty stdout line)."""
+    lines = [l for l in stdout.splitlines() if l.strip()]
+    if not lines:
+        raise RuntimeError("gripper_cmd printed nothing")
+    try:
+        out = json.loads(lines[-1])
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"gripper_cmd output is not JSON: {lines[-1]!r}") from e
+    if not isinstance(out, dict):
+        raise RuntimeError(f"gripper_cmd output is not an object: {out!r}")
+    return out
+
+
+def _wxyz_from(quat: np.ndarray) -> np.ndarray:
+    """Coerce a (4,) array into wxyz; raises ValueError on shape mismatch."""
+    q = np.asarray(quat, dtype=np.float64).reshape(-1)
+    if q.shape != (4,):
+        raise ValueError(f"quat must have 4 elements, got shape {quat.shape}")
+    n = np.linalg.norm(q)
+    if n < 1e-9:
+        raise ValueError("quat has near-zero norm")
+    return q / n
+
+
+# Mirror of the C++ bound in src/move_to.cpp (kQMaxSpeedMax). 1.25 rad/s is
+# MotionGenerator's largest dq_max_ entry (2.5) at the old speed_factor ceiling
+# of 0.5, so this is the same limit the joint mode has always enforced.
+Q_MAX_SPEED_MAX = 1.25
+
+
+def _checked_q_max_speed(value: Optional[float], cfg) -> float:
+    """Resolve the pacing knob against the config default and validate it."""
+    v = float(value) if value is not None else float(cfg.reset.q_max_speed)
+    if not (0.0 < v <= Q_MAX_SPEED_MAX):
+        raise ValueError(
+            f"q_max_speed must be in (0, {Q_MAX_SPEED_MAX}] rad/s, got {v}"
+        )
+    return v
+
+
+@dataclass
+class RobotState:
+    """Plain-data snapshot of the latest robot state frame."""
+
+    timestamp_s: float
+    q: np.ndarray         # (7,)
+    dq: np.ndarray        # (7,)
+    ee_pos: np.ndarray    # (3,)
+    ee_quat: np.ndarray   # (4,) wxyz
+    tau: np.ndarray       # (7,)
+    seq: int
+    # EE Cartesian velocity in base frame (shm v2+): linear (m/s), angular (rad/s),
+    # = zeroJacobian @ dq from libfranka. Defaulted so older construction sites and
+    # pre-v2 frames still work (zeros).
+    ee_linvel: np.ndarray = field(default_factory=lambda: np.zeros(3))
+    ee_angvel: np.ndarray = field(default_factory=lambda: np.zeros(3))
+    # Measured link-side joint torque (Nm), gravity INCLUDED (shm v3+). This is
+    # the value to compare against the 87/87/87/87/12/12/12 Nm joint limits;
+    # `tau` above is the commanded impedance torque (gravity excluded). NaN when
+    # talking to a pre-v3 producer, so stale data can't masquerade as "0 Nm".
+    tau_J: np.ndarray = field(default_factory=lambda: np.full(7, np.nan))
+
+    @classmethod
+    def from_frame(cls, frame: np.ndarray) -> "RobotState":
+        names = frame.dtype.names if hasattr(frame, "dtype") else ()
+        return cls(
+            timestamp_s=float(frame["timestamp_s"]),
+            q=np.array(frame["q"], dtype=np.float64),
+            dq=np.array(frame["dq"], dtype=np.float64),
+            ee_pos=np.array(frame["ee_pos"], dtype=np.float64),
+            ee_quat=np.array(frame["ee_quat"], dtype=np.float64),
+            tau=np.array(frame["tau"], dtype=np.float64),
+            seq=int(frame["seq"]),
+            ee_linvel=(np.array(frame["ee_linvel"], dtype=np.float64)
+                       if names and "ee_linvel" in names else np.zeros(3)),
+            ee_angvel=(np.array(frame["ee_angvel"], dtype=np.float64)
+                       if names and "ee_angvel" in names else np.zeros(3)),
+            tau_J=(np.array(frame["tau_J"], dtype=np.float64)
+                   if names and "tau_J" in names else np.full(7, np.nan)),
+        )
+
+
+class LocalController:
+    """Owns the shm segment and the C++ controller subprocess.
+
+    Typical usage::
+
+        cfg = load_config()
+        with LocalController(cfg) as robot:
+            robot.set_gains(kp_pos=200, kp_ori=20)
+            robot.set_ee_target(np.array([0.5, 0.0, 0.4]),
+                                np.array([1.0, 0.0, 0.0, 0.0]))
+            state = robot.get_state()
+    """
+
+    def __init__(
+        self,
+        cfg: RobotConfig,
+        *,
+        autostart: bool = True,
+        verbose: bool = False,
+    ) -> None:
+        self.cfg = cfg
+        self.verbose = verbose
+        self._shm: Optional[SharedMemoryAccess] = None
+        self._recorder: Optional[RunRecorder] = None   # active 1 kHz ring log
+        self._last_log: Optional[RunRecorder] = None   # the last finished one (log_fetch / log_save)
+        self._log_id = 0
+        self._proc: Optional[subprocess.Popen] = None
+        self._proc_lock = threading.Lock()
+
+        self._osc_shm_bin = cfg.paths.build_dir / "osc_shm"
+        self._move_to_bin = cfg.paths.build_dir / "move_to"
+        # Optional: checked when a gripper_* method is called, not here, so an
+        # arm-only build keeps working.
+        self._gripper_bin = cfg.paths.build_dir / "gripper_cmd"
+        self._gripper_proc: Optional[subprocess.Popen] = None
+        self._gripper_lock = threading.Lock()
+        for b in (self._osc_shm_bin, self._move_to_bin):
+            if not b.is_file():
+                raise FileNotFoundError(
+                    f"{b.name} not found at {b}. Build the C++ side first: "
+                    "`cmake -S . -B build && cmake --build build` "
+                    "(docs/installation.md), or point paths.build_dir at it."
+                )
+
+        # Create and own the shm segment up front. The C++ child only opens it.
+        self._shm = SharedMemoryAccess(name=cfg.paths.shm_name, create=True)
+
+        # Gains/clamps to (re)apply after every osc_shm start. Seeded from
+        # robot.yaml; replaced by a shm snapshot on each restart so runtime
+        # set_gains() calls survive move_to_* and watchdog relaunches.
+        self._gains: Dict[str, float] = gains_from_config(cfg.control)
+
+        if autostart:
+            self.start_controller()
+
+    # ------------------------------------------------------------------ lifecycle
+    def start_controller(self) -> None:
+        with self._proc_lock:
+            if self._proc is not None and self._proc.poll() is None:
+                return
+        # The command block still holds the client's last gains here (osc_shm
+        # only overwrites it once it starts); keep them for restore below.
+        snap = snapshot_gains(self._view)
+        if snap is not None:
+            self._gains = snap
+        args = [
+            str(self._osc_shm_bin),
+            self.cfg.robot.ip,
+            "--shm-name",
+            self.cfg.paths.shm_name,
+        ]
+        # Register an EE payload (e.g. mounted camera) for gravity comp.
+        load = getattr(self.cfg, "load", None)
+        if load is not None and load.mass > 0.0:
+            args += ["--load-mass", f"{load.mass:.6f}"]
+            args += ["--load-com", *[f"{v:.6f}" for v in load.com]]
+            args += ["--load-inertia", *[f"{v:.9f}" for v in load.inertia]]
+        # Collision-reflex thresholds (raised above the controller's max push
+        # so insertion contact doesn't trip cartesian_reflex). See robot.yaml.
+        collision = getattr(self.cfg, "collision", None)
+        if collision is not None:
+            args += ["--collision-torque", f"{collision.torque_threshold:.6f}"]
+            args += ["--collision-cartesian", f"{collision.cartesian_threshold:.6f}"]
+
+        # Relaunch on a failed startup (see _OSC_START_MAX_ATTEMPTS): the common
+        # case is a transient "Move command aborted!" right after move_to, which
+        # a fresh connection a moment later clears.
+        last_err: Optional[BaseException] = None
+        for attempt in range(1, _OSC_START_MAX_ATTEMPTS + 1):
+            with self._proc_lock:
+                if self._proc is not None and self._proc.poll() is None:
+                    return
+                if self.verbose:
+                    logger.info(
+                        "starting osc_shm (attempt %d/%d): %s",
+                        attempt,
+                        _OSC_START_MAX_ATTEMPTS,
+                        " ".join(args),
+                    )
+                self._proc = subprocess.Popen(
+                    args,
+                    stdout=subprocess.PIPE if not self.verbose else None,
+                    stderr=subprocess.PIPE if not self.verbose else None,
+                    start_new_session=True,
+                )
+            try:
+                self._wait_until_running(_OSC_STARTUP_TIMEOUT_S)
+                # osc_shm has re-seeded the block with the new anchor + its
+                # built-in gains; put the client's gains back.
+                restore_gains(self._view, self._gains)
+                if self.verbose:
+                    logger.info(
+                        "osc_shm running; gains restored: kp=%.1f/%.1f "
+                        "err_delta_pos=%.3f enabled=%s",
+                        self._gains["kp_pos"], self._gains["kp_ori"],
+                        self._gains["error_delta_pos"],
+                        self._gains["enabled"],
+                    )
+                return
+            except (RuntimeError, TimeoutError) as e:
+                last_err = e
+                logger.warning(
+                    "osc_shm start attempt %d/%d failed: %s",
+                    attempt,
+                    _OSC_START_MAX_ATTEMPTS,
+                    e,
+                )
+                self._kill_proc()
+                if attempt < _OSC_START_MAX_ATTEMPTS:
+                    time.sleep(_OSC_START_RETRY_DELAY_S)
+        raise RuntimeError(
+            f"osc_shm failed to start after {_OSC_START_MAX_ATTEMPTS} attempts: "
+            f"{last_err}"
+        )
+
+    def _kill_proc(self) -> None:
+        """Reap the controller subprocess (used between failed start attempts).
+
+        Clears ``_proc`` and zeroes the shm controller pid. A process that exited
+        on its own (the usual case here -- osc_shm crashed) is already reaped by
+        the poll() in ``_wait_until_running``; one still alive (e.g. a stuck
+        startup that timed out) is killed.
+        """
+        with self._proc_lock:
+            proc = self._proc
+            self._proc = None
+        if proc is not None and proc.poll() is None:
+            proc.kill()
+            try:
+                proc.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                pass
+        self._mark_pid_inactive()
+
+    def stop_controller(self) -> None:
+        with self._proc_lock:
+            proc = self._proc
+            self._proc = None
+        if proc is None:
+            return
+        try:
+            if proc.poll() is None:
+                proc.send_signal(signal.SIGINT)
+                try:
+                    proc.wait(timeout=_OSC_SHUTDOWN_TIMEOUT_S)
+                except subprocess.TimeoutExpired:
+                    logger.warning("osc_shm did not exit on SIGINT, killing")
+                    proc.kill()
+                    proc.wait(timeout=1.0)
+        finally:
+            self._mark_pid_inactive()
+
+    def is_controller_alive(self) -> bool:
+        """True iff the osc_shm subprocess exists and has not exited."""
+        with self._proc_lock:
+            return self._proc is not None and self._proc.poll() is None
+
+    def ensure_running(self) -> bool:
+        """Restart osc_shm if it has died unexpectedly.
+
+        Returns True if a restart was performed, False if the controller was
+        already alive. Logs the dead process' exit code + captured stdout/stderr
+        before relaunching so the crash reason (libfranka reflex, RT overrun,
+        etc.) is not lost. Intended to be driven by the daemon watchdog; callers
+        must serialize this against move_to*/lifecycle ops (osc_shm needs the
+        sole FCI session).
+        """
+        with self._proc_lock:
+            proc = self._proc
+            alive = proc is not None and proc.poll() is None
+        if alive:
+            return False
+        if proc is not None:
+            out = err = b""
+            try:
+                if proc.stdout is not None:
+                    out = proc.stdout.read()
+            except Exception:
+                pass
+            try:
+                if proc.stderr is not None:
+                    err = proc.stderr.read()
+            except Exception:
+                pass
+            logger.warning(
+                "osc_shm exited unexpectedly (code=%s); restarting. "
+                "stdout: %s | stderr: %s",
+                proc.returncode,
+                out.decode(errors="replace").strip()[-512:],
+                err.decode(errors="replace").strip()[-512:],
+            )
+        self.start_controller()
+        return True
+
+    def close(self) -> None:
+        if self.log_active:
+            # Keep what was recorded so far rather than losing the run -- which
+            # only a session with a path can do. One held in memory for a client
+            # to fetch goes away with this process.
+            try:
+                summary = self.log_stop()
+                if summary["path"] is None:
+                    logger.warning("ring log %d was never fetched: %d frames discarded at close()",
+                                   self.log_id, summary["num_frames"])
+            except Exception:
+                logger.exception("ring log stop at close() failed")
+        try:
+            self.stop_controller()
+        finally:
+            if self._shm is not None:
+                self._shm.close(unlink=True)
+                self._shm = None
+
+    def __enter__(self) -> "LocalController":
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.close()
+
+    # ------------------------------------------------------------------ helpers
+    @property
+    def _view(self):
+        if self._shm is None:
+            raise RuntimeError("LocalController is closed")
+        return self._shm.view
+
+    def _wait_until_running(self, timeout: float) -> None:
+        """Wait for osc_shm to actually be producing state frames.
+
+        Two-stage check:
+          1. controller_pid is set + that PID is alive (osc_shm process started)
+          2. state_head advances by >= _OSC_READY_STATE_HEAD_ADVANCE frames
+             (libfranka session is up AND the 1 kHz loop is publishing fresh
+             state into shm)
+
+        Stage 2 closes the race after move_to_q: previously this returned as
+        soon as the C++ process registered, but libfranka session setup +
+        first control tick still take 0.5-2 s, during which the daemon's PUB
+        has nothing fresh to send.  A wait_for_state immediately after a
+        reset would then time out spuriously.
+        """
+        deadline = time.monotonic() + timeout
+        seen_pid = False
+        baseline_head: Optional[int] = None
+        while time.monotonic() < deadline:
+            pid = self._view.controller_pid
+            if not seen_pid:
+                if pid != 0 and self._is_pid_alive(pid):
+                    seen_pid = True
+                    baseline_head = self._view.state_head
+            else:
+                current_head = self._view.state_head
+                if (
+                    baseline_head is not None
+                    and current_head >= baseline_head + _OSC_READY_STATE_HEAD_ADVANCE
+                ):
+                    return
+            if self._proc is not None and self._proc.poll() is not None:
+                stderr = b""
+                try:
+                    stderr = self._proc.stderr.read() if self._proc.stderr else b""
+                except Exception:
+                    pass
+                raise RuntimeError(
+                    f"osc_shm exited with code {self._proc.returncode}. "
+                    f"stderr: {stderr.decode(errors='replace')[:512]}"
+                )
+            time.sleep(0.05)
+        if not seen_pid:
+            raise TimeoutError(
+                f"osc_shm did not register pid in shm within {timeout:.1f} s"
+            )
+        raise TimeoutError(
+            f"osc_shm pid registered but state_head did not advance "
+            f"{_OSC_READY_STATE_HEAD_ADVANCE} frames within {timeout:.1f} s "
+            f"(baseline {baseline_head} -> {self._view.state_head})"
+        )
+
+    @staticmethod
+    def _is_pid_alive(pid: int) -> bool:
+        try:
+            os.kill(pid, 0)
+        except (ProcessLookupError, PermissionError):
+            return False
+        except OSError:
+            return False
+        return True
+
+    def _mark_pid_inactive(self) -> None:
+        try:
+            if self._shm is not None:
+                self._view.controller_pid = 0
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------ commands
+    def set_ee_target(
+        self,
+        target_pos: np.ndarray,
+        target_quat: np.ndarray,
+    ) -> int:
+        """Publish a new EE setpoint. wxyz quaternion.
+
+        Returns the ``state_head`` read right after the write: the newest 1 kHz
+        frame at that moment. osc_shm snapshots the command before it publishes
+        a tick's frame, so this target is in force from frame ``head + 1`` at
+        the latest (``frankatwin.ring_log``). An active ring log records it.
+        """
+        pos = np.asarray(target_pos, dtype=np.float64).reshape(-1)
+        if pos.shape != (3,):
+            raise ValueError(f"target_pos must have shape (3,), got {pos.shape}")
+        quat = _wxyz_from(target_quat)
+        # Re-publish gains untouched. read_command() returns a shape-(1,)
+        # structured array (np.frombuffer(count=1)), so every field needs the
+        # [0] -- float() on a shape-(1,) array is a TypeError from numpy 2.0 on.
+        prev = self._view.read_command()
+        self._view.write_command(
+            target_pos=pos,
+            target_quat=quat,
+            kp_pos=float(prev["kp_pos"][0]),
+            kp_ori=float(prev["kp_ori"][0]),
+            kd_pos=float(prev["kd_pos"][0]),
+            kd_ori=float(prev["kd_ori"][0]),
+            error_delta_pos=float(prev["error_delta_pos"][0]),
+            enabled=bool(prev["enabled"][0]),
+        )
+        head = int(self._view.state_head)
+        recorder = getattr(self, "_recorder", None)
+        if recorder is not None:
+            recorder.record_target(head, pos, quat)
+        return head
+
+    def set_gains(
+        self,
+        kp_pos: Optional[float] = None,
+        kp_ori: Optional[float] = None,
+        kd_pos: Optional[float] = None,
+        kd_ori: Optional[float] = None,
+        error_delta_pos: Optional[float] = None,
+    ) -> None:
+        """Update controller gains. Any None argument keeps the current value."""
+        prev = self._view.read_command()
+        self._view.write_command(
+            target_pos=np.array(prev["target_pos"][0], dtype=np.float64),
+            target_quat=np.array(prev["target_quat"][0], dtype=np.float64),
+            kp_pos=float(prev["kp_pos"][0] if kp_pos is None else kp_pos),
+            kp_ori=float(prev["kp_ori"][0] if kp_ori is None else kp_ori),
+            kd_pos=float(prev["kd_pos"][0] if kd_pos is None else kd_pos),
+            kd_ori=float(prev["kd_ori"][0] if kd_ori is None else kd_ori),
+            error_delta_pos=float(
+                prev["error_delta_pos"][0]
+                if error_delta_pos is None
+                else error_delta_pos
+            ),
+            enabled=bool(prev["enabled"][0]),
+        )
+
+    def enable(self) -> None:
+        self._set_enabled(True)
+
+    def disable(self) -> None:
+        self._set_enabled(False)
+
+    def _set_enabled(self, value: bool) -> None:
+        prev = self._view.read_command()
+        self._view.write_command(
+            target_pos=np.array(prev["target_pos"][0], dtype=np.float64),
+            target_quat=np.array(prev["target_quat"][0], dtype=np.float64),
+            kp_pos=float(prev["kp_pos"][0]),
+            kp_ori=float(prev["kp_ori"][0]),
+            kd_pos=float(prev["kd_pos"][0]),
+            kd_ori=float(prev["kd_ori"][0]),
+            error_delta_pos=float(prev["error_delta_pos"][0]),
+            enabled=value,
+        )
+
+    # ------------------------------------------------------------------ state
+    def get_state(self, k: Optional[int] = None) -> Optional[RobotState]:
+        """Return the latest RobotState (or None if no frame yet).
+
+        If `k` is provided, returns a list of up to k most recent frames in
+        chronological order.
+        """
+        if k is None:
+            frame = self._view.latest_state()
+            if frame is None:
+                return None
+            return RobotState.from_frame(frame)
+        frames = self._view.last_k_states(k)
+        return [RobotState.from_frame(f) for f in frames]
+
+    def get_all_state(self) -> List[RobotState]:
+        return self.get_state(k=FRANKATWIN_SHM_STATE_FRAMES)  # type: ignore[return-value]
+
+    # ------------------------------------------------------------------ ring log
+    @property
+    def log_active(self) -> bool:
+        return getattr(self, "_recorder", None) is not None
+
+    def log_start(self, path=None, *, poll_hz: Optional[float] = None) -> Dict[str, Any]:
+        """Start a 1 kHz ring log (``frankatwin.ring_log.RunRecorder``).
+
+        A daemon thread copies every state frame out of the shm ring from now
+        on, and every ``set_ee_target`` until ``log_stop`` is stamped with the
+        tick it took effect. ``path`` is written on ``log_stop``, on this
+        machine. Without one the session stays in memory, to be read with
+        ``log_fetch`` or written with ``log_save`` -- what the daemon does, so
+        that the files end up on the PC that drove the run and not here.
+        One session at a time; starting one drops the last finished log.
+        """
+        if self.log_active:
+            raise RuntimeError(f"ring log already running (since seq {self._recorder.seq_start})")
+        rec = RunRecorder(
+            self._view, path,
+            poll_hz=DEFAULT_POLL_HZ if poll_hz is None else float(poll_hz),
+        )
+        rec.start()
+        self._recorder = rec
+        self._last_log = None
+        self._log_id = self.log_id + 1
+        logger.info("ring log %d started: %s (from seq %d)", self._log_id,
+                    rec.path if rec.path is not None else "in memory", rec.seq_start)
+        return {"path": None if rec.path is None else str(rec.path), "seq_start": rec.seq_start,
+                "poll_hz": rec.poll_hz, "log_id": self._log_id}
+
+    def log_stop(self, *, save: bool = True) -> Dict[str, Any]:
+        """Stop the ring log and return the summary.
+
+        The merged rows and the setpoint rows stay in memory until the next
+        ``log_start`` (``log_fetch``, ``log_save``). With ``save`` and a
+        ``path`` from ``log_start`` the two CSVs are written here as well.
+        """
+        rec = getattr(self, "_recorder", None)
+        if rec is None:
+            raise RuntimeError("no ring log running")
+        self._recorder = None
+        summary = rec.stop(save=save)
+        self._last_log = rec
+        summary["log_id"] = self.log_id
+        logger.info(
+            "ring log %d stopped: %s (%d frames, %d targets, %d dropped, %d resets)",
+            self.log_id, summary["path"] if summary["path"] is not None else "kept in memory",
+            summary["num_frames"], summary["num_targets"],
+            summary["dropped_frames"], summary["resets"],
+        )
+        return summary
+
+    @property
+    def log_id(self) -> int:
+        """Counts ``log_start`` calls: tells one finished log from the next."""
+        return getattr(self, "_log_id", 0)
+
+    def _finished_log(self) -> RunRecorder:
+        rec = getattr(self, "_last_log", None)
+        if rec is None:
+            raise RuntimeError("no finished ring log (log_stop first; log_start drops the previous one)")
+        return rec
+
+    def log_fetch(self, table: str = "merged", offset: int = 0, count: Optional[int] = None) -> np.ndarray:
+        """Rows ``[offset, offset + count)`` of the last finished ring log (a view).
+
+        ``table`` is ``"merged"`` (one row per tick, ``ring_log.MERGED_COLUMNS``)
+        or ``"targets"`` (one row per setpoint, ``ring_log.TARGETS_COLUMNS``);
+        ``count=None`` runs to the end.
+        """
+        rec = self._finished_log()
+        if table not in TABLES:
+            raise ValueError(f"unknown ring log table {table!r} (one of {sorted(TABLES)})")
+        data = rec.table if table == "merged" else rec.targets_table
+        offset = int(offset)
+        if offset < 0:
+            raise ValueError(f"offset must be >= 0, got {offset}")
+        end = data.shape[0] if count is None else offset + max(int(count), 0)
+        return data[offset:end]
+
+    def log_save(self, path=None) -> Dict[str, str]:
+        """Write the last finished ring log on this machine: the merged CSV at
+        ``path`` (default: ``log_start``'s) and ``<stem>_targets.csv`` next to
+        it. Returns ``{"path", "targets_path"}``."""
+        written = self._finished_log().save(path)
+        logger.info("ring log %d written: %s", self.log_id, written["path"])
+        return written
+
+    # ------------------------------------------------------------------ reset
+    def move_to_q(
+        self,
+        q_target: np.ndarray,
+        q_max_speed: Optional[float] = None,
+    ) -> None:
+        """Blocking joint-space reset using libfranka MotionGenerator.
+
+        Mutually exclusive with osc_shm: this method stops the controller,
+        runs move_to, then restarts the controller.
+        """
+        q = np.asarray(q_target, dtype=np.float64).reshape(-1)
+        if q.shape != (7,):
+            raise ValueError(f"q_target must have shape (7,), got {q.shape}")
+        v = _checked_q_max_speed(q_max_speed, self.cfg)
+        args = [str(self._move_to_bin), self.cfg.robot.ip, "--q"]
+        args += [f"{x:.6f}" for x in q.tolist()]
+        args += ["--q-max-speed", f"{v:.4f}"]
+        self._run_exclusive(args)
+
+    def move_to_pose(
+        self,
+        target_pos: np.ndarray,
+        target_quat: np.ndarray,
+        q_max_speed: Optional[float] = None,
+    ) -> None:
+        """Blocking task-space reset using libfranka CartesianPose motion type.
+
+        target_quat is wxyz. No external IK; libfranka solves internally.
+
+        `q_max_speed` is APPROXIMATE here: because the IK lives inside
+        libfranka, move_to estimates the joint speed from the Jacobian at the
+        start pose alone. It degrades over large reorientations and near
+        singularities. See src/move_to.cpp.
+        """
+        pos = np.asarray(target_pos, dtype=np.float64).reshape(-1)
+        if pos.shape != (3,):
+            raise ValueError(f"target_pos must have shape (3,), got {pos.shape}")
+        quat = _wxyz_from(target_quat)
+        v = _checked_q_max_speed(q_max_speed, self.cfg)
+        args = [
+            str(self._move_to_bin),
+            self.cfg.robot.ip,
+            "--pose",
+            f"{pos[0]:.6f}",
+            f"{pos[1]:.6f}",
+            f"{pos[2]:.6f}",
+            f"{quat[0]:.6f}",
+            f"{quat[1]:.6f}",
+            f"{quat[2]:.6f}",
+            f"{quat[3]:.6f}",
+            "--q-max-speed",
+            f"{v:.4f}",
+        ]
+        self._run_exclusive(args)
+
+    def _run_exclusive(self, args: List[str]) -> None:
+        """Run a one-shot binary that needs exclusive libfranka access."""
+        had_controller = (
+            self._proc is not None and self._proc.poll() is None
+        )
+        if had_controller:
+            self.stop_controller()
+        try:
+            if self.verbose:
+                logger.info("running %s", " ".join(args))
+            res = subprocess.run(
+                args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=_MOVE_TO_TIMEOUT_S,
+            )
+            if res.returncode != 0:
+                raise RuntimeError(
+                    f"move_to exited with code {res.returncode}\n"
+                    f"stdout: {res.stdout.decode(errors='replace')[:512]}\n"
+                    f"stderr: {res.stderr.decode(errors='replace')[:512]}"
+                )
+        finally:
+            if had_controller:
+                # Re-seed: osc_shm captures the new anchor pose on startup so
+                # the impedance setpoint matches where the robot now is.
+                self.start_controller()
+
+    # ------------------------------------------------------------------ gripper
+    # All blocking (homing ~6 s, move/grasp < 2 s). They do NOT stop osc_shm: the
+    # Franka Hand is served on its own port (1338), independent of the FCI
+    # session. The daemon wraps them in a thread so its REP loop stays responsive.
+    def gripper_homing(self) -> Dict[str, Any]:
+        """Calibrate the finger stroke (`max_width`). Once after power-up / finger change."""
+        return self._run_gripper(gripper_command_args(self.cfg.gripper, "homing"))
+
+    def gripper_move(self, width: float, speed: Optional[float] = None) -> Dict[str, Any]:
+        """Fingers to `width` [m] at `speed` [m/s] -- position only, no force."""
+        return self._run_gripper(gripper_command_args(self.cfg.gripper, "move", width=width, speed=speed))
+
+    def gripper_open(self, width: Optional[float] = None, speed: Optional[float] = None) -> Dict[str, Any]:
+        """`gripper_move` to `width` (default `gripper.max_width` = fully open)."""
+        return self.gripper_move(self.cfg.gripper.max_width if width is None else width, speed)
+
+    def gripper_grasp(
+        self,
+        width: Optional[float] = None,
+        speed: Optional[float] = None,
+        force: Optional[float] = None,
+        epsilon_inner: Optional[float] = None,
+        epsilon_outer: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Close on an object: drive towards `width`, squeeze with `force` [N] on stall.
+
+        Defaults from robot.yaml `gripper:` (width -0.01 = past closure, force 70).
+        `result` in the returned dict is libfranka's is-within-epsilon verdict;
+        `state.width` is where the fingers actually stopped.
+        """
+        return self._run_gripper(gripper_command_args(
+            self.cfg.gripper, "grasp", width=width, speed=speed, force=force,
+            epsilon_inner=epsilon_inner, epsilon_outer=epsilon_outer,
+        ))
+
+    gripper_close = gripper_grasp
+
+    def gripper_stop(self) -> Dict[str, Any]:
+        """Abort the gripper motion in flight.
+
+        If this process is running a `gripper_cmd`, signal it (it turns SIGINT
+        into `Gripper::stop()` on its own connection) and return that command's
+        final output; otherwise send a standalone `stop`.
+        """
+        with self._gripper_lock:
+            proc = self._gripper_proc
+        if proc is not None and proc.poll() is None:
+            proc.send_signal(signal.SIGINT)
+            try:
+                proc.wait(timeout=_GRIPPER_STOP_WAIT_S)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                raise RuntimeError("gripper_cmd did not stop within %.0fs; killed" % _GRIPPER_STOP_WAIT_S)
+            return {"ok": True, "cmd": "stop", "result": True, "stopped": True}
+        return self._run_gripper(gripper_command_args(self.cfg.gripper, "stop"))
+
+    def gripper_state(self) -> Dict[str, Any]:
+        """`{"width", "max_width", "is_grasped", "temperature"}` from one readOnce()."""
+        return self._run_gripper(gripper_command_args(self.cfg.gripper, "state"))["state"]
+
+    def _run_gripper(self, args: List[str]) -> Dict[str, Any]:
+        if not self.cfg.gripper.enabled:
+            raise RuntimeError("gripper disabled in robot.yaml (gripper.enabled: false)")
+        if not self._gripper_bin.is_file():
+            raise FileNotFoundError(
+                f"gripper_cmd not found at {self._gripper_bin}. Build the C++ side "
+                "(`cmake --build build`, docs/installation.md) or point paths.build_dir at it."
+            )
+        with self._gripper_lock:
+            if self._gripper_proc is not None and self._gripper_proc.poll() is None:
+                raise RuntimeError("a gripper command is already running; gripper_stop() first")
+            cmd = [str(self._gripper_bin), self.cfg.robot.ip, *args]
+            if self.verbose:
+                logger.info("running %s", " ".join(cmd))
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            self._gripper_proc = proc
+        try:
+            out, err = proc.communicate(timeout=_GRIPPER_TIMEOUT_S)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.communicate()
+            raise RuntimeError(f"gripper_cmd {args[0]} timed out after {_GRIPPER_TIMEOUT_S:.0f}s")
+        finally:
+            with self._gripper_lock:
+                self._gripper_proc = None
+        result = parse_gripper_output(out.decode(errors="replace"))
+        if proc.returncode != 0 or not result.get("ok"):
+            raise RuntimeError(
+                f"gripper_cmd {args[0]} failed (exit {proc.returncode}): "
+                f"{result.get('error') or err.decode(errors='replace').strip()[:512]}"
+            )
+        return result

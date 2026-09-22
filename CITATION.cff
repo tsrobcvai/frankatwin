@@ -1,0 +1,57 @@
+cff-version: 1.2.0
+message: "If you use FrankaTwin in your research, please cite it as below."
+title: "FrankaTwin: Sim-to-Real Aligned Control and System Identification for Franka Robots"
+type: software
+authors:
+  - family-names: Sun
+    given-names: Tao
+    email: tao.sun@mail.mcgill.ca
+    affiliation: McGill University
+    website: https://taosun99.github.io/
+  - family-names: Yin
+    given-names: Patrick
+    affiliation: University of Washington
+    website: https://patrickyin.me/
+  - family-names: He
+    given-names: Harry
+    affiliation: McGill University
+version: 0.3.0
+date-released: 2026-09-21
+# Once a Zenodo DOI exists, add it here (and to the BibTeX entry in README.md):
+# doi: 10.5281/zenodo.<id>
+license: Apache-2.0
+repository-code: https://github.com/tsrobcvai/frankatwin
+keywords:
+  - franka
+  - libfranka
+  - impedance control
+  - system identification
+  - sim-to-real
+  - isaac lab
+references:
+  - type: article
+    status: preprint
+    title: "Visual Sim-to-Real Learning for Robotic Insertion under Geometric Variations: Application to Rebar Installation"
+    authors:
+      - family-names: Sun
+        given-names: Tao
+      - family-names: Han
+        given-names: Beining
+      - family-names: Yin
+        given-names: Patrick
+      - family-names: Xu
+        given-names: Rui
+      - family-names: He
+        given-names: Harry
+      - family-names: Gupta
+        given-names: Abhishek
+      - family-names: Rusinkiewicz
+        given-names: Szymon
+      - family-names: Shao
+        given-names: Yi
+    year: 2026
+    url: https://arxiv.org/abs/2609.20477
+    identifiers:
+      - type: other
+        value: "arXiv:2609.20477"
+        description: arXiv identifier
