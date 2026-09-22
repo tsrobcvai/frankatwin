@@ -19,9 +19,10 @@
   task-space impedance law on the robot (C++, libfranka) and in IsaacLab — same
   gains and damping.
 - **A reliable system-identification pipeline for Isaac Sim.** Fits the arm's
-  joint dynamics from real excitation runs; the identified sim tracks the real
-  arm to a joint-position MSE of 3.0 × 10⁻³ rad² on a held-out waveform at gains
-  the fit never saw — 28 times better than the PhysX defaults.
+  joint dynamics from real excitation runs; on a held-out chirp at gains the
+  fit never saw, the identified sim tracks the real arm to 3.6 mm end-effector
+  position RMSE and 28 mrad joint-position RMSE — 5.4× and 16.5× better than
+  the PhysX defaults.
 
 Built for training and evaluating policies that transfer. The control scheme
 matches the task-space impedance used by sim-to-real work such as

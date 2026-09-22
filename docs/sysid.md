@@ -136,6 +136,18 @@ Per-joint position RMSE on the held-out run [mrad]:
 | baseline | 545 | 97 | 351 | 81 | 235 | 62 | 294 |
 | **fitted** | **101** | **18** | **62** | **20** | **46** | **17** | **60** |
 
+A second held-out run — the low-band chirp itself, recorded at `kp 500 / 30`:
+the fit's own waveform at gains it never saw — scores with the same parameters:
+
+| | baseline (PhysX defaults) | fitted |
+|---|---:|---:|
+| EE position RMSE (3-D) | 19.52 mm | **3.59 mm** |
+| EE orientation RMSE | 47.20 mrad | **14.64 mrad** |
+| joint position RMSE (all joints) | 470.76 mrad | **28.47 mrad** |
+| joint velocity RMSE (all joints) | 320.28 mrad/s | **35.89 mrad/s** |
+
+These are the figures the README quotes.
+
 ### Which trajectories to fit on
 
 Two fits, same population and budget, scored on the same held-out run:

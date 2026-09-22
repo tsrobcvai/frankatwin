@@ -11,8 +11,8 @@ documentation describes v0.3; what changed is in the [changelog](changelog.md).
 
 A 1 kHz task impedance controller for the **Franka Research 3 / Panda** whose
 simulation twin is *the same controller* — plus the system identification that
-that cuts the twin's joint-position error on a held-out run to a fifth of what
-the PhysX defaults give (54 mrad RMSE over all seven joints).
+that brings the twin's joint-position error on a held-out run down to 28 mrad
+RMSE over all seven joints, 16.5× below the PhysX defaults.
 
 - **Task impedance control, identical in sim and on the robot.** `osc_shm`
   (libfranka, 1 kHz) and the IsaacLab controller are the same task-space
@@ -22,8 +22,9 @@ the PhysX defaults give (54 mrad RMSE over all seven joints).
   [OmniReset](https://weirdlabuw.github.io/omnireset/).
 - **System identification that closes the loop.** A CMA-ES fit of 29
   parameters (armature, static / dynamic / viscous friction, motor delay) drives
-  the sim replay of real excitation runs — joint-position MSE 3.0 × 10⁻³ rad²
-  on a held-out multiband run, a waveform and a gain set the fit never saw.
+  the sim replay of real excitation runs — 3.6 mm end-effector and 28 mrad
+  joint-position RMSE on a held-out chirp at gains the fit never saw, 5.4× and
+  16.5× better than the PhysX defaults.
 - **Small and auditable.** ~1 600 lines of C++ and ~3 300 lines of Python
   (excluding blanks and comments), POSIX shared memory + ZMQ in between. No ROS.
 

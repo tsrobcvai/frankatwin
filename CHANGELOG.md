@@ -3,6 +3,21 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+- The README and the docs landing page quote the held-out low-band chirp
+  recorded at kp 500 / 30 — 3.6 mm end-effector and 28 mrad joint-position RMSE,
+  5.4× and 16.5× better than the PhysX defaults — instead of the multiband
+  held-out run; Our results in the sysid guide reports that run as a second
+  table, so the README's numbers have a source.
+- `THIRD_PARTY_NOTICES.md`: three rows corrected against the tree.
+  `compare_sim_real.py` is FrankaTwin's own, not Isaac Lab-derived; the
+  `franka_mimic.usd` row states only what the file's metadata records (Isaac
+  Lab's Forge asset), not an unverified modification; the OmniReset origin
+  links the project page, the paper and UWLab's sim2real notes instead of a
+  repository that does not exist.
+
 ## [0.3.0] — 2026-09-21
 
 ### Added
