@@ -146,7 +146,13 @@ the fit's own waveform at gains it never saw — scores with the same parameters
 | joint position RMSE (all joints) | 470.76 mrad | **28.47 mrad** |
 | joint velocity RMSE (all joints) | 320.28 mrad/s | **35.89 mrad/s** |
 
-These are the figures the README quotes.
+These are the figures the README quotes, and the run the comparison video
+shows — the twin (left) beside the real arm (right), with and without the
+identified parameters:
+
+<video controls width="100%" src="https://github.com/tsrobcvai/frankatwin/releases/download/v0.3.0/frankatwin_sysid_comparison_v0.3.0.mp4">
+  <a href="https://github.com/tsrobcvai/frankatwin/releases/download/v0.3.0/frankatwin_sysid_comparison_v0.3.0.mp4">frankatwin_sysid_comparison_v0.3.0.mp4</a> (1080p, 12 MB)
+</video>
 
 ### Which trajectories to fit on
 

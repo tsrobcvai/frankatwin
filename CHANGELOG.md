@@ -17,6 +17,10 @@ All notable changes to this project are documented here. The format follows
   Lab's Forge asset), not an unverified modification; the OmniReset origin
   links the project page, the paper and UWLab's sim2real notes instead of a
   repository that does not exist.
+- The 36 s sim-vs-real comparison video is embedded in the README (a
+  GitHub-hosted attachment, nothing in the tree) and plays under Our results
+  in the sysid guide from the `v0.3.0` release asset, which is also the
+  full-quality copy.
 
 ## [0.3.0] — 2026-09-21
 

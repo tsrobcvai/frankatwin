@@ -24,6 +24,12 @@
   position RMSE and 28 mrad joint-position RMSE — 5.4× and 16.5× better than
   the PhysX defaults.
 
+https://github.com/user-attachments/assets/226f0dac-2274-48f2-9b4c-02b531a0747f
+
+*The IsaacLab twin (left) beside the real arm (right) on that held-out chirp,
+with and without the identified parameters; the overlay tracks the sim-to-real
+error live. Full quality (1080p, 12 MB): [release asset](https://github.com/tsrobcvai/frankatwin/releases/download/v0.3.0/frankatwin_sysid_comparison_v0.3.0.mp4).*
+
 Built for training and evaluating policies that transfer. The control scheme
 matches the task-space impedance used by sim-to-real work such as
 [IndustReal](https://arxiv.org/abs/2305.17110) and
