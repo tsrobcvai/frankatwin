@@ -3,6 +3,14 @@
 </p>
 
 <p align="center">
+  <a href="https://tsrobcvai.github.io/frankatwin/">
+    <img src="docs/images/documentation-button.svg" width="360" alt="Read the FrankaTwin documentation">
+  </a>
+  <br>
+  <strong><a href="https://tsrobcvai.github.io/frankatwin/">tsrobcvai.github.io/frankatwin</a></strong>
+</p>
+
+<p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
   <img alt="libfranka" src="https://img.shields.io/badge/libfranka-0.13%20%E2%80%93%200.15-informational">
   <img alt="IsaacLab" src="https://img.shields.io/badge/IsaacLab-%E2%89%A5%202.3-76b900">

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="52" viewBox="0 0 360 52" role="img" aria-labelledby="title">
+  <title id="title">Read the FrankaTwin documentation</title>
+  <rect width="360" height="52" rx="8" fill="#305FAE"/>
+  <g fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M20 16h7c3 0 5 1 5 3v19c0-2-2-3-5-3h-7z"/>
+    <path d="M44 16h-7c-3 0-5 1-5 3v19c0-2 2-3 5-3h7z"/>
+    <path d="M320 26h17m-6-6 6 6-6 6"/>
+  </g>
+  <text x="59" y="32" fill="#fff" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700">Read the Documentation</text>
+</svg>
