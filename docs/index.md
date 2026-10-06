@@ -58,6 +58,15 @@ machine it runs on. The reference (architecture and wire protocols,
 configuration, API from docstrings, data formats, troubleshooting) is in the
 sidebar.
 
+## Citation
+
+```{include} ../README.md
+---
+start-after: "## Citation"
+end-before: "## Authors"
+---
+```
+
 ```{toctree}
 :hidden:
 :caption: Guide

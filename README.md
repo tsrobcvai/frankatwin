@@ -37,23 +37,9 @@ matches the task-space impedance used by sim-to-real work such as
 
 ## Citation
 
-If you use FrankaTwin in your research, please cite the software:
-
-<!-- Once a Zenodo DOI exists, add `doi = {10.5281/zenodo.<id>}` and
-     `publisher = {Zenodo}` to this entry, and `doi:` to CITATION.cff. -->
-```bibtex
-@software{sun_frankatwin_2026,
-  author  = {Sun, Tao and Yin, Patrick and He, Harry},
-  title   = {FrankaTwin: Sim-to-Real Aligned Control and System Identification for Franka Robots},
-  year    = {2026},
-  version = {0.3.0},
-  url     = {https://github.com/tsrobcvai/frankatwin}
-}
-```
-
 FrankaTwin was developed in support of our visual sim-to-real manipulation
-research. If you use the controller, methodology, or experimental setup in this
-context, please also cite:
+research. If you use FrankaTwin in your research, please cite our accompanying
+[paper](https://arxiv.org/abs/2609.20477):
 
 ```bibtex
 @misc{sun2026visualsimtoreallearningrobotic,
@@ -66,6 +52,9 @@ context, please also cite:
   url={https://arxiv.org/abs/2609.20477}
 }
 ```
+
+For reproducibility, you can also record the FrankaTwin version or commit used
+in your experimental setup.
 
 ## Authors
 
