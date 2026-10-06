@@ -2,14 +2,23 @@
   <img src="docs/images/logo.png" width="440" alt="FrankaTwin — sim ↔ real">
 </p>
 
-<h2 align="center"><a href="https://tsrobcvai.github.io/frankatwin/">Documentation</a></h2>
-
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
   <img alt="libfranka" src="https://img.shields.io/badge/libfranka-0.13%20%E2%80%93%200.15-informational">
   <img alt="IsaacLab" src="https://img.shields.io/badge/IsaacLab-%E2%89%A5%202.3-76b900">
   <img alt="Python" src="https://img.shields.io/badge/python-%E2%89%A5%203.9-3776ab">
 </p>
+
+## Documentation
+
+> **[Read the full documentation →](https://tsrobcvai.github.io/frankatwin/)**
+>
+> Setup guides, robot-control examples, and the sim-to-real system-identification
+> workflow.
+>
+> **Start here:** [Installation](https://tsrobcvai.github.io/frankatwin/installation.html)
+> · [Usage & examples](https://tsrobcvai.github.io/frankatwin/usage.html)
+> · [System identification](https://tsrobcvai.github.io/frankatwin/sysid.html)
 
 ---
 
