@@ -10,11 +10,13 @@ cmake-build-*/
 data/*.csv
 data/*.npz
 data/*.h5
+data/force_gap/
 !data/.gitkeep
 
 # Generic generated files
 *.png
 *.json
+!config/force_gap.json
 *.csv
 # Ship the README example-results figures.
 !docs/images/*.png

@@ -24,6 +24,7 @@ import zmq
 from frankatwin.config import RobotConfig
 from frankatwin.local_controller import RobotState
 from frankatwin.ring_log import TABLES, write_run
+from frankatwin.shm_layout import WRENCH_STATE_FIELDS
 
 logger = logging.getLogger(__name__)
 
@@ -284,7 +285,8 @@ class FrankaTwinClient:
         daemon ``chunk_rows`` at a time.
 
         ``table`` is ``"merged"`` (one row per tick, ``ring_log.MERGED_COLUMNS``)
-        or ``"targets"`` (one row per setpoint, ``ring_log.TARGETS_COLUMNS``).
+        ``"targets"`` (one row per setpoint, ``ring_log.TARGETS_COLUMNS``), or
+        ``"wrench"`` (v4 API values per tick, ``ring_log.WRENCH_COLUMNS``).
         The daemon keeps the log until the next ``log_start``.
         """
         if table not in TABLES:
@@ -488,6 +490,8 @@ def _state_from_dict(d: Dict[str, Any]) -> RobotState:
         ee_quat=np.asarray(d["ee_quat"], dtype=np.float64),
         tau=np.asarray(d["tau"], dtype=np.float64),
         seq=int(d["seq"]),
+        **{name: (np.asarray(d[name], dtype=np.float64) if width > 1 else float(d[name]))
+           for name, width in WRENCH_STATE_FIELDS.items() if name in d},
         ee_linvel=np.asarray(d.get("ee_linvel", [0.0, 0.0, 0.0]), dtype=np.float64),
         ee_angvel=np.asarray(d.get("ee_angvel", [0.0, 0.0, 0.0]), dtype=np.float64),
         # NaN (not 0) when the daemon predates shm v3 so it can't be mistaken

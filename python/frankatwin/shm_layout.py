@@ -30,9 +30,19 @@ import numpy as np
 # Constants (must match src/shm_layout.h)
 # ---------------------------------------------------------------------------
 FRANKATWIN_SHM_MAGIC = 0x50414E44
-FRANKATWIN_SHM_VERSION = 3  # v3: added state tau_J (measured link-side torque)
+FRANKATWIN_SHM_VERSION = 4  # v4: external wrench, transforms and configured load
 FRANKATWIN_SHM_STATE_FRAMES = 1024
 FRANKATWIN_SHM_DEFAULT_NAME = "/frankatwin_osc"
+
+# Field widths shared by state transport and the lossless wrench log. Matrices
+# retain libfranka's column-major flat representation, not NumPy's default.
+WRENCH_STATE_FIELDS = {
+    "O_F_ext_hat_K": 6, "K_F_ext_hat_K": 6,
+    "EE_T_K": 16, "F_T_EE": 16, "tau_ext_hat_filtered": 7,
+    "m_ee": 1, "m_load": 1, "m_total": 1,
+    "F_x_Cload": 3, "I_load": 9, "F_x_Ctotal": 3, "I_total": 9,
+    "control_command_success_rate": 1,
+}
 
 # ---------------------------------------------------------------------------
 # numpy dtypes (must produce the same byte layout as the C++ structs)
@@ -81,16 +91,19 @@ STATE_FRAME_DTYPE = np.dtype(
         ("ee_linvel", np.float64, (3,)),  # base frame (m/s), v2+
         ("ee_angvel", np.float64, (3,)),  # base frame (rad/s), v2+
         ("tau_J", np.float64, (7,)),  # measured link-side torque (Nm), incl. gravity, v3+
+        *[(name, np.float64, (width,)) if width > 1 else (name, np.float64)
+          for name, width in WRENCH_STATE_FIELDS.items()],
         ("reserved0", np.uint64),
         ("reserved1", np.uint64),
         ("reserved2", np.uint64),
         ("reserved3", np.uint64),
         ("reserved4", np.uint64),
+        ("reserved5", np.uint64),
     ],
     align=True,
 )
-assert STATE_FRAME_DTYPE.itemsize == 384, (
-    f"STATE_FRAME_DTYPE size {STATE_FRAME_DTYPE.itemsize} != 384"
+assert STATE_FRAME_DTYPE.itemsize == 1024, (
+    f"STATE_FRAME_DTYPE size {STATE_FRAME_DTYPE.itemsize} != 1024"
 )
 
 SHM_TOTAL_BYTES = (
@@ -98,7 +111,7 @@ SHM_TOTAL_BYTES = (
     + COMMAND_DTYPE.itemsize
     + STATE_FRAME_DTYPE.itemsize * FRANKATWIN_SHM_STATE_FRAMES
 )
-assert SHM_TOTAL_BYTES == 32 + 112 + 1024 * 384
+assert SHM_TOTAL_BYTES == 32 + 112 + 1024 * 1024
 
 # Offset of each region within the shm buffer.
 OFFSET_HEADER = 0

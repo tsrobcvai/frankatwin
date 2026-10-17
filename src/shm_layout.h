@@ -41,7 +41,7 @@ extern "C" {
 #endif
 
 #define FRANKATWIN_SHM_MAGIC          0x50414e44u  // 'PAND' little-endian
-#define FRANKATWIN_SHM_VERSION        3u           // v3: added state tau_J (measured link-side torque)
+#define FRANKATWIN_SHM_VERSION        4u           // v4: external wrench, frame transforms and load model
 #define FRANKATWIN_SHM_STATE_FRAMES   1024u        // ring buffer depth
 #define FRANKATWIN_SHM_DEFAULT_NAME   "/frankatwin_osc" // POSIX shm name (must start with '/')
 
@@ -88,7 +88,7 @@ struct ShmCommand {
 };
 
 // ---------------------------------------------------------------------------
-// State frame (C++ -> Python). Size: 384 B (344 payload + 40 pad).
+// State frame (C++ -> Python). Size: 1024 B.
 // ---------------------------------------------------------------------------
 struct ShmStateFrame {
   uint64_t seq;                 // matches the write index (== state_head value when written)
@@ -101,15 +101,29 @@ struct ShmStateFrame {
   double   ee_linvel[3];        // EE linear velocity, base frame (m/s) = zeroJacobian_v @ dq
   double   ee_angvel[3];        // EE angular velocity, base frame (rad/s) = zeroJacobian_w @ dq
   double   tau_J[7];            // measured link-side joint torque (Nm), incl. gravity (v3+)
-  uint64_t reserved0;           // pad to 384 B (cache-line multiple)
+  double   O_F_ext_hat_K[6];    // libfranka estimate, base axes, moment about K [N, Nm]
+  double   K_F_ext_hat_K[6];    // same estimate in K axes [N, Nm]
+  double   EE_T_K[16];          // column-major homogeneous transform
+  double   F_T_EE[16];          // column-major homogeneous transform
+  double   tau_ext_hat_filtered[7];
+  double   m_ee;
+  double   m_load;
+  double   m_total;
+  double   F_x_Cload[3];
+  double   I_load[9];           // column-major inertia about load COM
+  double   F_x_Ctotal[3];
+  double   I_total[9];          // column-major inertia about total COM
+  double   control_command_success_rate;
+  uint64_t reserved0;           // pad to 1024 B (cache-line multiple)
   uint64_t reserved1;
   uint64_t reserved2;
   uint64_t reserved3;
   uint64_t reserved4;
+  uint64_t reserved5;
 };
 
 // ---------------------------------------------------------------------------
-// Top-level layout. Size: 32 + 112 + 1024 * 384 = 393360 B (384.14 KiB).
+// Top-level layout. Size: 32 + 112 + 1024 * 1024 = 1048720 B.
 // ---------------------------------------------------------------------------
 struct ShmSegment {
   ShmHeader     header;
@@ -124,8 +138,8 @@ struct ShmSegment {
 #ifdef __cplusplus
 static_assert(sizeof(ShmHeader) == 32, "ShmHeader size drift");
 static_assert(sizeof(ShmCommand) == 112, "ShmCommand size drift");
-static_assert(sizeof(ShmStateFrame) == 384, "ShmStateFrame size drift");
-static_assert(sizeof(ShmSegment) == 32 + 112 + 1024 * 384, "ShmSegment size drift");
+static_assert(sizeof(ShmStateFrame) == 1024, "ShmStateFrame size drift");
+static_assert(sizeof(ShmSegment) == 32 + 112 + 1024 * 1024, "ShmSegment size drift");
 static_assert(offsetof(ShmHeader, controller_pid) == 16, "header.controller_pid offset drift");
 static_assert(offsetof(ShmHeader, state_head) == 24, "header.state_head offset drift");
 static_assert(offsetof(ShmCommand, target_pos) == 8, "command.target_pos offset drift");
@@ -144,6 +158,9 @@ static_assert(offsetof(ShmStateFrame, tau) == 184, "state.tau offset drift");
 static_assert(offsetof(ShmStateFrame, ee_linvel) == 240, "state.ee_linvel offset drift");
 static_assert(offsetof(ShmStateFrame, ee_angvel) == 264, "state.ee_angvel offset drift");
 static_assert(offsetof(ShmStateFrame, tau_J) == 288, "state.tau_J offset drift");
+static_assert(offsetof(ShmStateFrame, O_F_ext_hat_K) == 344, "state.O_F_ext_hat_K offset drift");
+static_assert(offsetof(ShmStateFrame, EE_T_K) == 440, "state.EE_T_K offset drift");
+static_assert(offsetof(ShmStateFrame, control_command_success_rate) == 968, "state.success_rate offset drift");
 #endif
 
 #ifdef __cplusplus

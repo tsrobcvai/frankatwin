@@ -25,6 +25,7 @@ from frankatwin.ring_log import (  # noqa: E402
     CART_IMPEDANCE_COLUMNS,
     MERGED_COLUMNS,
     TARGETS_COLUMNS,
+    WRENCH_COLUMNS,
     RingDrainer,
     RunRecorder,
     TargetEvent,
@@ -37,6 +38,7 @@ from frankatwin.shm_layout import (  # noqa: E402
     SHM_TOTAL_BYTES,
     _atomic_store_u64,
     _build_view,
+    WRENCH_STATE_FIELDS,
 )
 
 # Header of examples/cart_impedance.py `_write_csv`, copied verbatim so a
@@ -74,6 +76,8 @@ class _Producer:
             slot["ee_quat"] = [1.0, 0.0, 0.0, 0.0]          # wxyz
             slot["tau"] = np.full(7, 0.1)
             slot["tau_J"] = np.full(7, 0.2)
+            for name, width in WRENCH_STATE_FIELDS.items():
+                slot[name] = nxt + np.arange(width) / 100 if width > 1 else nxt + .25
             _atomic_store_u64(self.view.raw, OFFSET_HEADER + 24, nxt)
 
 
@@ -320,6 +324,9 @@ def test_session_without_a_path_stays_in_memory_until_fetched_or_saved(tmp_path,
     assert ctl.log_fetch("merged", 25, 100).shape[0] == 5            # clipped at the end
     assert ctl.log_fetch("merged", 30, 10).shape[0] == 0
     assert ctl.log_fetch("targets").shape == (1, len(TARGETS_COLUMNS))
+    wrench = ctl.log_fetch("wrench")
+    assert wrench.shape == (30, len(WRENCH_COLUMNS))
+    np.testing.assert_equal(wrench[:, WRENCH_COLUMNS.index('O_F_ext_hat_K_2')], wrench[:, 0] + .02)
     with pytest.raises(ValueError):
         ctl.log_fetch("frames")
     with pytest.raises(ValueError):
@@ -337,6 +344,7 @@ def test_session_without_a_path_stays_in_memory_until_fetched_or_saved(tmp_path,
     with pytest.raises(RuntimeError):
         ctl.log_fetch()
     assert ctl.log_stop()["log_id"] == 2
+    assert ctl.log_fetch('wrench').shape == (0, len(WRENCH_COLUMNS))
 
 
 def test_log_stop_can_leave_a_path_unwritten_for_log_save(tmp_path):
@@ -412,6 +420,13 @@ def test_client_fetches_the_log_from_the_daemon_and_writes_it_here(tmp_path, mon
             np.testing.assert_array_equal(merged, ctl.log_fetch("merged"))
             np.testing.assert_array_equal(robot.log_fetch("merged", chunk_rows=1000), merged)
             np.testing.assert_array_equal(robot.log_fetch("targets"), ctl.log_fetch("targets"))
+            wrench = robot.log_fetch('wrench', chunk_rows=300)
+            np.testing.assert_array_equal(wrench, ctl.log_fetch('wrench'))
+            for name, width in WRENCH_STATE_FIELDS.items():
+                for j in range(width):
+                    key = name if width == 1 else f'{name}_{j}'
+                    np.testing.assert_allclose(wrench[:, WRENCH_COLUMNS.index(key)],
+                                               wrench[:, 0] + (.25 if width == 1 else j / 100))
             assert merged.flags.writeable
 
             written = robot.log_save()

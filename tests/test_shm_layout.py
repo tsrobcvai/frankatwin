@@ -34,6 +34,7 @@ from frankatwin.shm_layout import (  # noqa: E402
     FRANKATWIN_SHM_STATE_FRAMES,
     SHM_TOTAL_BYTES,
     STATE_FRAME_DTYPE,
+    WRENCH_STATE_FIELDS,
 )
 
 
@@ -83,10 +84,16 @@ def test_sizes(cpp_offsets):
     sizes, _ = cpp_offsets
     assert sizes["ShmHeader"] == HEADER_DTYPE.itemsize == 32
     assert sizes["ShmCommand"] == COMMAND_DTYPE.itemsize == 112
-    assert sizes["ShmStateFrame"] == STATE_FRAME_DTYPE.itemsize == 384
+    assert sizes["ShmStateFrame"] == STATE_FRAME_DTYPE.itemsize == 1024
     assert sizes["ShmSegment"] == SHM_TOTAL_BYTES
-    assert SHM_TOTAL_BYTES == 32 + 112 + 1024 * 384
+    assert SHM_TOTAL_BYTES == 32 + 112 + 1024 * 1024
     assert FRANKATWIN_SHM_STATE_FRAMES == 1024
+
+
+def test_v4_wrench_cpp_offsets(cpp_offsets):
+    _, offsets=cpp_offsets
+    for name in WRENCH_STATE_FIELDS:
+        assert offsets[f'ShmStateFrame.{name}']==STATE_FRAME_DTYPE.fields[name][1]
 
 
 def test_header_offsets(cpp_offsets):

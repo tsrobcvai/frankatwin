@@ -171,3 +171,75 @@ differs.
 
 `apply_sysid_params.py` reads `best_params_decoded` only; `--print-snippet`
 prints those five arrays as a Python dict to paste into your own task config.
+
+## External force gap bundles (v0.4 Beta)
+
+The [external force workflow](force_gap.md) writes a directory containing
+`metadata.json` (schema version 1), `samples.npz`, and `samples.csv`.
+The convention string is `robot_on_payload; axes=O(base); moment_origin=K; SI`.
+Wrench columns always follow `[Fx, Fy, Fz, Tx, Ty, Tz]`, in N and N m.
+Every quaternion in these bundles is **wxyz**, including `ee_quat` and
+`target_quat`; this differs from the legacy merged CSV's explicitly named
+`quat_x,quat_y,quat_z,quat_w` columns.
+
+Common arrays in `samples.npz`:
+
+| Key | Shape | Meaning |
+| --- | --- | --- |
+| `t_s` | N | Measured timestamps relative to the run start |
+| `phase`, `settled` | N | Pose index and settled-hold scoring mask |
+| `q`, `dq` | N x 7 | Measured arm position / velocity in rad / rad/s |
+| `ee_pos`, `ee_quat` | N x 3, N x 4 | Measured EE pose in base |
+| `target_pos`, `target_quat` | N x 3, N x 4 | Commanded EE pose |
+| `wrench_O_K`, `wrench_K_K` | N x 6 | Canonical wrench, base or K axes, moment about K |
+| `gravity_O_K`, `gravity_K_K` | N x 6 | Nominal block gravity support at measured EE pose |
+| `k_pos`, `k_rot` | N x 3, N x 3 x 3 | Derived K frame in base |
+
+Real bundles additionally retain producer `seq`, `timestamp_s`, and every raw
+v4 API field below. Simulation bundles additionally retain `wrist_raw_S`,
+`wrist_raw_O_K`, `tool_support_O_K`, `object_dynamics_O_K`, tool COM motion,
+object motion, finger positions, and measured object COM in EE. `video_t_s`
+has one timestamp per rendered frame, so its length differs from N.
+
+The common CSV contains `t_s,phase,settled`, then the six axes of each of the
+four wrench/gravity arrays above, followed by `q1` through `q7`. Use the NPZ for
+target replay and complete provenance; the CSV is a convenient plot export.
+
+Metadata records the protocol and its SHA-256, source domain, `F_T_EE`,
+`EE_T_K`, anchor pose, load condition, and completion state. JSON transforms
+are nested 4x4 matrices. Simulation also records asset/source hashes, tool
+masses/inertias, physics step, controller description, and quality metrics.
+Real metadata records the configured load, gripper checks, ring summary,
+exceptions, zero-estimate fraction, and consistency between the two API frames.
+Incomplete runs remain readable for diagnostics but comparison rejects them
+unless explicitly given `--allow-incomplete`.
+
+### Full-rate wrench transport
+
+ABI v4 adds a `wrench` table to `log_fetch`, with 81 float64 columns:
+`seq,timestamp_s`, followed by the fields below, in this order. Vector/matrix
+columns use zero-based suffixes (`O_F_ext_hat_K_0`, ...); scalar names are bare.
+
+| Field | Width |
+| --- | ---: |
+| `O_F_ext_hat_K`, `K_F_ext_hat_K` | 6 each |
+| `EE_T_K`, `F_T_EE` | 16 each |
+| `tau_ext_hat_filtered` | 7 |
+| `m_ee`, `m_load`, `m_total` | 1 each |
+| `F_x_Cload` | 3 |
+| `I_load` | 9 |
+| `F_x_Ctotal` | 3 |
+| `I_total` | 9 |
+| `control_command_success_rate` | 1 |
+
+Raw transform/inertia entries preserve libfranka's **column-major** order.
+The wrench and merged tables come from the same recorded state frames and are
+joined by `seq`. The force collector saves this table as `wrench_raw.csv`.
+Generic `log_save` continues to save only the legacy merged and target CSVs;
+use `log_fetch('wrench')` when consuming the new table directly.
+
+`comparison.json` reports sim minus real bias, RMSE, 95th-percentile absolute
+error and maximum absolute error per axis, plus hold means/std and motion
+mismatch. `gap_O_K.csv` and `gap_K_K.csv` contain aligned sim, real and difference
+columns over the common time interval. No automatic bias or delay correction
+is applied.

@@ -53,7 +53,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from frankatwin.shm_layout import FRANKATWIN_SHM_STATE_FRAMES, STATE_FRAME_DTYPE
+from frankatwin.shm_layout import FRANKATWIN_SHM_STATE_FRAMES, STATE_FRAME_DTYPE, WRENCH_STATE_FIELDS
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +82,11 @@ TARGETS_COLUMNS: List[str] = [
 ]
 # The two tables of a finished session, by the name `log_fetch` knows them under.
 TABLES: Dict[str, List[str]] = {"merged": MERGED_COLUMNS, "targets": TARGETS_COLUMNS}
+WRENCH_COLUMNS = ["seq", "timestamp_s"] + [
+    name if width == 1 else f"{name}_{i}"
+    for name, width in WRENCH_STATE_FIELDS.items() for i in range(width)
+]
+TABLES["wrench"] = WRENCH_COLUMNS
 
 
 def _wxyz_to_xyzw(q: np.ndarray) -> np.ndarray:
@@ -322,6 +327,7 @@ class RunRecorder:
         # Set by stop(): the merged rows, the setpoint rows, the summary.
         self.table: Optional[np.ndarray] = None
         self.targets_table: Optional[np.ndarray] = None
+        self.wrench_table: Optional[np.ndarray] = None
         self.result: Dict[str, Any] = {}
 
     # -- lifecycle -----------------------------------------------------------
@@ -363,6 +369,10 @@ class RunRecorder:
             targets = list(self.targets)
         self.table = merge_run(frames, targets, self.start_pos, self.start_quat_wxyz)
         self.targets_table = targets_table(targets)
+        self.wrench_table = np.column_stack([
+            frames["seq"], frames["timestamp_s"],
+            *[frames[name] for name in WRENCH_STATE_FIELDS],
+        ])
         self.result = self.summary(frames, targets)
         if save and self.path is not None:
             self.save()

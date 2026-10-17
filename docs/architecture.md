@@ -60,18 +60,18 @@ touch the other.
 
 `osc_shm` and the daemon meet in one 393 360 B POSIX segment
 (`/frankatwin_osc`): a 32 B header, a 112 B command block written under a
-seqlock, and a 1024-frame ring of 384 B state frames. The layout is an ABI —
+seqlock, and a 1024-frame ring of 1024 B state frames. The layout is an ABI —
 `src/shm_layout.h` (with `static_assert`s on every offset) and
 `python/frankatwin/shm_layout.py` (numpy dtypes) must agree, and
 `tests/test_shm_layout.py` compiles the header with `g++` and diffs `offsetof`
 against the dtypes to prove they do. Any field change bumps
-`FRANKATWIN_SHM_VERSION` (currently 3).
+`FRANKATWIN_SHM_VERSION` (currently 4).
 
 | region | size | writer → reader | protocol |
 |---|---|---|---|
-| `ShmHeader` | 32 B | both | `magic`, `version` (3), `state_frames` (1024), `controller_pid`, `state_head` (atomic 64-bit) |
+| `ShmHeader` | 32 B | both | `magic`, `version` (4), `state_frames` (1024), `controller_pid`, `state_head` (atomic 64-bit) |
 | `ShmCommand` | 112 B | client → `osc_shm` | **seqlock**: writer bumps `seq` to odd, writes, bumps to even; reader retries while `seq` is odd or changed. Fields: `target_pos[3]`, `target_quat[4]` wxyz, `kp_pos`, `kp_ori`, `kd_pos`, `kd_ori`, `error_delta_pos`, `enabled` |
-| `ShmStateFrame[1024]` | 384 B each | `osc_shm` → client | **SPSC ring** indexed by `state_head`; frame `seq` validates a read. Fields: `seq`, `timestamp_s`, `q[7]`, `dq[7]`, `ee_pos[3]`, `ee_quat[4]`, `tau[7]`, `ee_linvel[3]`, `ee_angvel[3]`, `tau_J[7]` |
+| `ShmStateFrame[1024]` | 1024 B each | `osc_shm` → client | **SPSC ring** indexed by `state_head`; frame `seq` validates a read. Motion fields plus `O_F_ext_hat_K`, `K_F_ext_hat_K`, `EE_T_K`, `F_T_EE`, `tau_ext_hat_filtered`, configured load mass/COM/inertia, and command success rate. Exact fields are pinned in `src/shm_layout.h` and `python/frankatwin/shm_layout.py`. |
 
 - **Python**: `SharedMemoryAccess(name="/frankatwin_osc", create=False).view`
   → `ShmView` with `read_command()`, `write_command(...)`, `latest_state()`,

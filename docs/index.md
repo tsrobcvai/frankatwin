@@ -1,7 +1,8 @@
 # FrankaTwin
 
-**Current version: v0.3** — package `frankatwin` 0.3.0, git branch `v0.3`. This
-documentation describes v0.3; what changed is in the [changelog](changelog.md).
+**Current branch: v0.4_Beta** — package `frankatwin` 0.4.0b1. The
+[external-force measurement workflow](force_gap.md) uses shared-memory ABI v4;
+rebuild the controller and update the daemon and client together.
 
 ```{image} images/logo.png
 :width: 420px
@@ -25,8 +26,8 @@ RMSE over all seven joints, 16.5× below the PhysX defaults.
   the sim replay of real excitation runs — 3.6 mm end-effector and 28 mrad
   joint-position RMSE on a held-out chirp at gains the fit never saw, 5.4× and
   16.5× better than the PhysX defaults.
-- **Small and auditable.** ~1 600 lines of C++ and ~3 300 lines of Python
-  (excluding blanks and comments), POSIX shared memory + ZMQ in between. No ROS.
+- **Direct control and transport.** A C++ controller and Python clients,
+  connected through POSIX shared memory and ZMQ. No ROS dependency.
 
 ```mermaid
 flowchart LR
@@ -74,6 +75,7 @@ end-before: "## Authors"
 installation
 usage
 sysid
+force_gap
 ```
 
 ```{toctree}

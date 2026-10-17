@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "frankatwin"
-version = "0.3.0"
+version = "0.4.0b1"
 description = "1 kHz task impedance controller for Franka FR3/Panda with a sim-to-real system-ID pipeline (IsaacLab)."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -42,6 +42,9 @@ test = [
 analysis = [
     "pandas>=1.5",
     "matplotlib>=3.5",
+    "imageio>=2.31",
+    "imageio-ffmpeg>=0.4",
+    "pillow>=9",
 ]
 # Sphinx docs: `sphinx-autobuild docs docs/_build/html` for a live preview.
 docs = [

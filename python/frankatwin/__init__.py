@@ -12,7 +12,7 @@ from typing import Any
 
 from frankatwin.config import RobotConfig, load_config
 
-__version__ = "0.2.0"
+__version__ = "0.4.0b1"
 
 __all__ = [
     "__version__",

@@ -47,6 +47,19 @@ int main() {
   PRINT_OFFSET(ShmStateFrame, ee_linvel);
   PRINT_OFFSET(ShmStateFrame, ee_angvel);
   PRINT_OFFSET(ShmStateFrame, tau_J);
+  PRINT_OFFSET(ShmStateFrame, O_F_ext_hat_K);
+  PRINT_OFFSET(ShmStateFrame, K_F_ext_hat_K);
+  PRINT_OFFSET(ShmStateFrame, EE_T_K);
+  PRINT_OFFSET(ShmStateFrame, F_T_EE);
+  PRINT_OFFSET(ShmStateFrame, tau_ext_hat_filtered);
+  PRINT_OFFSET(ShmStateFrame, m_ee);
+  PRINT_OFFSET(ShmStateFrame, m_load);
+  PRINT_OFFSET(ShmStateFrame, m_total);
+  PRINT_OFFSET(ShmStateFrame, F_x_Cload);
+  PRINT_OFFSET(ShmStateFrame, I_load);
+  PRINT_OFFSET(ShmStateFrame, F_x_Ctotal);
+  PRINT_OFFSET(ShmStateFrame, I_total);
+  PRINT_OFFSET(ShmStateFrame, control_command_success_rate);
 
   return 0;
 }

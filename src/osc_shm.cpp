@@ -603,6 +603,27 @@ int main(int argc, char** argv) {
       frame.ee_angvel[0] = w.x();
       frame.ee_angvel[1] = w.y();
       frame.ee_angvel[2] = w.z();
+      for (int j = 0; j < 6; ++j) {
+        frame.O_F_ext_hat_K[j] = s.O_F_ext_hat_K[j];
+        frame.K_F_ext_hat_K[j] = s.K_F_ext_hat_K[j];
+      }
+      for (int j = 0; j < 16; ++j) {
+        frame.EE_T_K[j] = s.EE_T_K[j];
+        frame.F_T_EE[j] = s.F_T_EE[j];
+      }
+      for (int j = 0; j < 7; ++j) frame.tau_ext_hat_filtered[j] = s.tau_ext_hat_filtered[j];
+      frame.m_ee = s.m_ee;
+      frame.m_load = s.m_load;
+      frame.m_total = s.m_total;
+      for (int j = 0; j < 3; ++j) {
+        frame.F_x_Cload[j] = s.F_x_Cload[j];
+        frame.F_x_Ctotal[j] = s.F_x_Ctotal[j];
+      }
+      for (int j = 0; j < 9; ++j) {
+        frame.I_load[j] = s.I_load[j];
+        frame.I_total[j] = s.I_total[j];
+      }
+      frame.control_command_success_rate = s.control_command_success_rate;
       panda_shm::state_publish(&shm->header, shm->states, frame,
                                FRANKATWIN_SHM_STATE_FRAMES);
 

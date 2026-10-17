@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 
 project(frankatwin
-    VERSION 0.2.0
+    VERSION 0.4.0
     DESCRIPTION "FrankaTwin: 1 kHz task impedance controller for Franka FR3/Panda (libfranka) with a sim-to-real system-ID pipeline."
     LANGUAGES CXX)
 

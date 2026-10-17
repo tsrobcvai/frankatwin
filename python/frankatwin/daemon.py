@@ -34,6 +34,7 @@ import zmq
 from frankatwin.config import RobotConfig, load_config
 from frankatwin.local_controller import LocalController, RobotState
 from frankatwin.ring_log import TABLES
+from frankatwin.shm_layout import WRENCH_STATE_FIELDS
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,8 @@ def _state_to_dict(state: RobotState) -> Dict[str, Any]:
         "ee_angvel": state.ee_angvel.tolist(),  # base frame rad/s (shm v2+)
         "tau_J": state.tau_J.tolist(),  # measured link-side torque Nm, incl. gravity (shm v3+)
         "seq": state.seq,
+        **{name: (getattr(state, name).tolist() if width > 1 else getattr(state, name))
+           for name, width in WRENCH_STATE_FIELDS.items()},
     }
 
 

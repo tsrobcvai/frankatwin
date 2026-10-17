@@ -35,6 +35,7 @@ from frankatwin.ring_log import DEFAULT_POLL_HZ, TABLES, RunRecorder
 from frankatwin.shm_layout import (
     FRANKATWIN_SHM_STATE_FRAMES,
     STATE_FRAME_DTYPE,
+    WRENCH_STATE_FIELDS,
     SharedMemoryAccess,
 )
 
@@ -228,6 +229,19 @@ class RobotState:
     # `tau` above is the commanded impedance torque (gravity excluded). NaN when
     # talking to a pre-v3 producer, so stale data can't masquerade as "0 Nm".
     tau_J: np.ndarray = field(default_factory=lambda: np.full(7, np.nan))
+    O_F_ext_hat_K: np.ndarray = field(default_factory=lambda: np.full(6, np.nan))
+    K_F_ext_hat_K: np.ndarray = field(default_factory=lambda: np.full(6, np.nan))
+    EE_T_K: np.ndarray = field(default_factory=lambda: np.full(16, np.nan))
+    F_T_EE: np.ndarray = field(default_factory=lambda: np.full(16, np.nan))
+    tau_ext_hat_filtered: np.ndarray = field(default_factory=lambda: np.full(7, np.nan))
+    m_ee: float = float("nan")
+    m_load: float = float("nan")
+    m_total: float = float("nan")
+    F_x_Cload: np.ndarray = field(default_factory=lambda: np.full(3, np.nan))
+    I_load: np.ndarray = field(default_factory=lambda: np.full(9, np.nan))
+    F_x_Ctotal: np.ndarray = field(default_factory=lambda: np.full(3, np.nan))
+    I_total: np.ndarray = field(default_factory=lambda: np.full(9, np.nan))
+    control_command_success_rate: float = float("nan")
 
     @classmethod
     def from_frame(cls, frame: np.ndarray) -> "RobotState":
@@ -240,6 +254,8 @@ class RobotState:
             ee_quat=np.array(frame["ee_quat"], dtype=np.float64),
             tau=np.array(frame["tau"], dtype=np.float64),
             seq=int(frame["seq"]),
+            **{name: (np.array(frame[name], dtype=np.float64) if width > 1 else float(frame[name]))
+               for name, width in WRENCH_STATE_FIELDS.items() if name in names},
             ee_linvel=(np.array(frame["ee_linvel"], dtype=np.float64)
                        if names and "ee_linvel" in names else np.zeros(3)),
             ee_angvel=(np.array(frame["ee_angvel"], dtype=np.float64)
@@ -737,7 +753,7 @@ class LocalController:
         rec = self._finished_log()
         if table not in TABLES:
             raise ValueError(f"unknown ring log table {table!r} (one of {sorted(TABLES)})")
-        data = rec.table if table == "merged" else rec.targets_table
+        data = {"merged": rec.table, "targets": rec.targets_table, "wrench": rec.wrench_table}[table]
         offset = int(offset)
         if offset < 0:
             raise ValueError(f"offset must be >= 0, got {offset}")
