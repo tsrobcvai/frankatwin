@@ -6,8 +6,8 @@ The force-gap workflow now plans bounded Panda joint references from the EE
 sequence and uses `joint_pd_v1` in both domains. Real hardware was not connected.
 The previous Cartesian measurement is retained below as a comparison.
 
-The loaded 50-second run used Slurm job `4115779` on `neu305`, with 50,000
-samples and physical finger contacts. The full run and independent audit passed:
+The loaded 50-second run recorded 50,000 samples with physical finger contacts.
+The full run and independent audit passed:
 
 | Metric | Previous Cartesian run | Joint impedance run |
 | --- | ---: | ---: |
@@ -29,9 +29,9 @@ samples and physical finger contacts. The full run and independent audit passed:
 - Nominal planner FK and measured Isaac poses agreed within 0.631 micrometers
   and 1.71e-6 rad across 500 sampled configurations along the measured path.
 
-A 3-second empty-hand run (`4115785`) had settled force RMSE below 9.1e-7 N
+A 3-second empty-hand run had settled force RMSE below 9.1e-7 N
 on each base axis. It remains marked incomplete because it is a debug truncation.
-An additional 2,999-step Isaac replay (`4115788`) used a clearly marked
+An additional 2,999-step Isaac replay used a clearly marked
 **synthetic input fixture derived from simulation**, not a real measurement.
 Applied q/dq and EE reference arrays matched the fixture exactly at every tick.
 
@@ -49,11 +49,11 @@ endpoints before real collection.
 Local measurement and plots: `data/force_gap/sim_joint_preview_20261018/`.
 `joint_control_audit.json` contains the detailed checks. The synchronized
 dashboard is 1600 x 720, 20 fps, 50 seconds, 1,000 frames and 31.4 MB, with
-fast-start MP4 metadata. Rendering job `4115790` reproduced measured EE
+fast-start MP4 metadata. Rendering reproduced measured EE
 positions within 0.179 micrometers. `artifact_audit.json` pins the measurement
 hash and video checks; the original October 17 video remains unchanged.
-Persistent launch and
-monitor records are under `scratch/ft_joint_*_20261018*` in the parent workspace.
+Generated measurements and audit files are local validation artifacts, excluded
+from Git; follow the README to generate new runs on your PC.
 
 ## Historical Cartesian run: 2026-10-17
 
@@ -63,7 +63,6 @@ No physical Franka was connected during this validation.
 
 ### Measurement run
 
-- Slurm job: `4112613`, interactive partition, GPU node `neu320`.
 - Duration: 50 seconds; 50,000 samples at a 1 ms physics step.
 - All nine commanded poses visited; 1,000 video timestamps at 20 fps.
 - Maximum block COM drift relative to EE: 4.63 micrometers.
@@ -81,7 +80,7 @@ in dynamic plots but is excluded from static scores. The existing controller
 has no null-space damping. This run does not establish nine stationary
 calibration points. Noise and short transients are retained without smoothing.
 
-A separate 3-second empty-hand check (`4112615`) gave settled force RMSE below
+A separate 3-second empty-hand check gave settled force RMSE below
 0.00002 N on every axis after tool compensation. Debug truncations are marked
 incomplete even when their grasp/tracking checks pass.
 
@@ -102,10 +101,7 @@ The measurement NPZ SHA-256 is:
 13ca548750eae5987414eef5055d21417e6d7fd1d4c530b808ce3e84627174cc
 ```
 
-Acquisition logs and exact launch commands are in
-`/n/fs/rebar/isaaclab/repos/scratch/ft_gap_sim_full_20261017/`.
-The independent monitor collected terminal status and stopped. Both output
-streams were inspected: there were headless display/NGX/OmniHub startup messages,
+Both output streams were inspected: there were headless display/NGX/OmniHub startup messages,
 but no reported numerical failure, dropped-contact buffer, or overflow.
 
 ### Software checks
@@ -118,7 +114,7 @@ but no reported numerical failure, dropped-contact buffer, or overflow.
   and Eigen. A linked NUC build and physical hardware execution remain untested.
 - The real collector dry-run produced 2,501 targets for the default 50-second
   sequence without a robot connection.
-- A 3-second Isaac replay of an explicitly synthetic log fixture (`4112677`)
+- A 3-second Isaac replay of an explicitly synthetic log fixture
   preserved all 3,000 applied Cartesian targets exactly and passed grasp/tracking
   checks. This validates the replay path, not physical real-robot behavior.
 - Sphinx HTML documentation built successfully.

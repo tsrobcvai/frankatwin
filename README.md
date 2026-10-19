@@ -24,6 +24,9 @@ adds guided block placement, full-rate Franka external-wrench logging, an Isaac 
 JointWrenchSensor experiment, shared IK-to-joint-impedance control, coordinate/load
 compensation, joint/force plots, and synchronized video.
 The feature targets Isaac Lab 3 / PhysX; the existing sysid workflow is separate.
+Follow the step-by-step guide to [run sim and generate its dashboard](external_force_gap/README.md#1-run-the-simulation),
+[collect real data](external_force_gap/README.md#2-run-on-the-real-robot), and
+[plot the sim-real gap](external_force_gap/README.md#3-generate-the-sim-real-comparison).
 See the [validation record](external_force_gap/VALIDATION.md) for measured sim
 results, software checks, and the remaining hardware-validation limits.
 

@@ -1,362 +1,322 @@
 # External force sim-real gap measurement
 
-This v0.4 Beta workflow measures wrist wrenches while a Franka holds a known
-rectangular payload and rotates through a shared pose sequence. It provides:
+Hold a 50 x 50 x 100 mm PLA block, rotate through a shared trajectory, and compare
+simulated and real wrist force/torque. Follow sections 1–3 in order.
 
-- A guided real-arm sequence: reset joints, verify the configured load, open the
-  hand, place the block, grasp, verify width, move, and save full-rate data.
-- An Isaac Lab 3 / PhysX sequence using the bundled Panda asset, physical finger
-  contacts, and `JointWrenchSensor` on `force_sensor`.
-- Raw telemetry, frame transforms, load metadata, tool-compensated simulated
-  wrenches, gravity and rigid-body dynamics references, plots, and an optional
-  synchronized video. A separate command compares actual real and sim bundles.
+## 1. Run the simulation
 
-The default is a 50-second, nine-pose sequence with smooth 4-second transitions,
-2-second holds, 50 Hz joint position/velocity targets and 1 kHz physics / real controller
-logging. Rotations are rotation vectors relative to the anchor EE orientation.
-Position is held at the anchor; the sequence ends at its initial orientation.
-A shared nominal-Panda IK planner selects a posture near `q_init` and returns to
-that joint configuration at the end. Reset before each run.
+### 1.1 Prepare the environment
 
-## What the signals mean
+Use your PC's Isaac Lab **3 / PhysX** GPU environment. The bundled robot and planner
+are for **Panda**; an FR3 or different gripper needs a matching model.
 
-These are related measurements with different origins:
-
-| Signal | Meaning | Axes | Torque reference |
-| --- | --- | --- | --- |
-| Franka `O_F_ext_hat_K` | Model-based external wrench estimate | Base O | K origin |
-| Franka `K_F_ext_hat_K` | Same estimate | Stiffness K | K origin |
-| `JointWrenchSensor` | Total incoming joint reaction, including downstream tool loads | Child-side joint frame S | Child-side joint anchor |
-| Bundle `wrench_O_K` | Real: original API estimate. Sim: transformed joint wrench minus modeled tool support | Base O | K origin |
-| Bundle `wrench_K_K` | Same canonical wrench rotated into K axes | K | K origin |
-
-The canonical sign is **robot on payload**, following libfranka's documented
-sign: forces applied by the robot to the environment are positive, and the
-opposite direction is negative. A static, additional 0.310 kg payload therefore
-requires **+3.0411 N along base Z**. With a downward-facing K frame the K-axis Z
-reading is approximately -3.0411 N. The sign is checked against the gravity
-reference; no automatic sign fit is performed.
-
-`O_F_ext_hat_K` is an estimate derived from joint-torque residuals. Configured
-robot, end-effector and load dynamics are removed by the robot model. It is not
-the raw reading of a physical six-axis wrist transducer, and it can return six
-zeros near a singularity. The collector saves both wrench representations,
-`tau_ext_hat_filtered`, command success rate, and the configured mass/COM/inertia.
-All-zero estimates are reported as candidates for investigation, not silently
-discarded or classified as confirmed singularities.
-
-The simulation uses a real sensor API reading, not the analytical gravity
-formula as its measurement. FORGE uses the incoming joint-force path; the
-`JointWrenchSensor` wrapper makes the child joint anchor/axes convention explicit.
-The collector reads the joint's USD `localPos1` and `localRot1` and transforms:
-
-```text
-F_O = R_OS F_S
-tau_K_O = R_OS tau_S + (p_S_O - p_K_O) cross F_O
-O_T_K = O_T_EE EE_T_K
-```
-
-Expressing a wrench in base axes does **not** move its moment origin to the
-base. Changing the moment origin requires the cross-product term above.
-The raw Isaac Lab 3 pose API uses **xyzw**; FrankaTwin state/bundles use **wxyz**.
-The simulator converts at every API boundary. Franka's flattened transform and
-inertia arrays retain **column-major** order in the raw log; JSON transforms
-are ordinary nested 4x4 matrices.
-
-For each modeled body downstream of the wrist, the simulator computes support
-from measured COM motion:
-
-```text
-F_support = m (a_COM - g)
-tau_support_K = (p_COM - p_K) cross F_support + I_world alpha + omega cross (I_world omega)
-```
-
-The modeled tool includes the sensor link, hand, fingers and fingertip link.
-Its support is subtracted from the joint reaction. The test block remains
-unmodeled, as an additional external load. Accelerations are finite differences
-of measured velocities; the raw signals are retained. The separate block
-Newton-Euler reference checks balance during motion. Gravity-only comparisons
-are scored on settled holds (after 0.7 seconds and with every arm joint below
-0.04 rad/s). `completed` means the trajectory finished and the acquisition checks
-passed; it does not imply every hold settled. `analysis.json` explicitly lists
-poses without settled samples. Joint impedance constrains all seven joints;
-static scores still require measured settling rather than assuming commanded
-holds are stationary.
-Franka's proprietary estimator, filtering, friction and model
-errors are not reproduced by this compensation; they remain part of the gap.
-
-References: [libfranka RobotState](https://frankarobotics.github.io/libfranka/latest/structfranka_1_1RobotState.html),
-[Isaac Lab joint wrench convention](https://isaac-sim.github.io/IsaacLab/release/3.0.0/source/concepts/sensors/joint_wrench_sensor.html),
-[FORGE](https://arxiv.org/abs/2408.04587).
-
-## Shared joint planning and control
-
-The force-gap workflow uses `joint_pd_v1`. The existing Cartesian API remains
-available for other experiments. Both domains follow this pipeline:
-
-```text
-EE pose sequence -> bounded, continuous nominal-Panda IK -> q_des(t), dq_des(t)
--> 50 Hz reference updates -> 1 kHz joint PD + Coriolis -> limited torque
-```
-
-`joint_plan.py` uses the Panda modified-DH chain and the recorded `F_T_EE`.
-Each IK solve is seeded by the previous solution and regularized toward
-`q_init`. A cubic spline with zero endpoint velocity connects the IK samples.
-Planning rejects EE residuals above 0.2 mm / 0.001 rad, joint-limit violations,
-excessive velocity/acceleration, and a final posture more than 0.002 rad from
-`q_init`. Defaults limit planned speed to 0.6 rad/s and acceleration to
-1.5 rad/s². These checks do not perform collision planning; the free-motion
-experiment requires the cleared workspace checked by the operator.
-
-The planner checks the nominal reset FK against the observed anchor (within
-3 mm / 0.015 rad), then anchors the requested relative EE motion to nominal FK.
-The measured anchor position discrepancy is recorded. This is a nominal Panda
-planner, not an FR3 planner or a calibrated real-arm kinematic identification.
-Real-vs-sim execution differences remain visible in the measured EE traces.
-`joint_plan.npz` stores time, q, dq, EE transform and anchor; its content hash
-is saved in metadata. `--dry-run` plans against the bundled tool transform;
-actual collection uses the transform reported by the robot.
-
-Both controllers use componentwise gains from the protocol:
-
-```text
-tau = joint_kp * (q_des - q) + joint_kd * (dq_des - dq) + coriolis
-joint_kp = [400, 400, 400, 400, 120, 100, 60] Nm/rad
-joint_kd = [40, 40, 40, 40, 14, 12, 8] Nm s/rad
-tau = clip(tau, +/-[87,87,87,87,12,12,12] Nm)
-tau = clip(tau, tau_previous +/- 1000*dt Nm)
-```
-
-The real joint mode fixes the rate limit at 1000 Nm/s; the legacy Cartesian
-mode retains its CLI-configured limit. Joint mode always includes Coriolis
-compensation, independently of the Cartesian `--no-coriolis` switch. libfranka supplies gravity and
-friction compensation; PhysX receives robot gravity compensation explicitly.
-The held block is excluded from both configured compensation models. There is
-no inverse-dynamics acceleration feedforward in either implementation.
-
-Targets use zero-order hold between updates in both domains. The protocol
-requires at least 10 Hz updates and a speed limit no greater than 2 rad/s;
-`control_hz` must divide the simulation physics frequency exactly. The real native
-loop zeros target velocity after 250 ms without a command update and retains
-the last joint position target. The collector also stops on stale telemetry,
-controller restart/mode change, or joint tracking error above 0.15 rad.
-`set_joint_target(q,dq,kp,kd,target_pos,target_quat)` atomically selects joint
-mode; its EE pose arguments are monitoring references and contribute no torque.
-`set_ee_target` explicitly switches back to Cartesian mode. Gain/enable updates
-preserve the selected mode. A controller restart seeds Cartesian mode at the
-measured pose; an active collection detects and rejects that restart.
-
-Simulation writes joint states only at initialization. During measurement it
-uses effort commands and physical contacts. The separate video renderer may
-write recorded states because it does not produce force measurements.
-`joint_tracking.png` compares measured q, applied q targets and the reset pose.
-
-## Payload and repeatable placement
-
-Edit `config/force_gap.json` before collecting either domain. Weigh the printed
-block: 310 g is an estimate, not an assertion about a particular 100% infill print.
-Dimensions default to 50 x 50 x 100 mm. Its long axis is aligned with EE +Z.
-The jaws close across its 50 mm width.
-
-`ee_com_m` is the vector from **EE origin to block COM in EE axes**, not from the
-wrist sensor. The default `[0, 0, 0.025]` means the block's proximal face is
-25 mm behind the EE origin and the distal face is 75 mm ahead of it. Use a
-placement jig or a clearly marked insertion-depth line to reproduce that pose.
-Change the value to match the actual gripper/fingertip geometry and placement.
-The script verifies width and `is_grasped`; these cannot measure insertion depth,
-orientation, COM, or later small slips. The simulation also records actual
-object pose relative to EE and reports its drift.
-
-The controller's configured load must describe the **empty tool and any mounted
-equipment**, excluding this test block. The collector displays and records the
-actual API load state and asks the operator to verify it; it does not change
-`setLoad`, tare the estimator, or remove controller gravity compensation. In the
-existing daemon, `--load-mass 0` skips `setLoad`; it does not clear the Desk load.
-An optional empty run provides a baseline and fixes the anchor, protocol, and
-load configuration for the subsequent loaded run.
-
-## Install and upgrade
-
-From the repository root on the workstation and NUC:
+From the repository root:
 
 ```bash
-pip install -e '.[analysis,test]'
+cd /path/to/frankatwin
+python -m pip install -e '.[analysis]'
+
+# Replace this with your Isaac Lab 3 launcher.
+isaaclab=/path/to/IsaacLab/isaaclab.sh
 ```
 
-This workflow requires shared-memory ABI v5 (336-byte commands, 1152-byte frames).
-Rebuild `osc_shm` using your normal libfranka toolchain and restart the daemon;
-update the client and NUC Python package together. Older producers are rejected
-by the collector instead of treating absent wrench data as zero.
+The launcher must have the package's Python dependencies, including SciPy.
+Run the commands below directly in your PC terminal and wait for each command
+to finish before continuing. Analysis commands use the Python environment
+installed above. Keep `isaaclab` set in the terminal used for simulation.
+
+### 1.2 Set the experiment parameters
+
+Edit [`config/force_gap.json`](../config/force_gap.json):
+
+- `mass_kg`: actual measured block mass; `0.31` kg is only an estimate.
+- `dimensions_m`: `[0.05, 0.05, 0.10]` for this block.
+- `ee_com_m`: `[0, 0, 0.025]` for the placement shown in section 2.4.
+- Leave the trajectory and controller defaults unchanged for the first run.
+
+Use the same protocol for sim and real. Defaults produce nine poses over
+50 seconds, with 4-second moves and 2-second holds. EE position stays fixed
+while orientation changes; the joint plan returns to its initial posture.
+Use new output directories for each experiment.
+
+### 1.3 Collect simulated motion and forces — GPU
 
 ```bash
+"$isaaclab" -p "$PWD/scripts/force_gap_sim.py" \
+    --protocol "$PWD/config/force_gap.json" \
+    --out "$PWD/data/force_gap/sim_loaded" --headless --video
+```
+
+The script initializes the block between the fingers, closes the hand through
+physical contacts, warms up for 2 seconds, then executes the trajectory using
+joint torque control. It records motion and wrist reaction forces at 1 kHz,
+plus a scene video at 20 fps. The 50 seconds is trajectory time, not wall time.
+
+**Result:** `data/force_gap/sim_loaded/` contains `samples.npz`, `metadata.json`,
+`joint_plan.npz`, `summary.json` and `scene.mp4`.
+
+### 1.4 Make the dashboard video
+
+First, render the recorded states with the wider camera used in the example
+video — **GPU**:
+
+```bash
+"$isaaclab" -p "$PWD/scripts/force_gap_render.py" \
+    "$PWD/data/force_gap/sim_loaded" \
+    --out "$PWD/data/force_gap/sim_render" --headless \
+    --kit_args="--/persistent/rtx/modes/rt/enabled=true"
+```
+
+After rendering finishes, compose the dashboard — **analysis workstation**:
+
+```bash
+python scripts/force_gap_report.py analyze data/force_gap/sim_loaded --video \
+    --scene data/force_gap/sim_render/scene.mp4
+```
+
+**Results, inside `data/force_gap/sim_loaded/`:**
+
+| File | What to inspect |
+| --- | --- |
+| `dashboard.mp4` | Robot scene with synchronized force/torque traces |
+| `joint_tracking.png` | Measured joints, commanded joints and initial posture |
+| `wrench_O_K.png`, `wrench_K_K.png` | Six wrench channels against reference loads |
+| `static_poses.png`, `analysis.json` | Settled-pose statistics and residuals |
+
+Check `metadata.json` → `completed`, `summary.json` → grasp/tracking errors,
+and `analysis.json` → unsettled poses. Finishing the trajectory does not mean
+every hold settled.
+
+This dashboard is a **sim/theory preview**, with no real measurements.
+Rendering does not rerun physics or change the recorded force data.
+
+## 2. Run on the real robot
+
+### 2.1 Update and start the NUC daemon
+
+Use the same checkout on the NUC and workstation. This workflow requires
+shared-memory **ABI v5**; update both Python endpoints and rebuild the native
+controller. Actual hardware execution still needs commissioning; the validation
+so far covers simulation and software, not a physical-arm run.
+
+In [`config/robot.yaml`](../config/robot.yaml), set:
+
+| Setting | Value to check |
+| --- | --- |
+| `network.nuc_host` | NUC address reachable from the workstation |
+| `robot.ip` | Robot FCI address reachable from the NUC |
+| `paths.build_dir` | Directory containing the rebuilt binaries |
+| `gripper.enabled` | `true` |
+
+The configured tool/load must describe the **empty gripper and mounted equipment,
+excluding the test block**. The collector preserves this model. In the daemon,
+`load.mass: 0` skips `setLoad`; it does not clear an existing Desk load.
+
+On the **NUC**, with libfranka and the real-time environment already installed
+([installation guide](../docs/installation.md)):
+
+```bash
+cd /path/to/frankatwin
+python -m pip install -e .
 cmake -S . -B build
 cmake --build build -j
 python -m frankatwin.daemon --config config/robot.yaml
 ```
 
-The hardware software and motion execution still require commissioning on the
-actual arm. Software tests use mock telemetry and do not certify physical motion.
-The bundled simulation asset is a Panda. An FR3 or a custom tool requires a
-matching asset; the replay checks initial FK and records actual motion mismatch.
-The simulator uses Isaac Lab **3** APIs (`isaaclab_physx`, ProxyArray, xyzw), not
-the older Isaac Lab 2 sysid environment. No copy into Isaac Lab is needed.
+Keep this terminal running. Use a separate terminal on the workstation below.
 
-## Real collection
-
-First inspect the sequence without connecting:
+### 2.2 Check the plan without moving hardware
 
 ```bash
 python scripts/force_gap_real.py --protocol config/force_gap.json \
-    --out data/force_gap/preview --dry-run
+    --out data/force_gap/real_dry_run --dry-run
 ```
 
-With the daemon running, collect an empty baseline, then the held block:
+**Result:** `dry_run.json`, `joint_plan.npz` and `preview_targets.npz`.
+This command plans the sequence without connecting to the robot.
+
+### 2.3 Collect the empty-gripper baseline
+
+Start with no object in the hand:
 
 ```bash
 python scripts/force_gap_real.py --config config/robot.yaml \
-    --protocol config/force_gap.json --empty --out data/force_gap/real_empty
+    --protocol config/force_gap.json --empty \
+    --out data/force_gap/real_empty
+```
 
+Enter the requested terminal tokens in order:
+
+| Token | What to do before confirming |
+| --- | --- |
+| `RESET` | Remove objects and clear the motion workspace; the arm resets to `q_init` |
+| `MODEL` | Verify the displayed empty-tool/load configuration |
+| `OPEN` | Clear the fingers; the hand opens to 80 mm |
+| `EMPTY` | Leave the hand empty; it closes to the block's nominal width |
+| `RUN` | Clear the workspace; the arm executes the sequence |
+
+**Result:** `data/force_gap/real_empty/` contains the baseline measurement.
+
+### 2.4 Place the block and collect the loaded run
+
+Start this command with the hand empty; placement happens **after reset**:
+
+```bash
 python scripts/force_gap_real.py --config config/robot.yaml \
-    --protocol config/force_gap.json --baseline data/force_gap/real_empty \
+    --protocol config/force_gap.json \
+    --baseline data/force_gap/real_empty \
     --out data/force_gap/real_loaded
 ```
 
-The terminal requires explicit tokens for RESET, MODEL, OPEN, GRASP/EMPTY, and
-RUN. Reset happens before placement. The loaded hand is never automatically
-opened when acquisition ends or fails. The arm holds its final target; support
-the block before opening it manually. On a runtime failure the collector tries
-to hold the latest measured joint configuration, stops/fetches the ring log, and saves the
-exception and partial data. It rejects stale state, missing v5 telemetry,
-excessive tracking error, invalid grasp width, changed load/frame settings,
-dropped ring frames, and controller restarts. An unreachable daemon cannot
-accept a software hold request; its existing local controller/reflex behavior
-still governs the arm.
+Follow `RESET` → `MODEL` → `OPEN` as above. Then position the block:
 
-Actual producer timestamps and sequence IDs are preserved. EE target events
-are joined by sequence ID, with the existing logger's one-tick command timing
-uncertainty. Applied `target_q`, `target_dq`, `control_mode`, and `command_seq`
-are copied directly from the native control tick into the 1 kHz state frame. The 100 Hz ZMQ stream is only used for progress checks; the saved
-measurement is the controller's full 1 kHz ring log.
+![Dimensioned block placement relative to the gripper fingers](../docs/images/force_gap_placement.png)
 
-## Simulation and first preview
+- Align its 100 mm axis with EE +Z and center it in both transverse directions.
+- With the illustrated model, the block extends **25.23 mm toward the palm**
+  from the distal fingertip and **74.77 mm beyond it**.
+- A removable fixture can locate the far end **187.071 mm along flange +Z from
+  the flange origin**. Verify that the real fingers and frame calibration match
+  this model before using these dimensions.
+- Support the block at the placement mark, clear the finger pinch area, and
+  confirm `GRASP`. The command uses 35 N by default.
+- Once grasping succeeds, remove the fixture/support and your hands, then
+  confirm `RUN`.
 
-Run from the FrankaTwin root with an Isaac Lab 3 Python environment:
+Width and `is_grasped` checks cannot verify insertion depth, tilt or small slips.
+Check placement after clamping and again after the motion. The arm holds its
+final target; support the block before manually opening the hand. The collector
+does not automatically release it, including on failure.
+
+**Result:** `data/force_gap/real_loaded/` contains `samples.npz`, `metadata.json`,
+`joint_plan.npz`, full-rate ring logs and `session.json`. Actual applied joint
+references are recorded at 1 kHz; the 100 Hz network stream is for progress checks.
+
+### 2.5 Plot the real measurements
 
 ```bash
-/path/to/IsaacLab/isaaclab.sh -p "$PWD/scripts/force_gap_sim.py" \
-    --protocol "$PWD/config/force_gap.json" \
-    --out "$PWD/data/force_gap/sim_loaded" --headless --video
-
-python scripts/force_gap_report.py analyze data/force_gap/sim_loaded --video
+python scripts/force_gap_report.py analyze data/force_gap/real_empty
+python scripts/force_gap_report.py analyze data/force_gap/real_loaded
 ```
 
-If a headless driver produces noisy RTX Real-Time 2.0 frames, render the recorded
-states with the legacy RTX renderer and a wider camera. This does not rerun
-dynamics or change any measurement. It checks rendered FK against the original
-EE positions and records the measurement file hash in `render.json`:
+**Result:** wrench plots, joint tracking and `analysis.json` in each run directory.
+The real collector does not record camera video, so omit `--video` here.
+
+## 3. Generate the sim-real comparison
+
+### 3.1 Replay the real commands in sim — GPU
+
+On your simulation PC, use the **complete** `real_loaded` directory from section
+2. Copy it there if collection used another machine. Replay it rather than
+comparing against the standalone sim preview:
 
 ```bash
-/path/to/IsaacLab/isaaclab.sh -p "$PWD/scripts/force_gap_render.py" \
-    "$PWD/data/force_gap/sim_loaded" --out "$PWD/data/force_gap/render" --headless \
-    --kit_args="--/persistent/rtx/modes/rt/enabled=true"
-
-python scripts/force_gap_report.py analyze data/force_gap/sim_loaded --video \
-    --scene data/force_gap/render/scene.mp4
-```
-
-The renderer uses acquisition frame timestamps, or derives a cadence from
-`video_fps` when acquisition ran without `--video`. It uses measured object pose, including
-any recorded slip. The original acquisition video is retained. `dashboard.json`
-identifies which scene was used; `--scene` requires a matching render manifest.
-
-The hand closes with physical contacts; the payload is not welded or teleported
-along the trajectory. Gravity acts on the robot and block. The arm uses the
-same joint impedance law and gains as `osc_shm` joint mode, with PhysX robot
-gravity/coriolis compensation and an unmodeled grasped block. This does not
-assume motor dynamics or friction are already identified.
-
-For a simulator-only empty check add `--empty`. `--duration 3` is a debugging
-truncation and marks the output incomplete; do not use it as a full experiment.
-Output directories must be new to avoid overwriting an earlier measurement.
-
-## Replay real commands and measure the gap
-
-After collecting real data, replay its applied joint position/velocity targets, actual starting
-joint positions, and recorded `F_T_EE` / `EE_T_K`:
-
-```bash
-/path/to/IsaacLab/isaaclab.sh -p "$PWD/scripts/force_gap_sim.py" \
+"$isaaclab" -p "$PWD/scripts/force_gap_sim.py" \
     --real-run "$PWD/data/force_gap/real_loaded" \
     --out "$PWD/data/force_gap/sim_replay" --headless --video
+```
 
+The script loads the real protocol, applied `q/dq` targets, initial joints and
+EE/K transforms. No separate `--protocol` is needed. The original real run must
+be complete and use `joint_pd_v1`.
+
+**Result:** `data/force_gap/sim_replay/`, with simulated measurements for the
+recorded real commands. If desired, repeat section 1.4 using `sim_replay` and a
+new render directory to make a dashboard for this replay.
+
+### 3.2 Produce the comparison plots — analysis workstation
+
+Make both complete run directories available on this machine, then run:
+
+```bash
 python scripts/force_gap_report.py compare \
     --sim data/force_gap/sim_replay --real data/force_gap/real_loaded \
     --out data/force_gap/comparison
 ```
 
-Comparison requires matching protocol, controller, joint-plan hash and EE/K transforms, matching empty/loaded
-conditions, and complete runs. It uses overlapping timestamps without
-extrapolation, reports actual position/orientation/joint mismatch, and also
-compares per-pose hold means and variability. There is no automatic sign,
-scale, bias, or delay fit. `--time-offset` is an explicit, recorded diagnostic
-offset added to real timestamps. `--allow-incomplete` is for inspecting failed
-runs and preserves that qualification in the report.
-
-The empty baseline is not automatically subtracted from the real estimate:
-its measured bias is useful evidence, and unqualified subtraction would also
-mix posture differences into the result. Keep and inspect both runs.
-
-## Outputs
+**Results, inside `data/force_gap/comparison/`:**
 
 | File | Contents |
 | --- | --- |
-| `samples.npz` | Full arrays, including measured/target motion and raw/derived wrench channels |
-| `samples.csv` | Common time, phase, wrench, gravity, and joint columns |
-| `joint_plan.npz`, `joint_tracking.png` | Shared planned references and measured-vs-target joint traces |
-| `metadata.json`, `protocol.json` | Frames, load/asset provenance, sequence, completion and quality |
-| `ring.csv`, `ring_targets.csv`, `wrench_raw.csv` | Real full-rate state/targets/API values; matrices flattened column-major |
-| `session.json`, `events.json` | Real operator session result, exceptions, target phase events |
-| `raw_partial.npz`, `failure.json` | Sim diagnostics if acquisition or validation fails |
-| `wrench_O_K.png`, `wrench_K_K.png` | Six-channel time traces against independent references |
-| `static_poses.png`, `analysis.json` | Hold means/std and gravity residual metrics |
-| `scene.mp4`, `dashboard.mp4` | Rendered scene and synchronized K-frame force/torque plots |
-| `comparison.json`, `gap_*`, `residual_*` | Real/sim gap statistics, overlays, difference plots and aligned CSVs |
+| `gap_O_K.png`, `gap_K_K.png` | Sim and real curves overlaid, in base/K axes |
+| `residual_O_K.png`, `residual_K_K.png` | Sim minus real for all six channels |
+| `gap_O_K.csv`, `gap_K_K.csv` | Aligned sim, real and difference values |
+| `comparison.json` | RMSE, bias, per-pose statistics and actual motion mismatch |
 
-Force statistics use N and torque statistics use N m. They are not combined in
-an unscaled six-dimensional norm. Pose error bars show within-run variability,
-not confidence intervals from independent repeated trials. A sim-only preview
-is labeled as sim/theory validation; an actual sim-real gap requires real data.
-One mass at one COM offset does not provide independent six-axis loading:
-static force magnitude stays at `m g`, and torque is constrained by `r cross F`.
-This workflow compares payload responses; it is not a complete six-axis sensor
-calibration or a test of task-surface friction, impacts, or contact stiffness.
+Comparison checks protocol, controller, joint-plan hash, EE/K frames and loaded
+condition. It uses overlapping time only, with no automatic sign, bias, scale
+or delay fitting. The empty baseline is retained for inspection, not
+automatically subtracted. For an empty comparison, replay `real_empty` with
+`--empty` into another directory and compare that pair.
 
-## Persistent monitoring on the cluster
+## 4. Parameter reference
 
-`scripts/run_monitored.py` starts a persistent launcher and a separate monitor,
-verifies the first status record, captures both streams, and records command,
-PIDs, exit status, progress, possible errors and result paths. Use it for checks:
+Experiment settings live in `config/force_gap.json`; network and hardware
+settings live in `config/robot.yaml`.
 
-```bash
-python scripts/run_monitored.py --run-dir "$PWD/data/force_gap/checks" \
-    --interval 10 -- python -m pytest tests -q
+| Protocol parameter | Meaning / default |
+| --- | --- |
+| `mass_kg`, `dimensions_m` | Measured payload mass and XYZ dimensions in meters |
+| `ee_com_m` | EE-origin-to-COM vector in EE axes; `[0, 0, 0.025]` m |
+| `q_init` | Seven reset joint angles in radians |
+| `rotation_waypoints_deg` | Rotation vectors relative to the initial EE orientation, in degrees; not Euler angles |
+| `move_seconds`, `hold_seconds` | Transition / hold duration; 4 / 2 s |
+| `settle_seconds` | Exclude the first 0.7 s of each hold from static scoring |
+| `control_hz` | Joint reference update rate; 50 Hz, must divide the sim physics frequency |
+| `joint_kp`, `joint_kd` | Seven joint stiffness/damping gains, in Nm/rad and Nm s/rad |
+| `max_joint_speed`, `max_joint_acceleration` | Planned joint limits; 0.6 rad/s and 1.5 rad/s² |
+| `grasp_force_n`, `gripper_width_tolerance_m` | Real grasp command / width tolerance; 35 N / 0.004 m |
+| `kp_pos`, `kp_ori` | Legacy Cartesian settings; not the gains driving this joint-mode trajectory |
+
+Useful sim flags: `--empty` for an empty hand, `--dt` for the physics step
+(default 0.001 s), and `--video-fps` for capture rate (default 20).
+`--duration 3` is a debug truncation and marks the run incomplete; do not use it
+for the final comparison. `--allow-incomplete` on `compare` is diagnostic only.
+
+For placement, EE means `panda_fingertip_centered`, not the flange or wrist
+sensor. The default block spans EE z = -25 to +75 mm. Its geometric center is
+its COM only if its density is approximately uniform.
+
+## 5. Measurement and control principles
+
+Both domains use the same control structure:
+
+```text
+EE pose sequence -> bounded continuous Panda IK -> q_des, dq_des at 50 Hz
+-> zero-order hold -> joint PD + Coriolis at 1 kHz -> limited torque
+
+tau = joint_kp * (q_des - q) + joint_kd * (dq_des - dq) + coriolis
 ```
 
-For short GPU jobs, use `srun --partition=interactive` with a startup-inclusive
-time limit up to two hours. Put the worker wrapper inside the allocation so it
-records the job ID and compute-node process:
+Planning stays near `q_init` and checks IK residuals, joint limits, speed,
+acceleration and endpoint return. It does not plan around obstacles. Both
+controllers limit torque to `[87,87,87,87,12,12,12]` Nm and changes to 1000 Nm/s.
+libfranka supplies gravity/friction compensation; sim explicitly compensates
+robot gravity. The block remains an additional, uncompensated load. During sim
+measurement the arm is torque-driven and the fingers hold the block through
+contacts. Only initialization and the separate visualization renderer write
+joint states directly.
 
-```bash
-run="$PWD/data/force_gap/gpu_job"
-python scripts/run_monitored.py --run-dir "$run" --interval 60 -- \
-    srun --partition=interactive --gpus=1 --cpus-per-task=8 --mem=32G \
-    --time=00:45:00 --job-name=ft-gap --unbuffered \
-    python "$PWD/scripts/run_monitored.py" --run-dir "$run" --mode worker -- \
-    /path/to/IsaacLab/isaaclab.sh -p "$PWD/scripts/force_gap_sim.py" \
-    --out "$run/results" --headless --video
-```
+| Signal | Meaning |
+| --- | --- |
+| Real `O_F_ext_hat_K` | Model-based external wrench estimate, in base O axes, moment about K |
+| Real `K_F_ext_hat_K` | The same estimate expressed in K axes |
+| Sim `JointWrenchSensor` | Incoming wrist joint reaction, including downstream tool support |
+| Bundle `wrench_O_K`, `wrench_K_K` | Canonical comparable channels; sim subtracts modeled tool support and transforms to the same axes/origin |
 
-The local cluster's container invocation can be substituted after `--mode worker
---`. The monitor exits after terminal status is collected. It writes filesystem
-status and does not itself deliver future chat messages. Inspect stdout and
-stderr plus quality metrics: a process exit code alone is insufficient.
+Sim tool compensation includes gravity and inertial support of the sensor link,
+hand and fingers. Its block Newton-Euler reference is an independent balance
+check, not the sensor measurement. Static scoring additionally requires every
+joint speed below 0.04 rad/s. The canonical sign is **robot on payload**: a static
+0.310 kg additional block gives approximately **+3.0411 N in base Z**.
+Changing torque reference points requires a moment-arm cross product, not just
+rotation of the force/torque axes.
+
+Real wrench values come from joint-torque residuals, not a physical six-axis
+transducer. Estimator/filter/model errors and actual motion mismatch remain
+part of the measured gap. One mass at one COM does not independently excite
+all six wrench axes; contact friction, impacts and contact stiffness require
+separate experiments.
+
+See [validation results](VALIDATION.md), [controller details](../docs/architecture.md)
+and [raw data formats](../docs/data_format.md) for further detail.

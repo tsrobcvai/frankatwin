@@ -2,7 +2,7 @@
 """Run a local command or srun allocation with a persistent, independent monitor.
 
 Usage: python scripts/run_monitored.py --run-dir /absolute/new/run -- COMMAND ...
-For Slurm, put this script's --worker invocation after the srun options; see README.
+For Slurm, put this script's --worker invocation after the srun options.
 """
 from __future__ import annotations
 
