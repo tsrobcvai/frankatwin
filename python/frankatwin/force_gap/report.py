@@ -61,6 +61,24 @@ def analyze(run, make_video=False, scene=None):
     run = Path(run)
     a, m = load_bundle(run)
     plt = pyplot()
+    if "target_q" in a:
+        fig, axes = plt.subplots(4, 2, figsize=(12, 10), sharex=True)
+        for j, ax in enumerate(axes.flat):
+            if j == 7:
+                ax.plot(a["t_s"], np.linalg.norm(a["ee_pos"]-a["target_pos"], axis=1)*1000)
+                ax.set_ylabel("EE position error [mm]")
+            else:
+                ax.plot(a["t_s"], np.rad2deg(a["q"][:, j]), label="Measured")
+                ax.plot(a["t_s"], np.rad2deg(a["target_q"][:, j]), "--", label="Applied target")
+                ax.axhline(np.rad2deg(m["protocol"]["q_init"][j]), color="gray", lw=.7, label="Reset")
+                ax.set_ylabel(f"Joint {j+1} [deg]")
+            ax.grid(alpha=.2)
+        axes[0, 0].legend(fontsize=8)
+        axes[-1, 0].set_xlabel("Time [s]")
+        axes[-1, 1].set_xlabel("Time [s]")
+        fig.tight_layout()
+        fig.savefig(run / "joint_tracking.png")
+        plt.close(fig)
     for frame in ("O", "K"):
         key = f"wrench_{frame}_K"
         truth = f"gravity_{frame}_K"
@@ -166,6 +184,12 @@ def analyze(run, make_video=False, scene=None):
         report["notes"].append(
             "Some poses have no settled samples; use their dynamic traces, not a static gravity score. A completed trajectory does not imply every hold settled."
         )
+    if "target_q" in a:
+        report["joint_tracking"] = {
+            "rmse_rad": np.sqrt(np.mean((a["q"]-a["target_q"])**2, axis=0)).tolist(),
+            "max_error_rad": float(np.abs(a["q"]-a["target_q"]).max()),
+            "final_offset_deg": np.rad2deg(a["q"][-1]-np.array(m["protocol"]["q_init"])).tolist(),
+        }
     write_json(run / "analysis.json", report)
     if make_video:
         dashboard_video(run, a, m, scene)
@@ -190,7 +214,8 @@ def dashboard_video(run, a, m, scene=None):
             "completed"
         ):
             raise ValueError("scene replay does not match this measurement bundle")
-    times = a["video_t_s"]
+    from .data import video_times
+    times = video_times(a, m)
     reader = imageio.get_reader(str(scene))
     fps = reader.get_meta_data()["fps"]
     fig, axes = plt.subplots(3, 2, figsize=(6.4, 7.2), dpi=100, sharex=True)
@@ -264,7 +289,8 @@ def dashboard_video(run, a, m, scene=None):
             else "live physics rendering",
             "frames": count + 1,
             "fps": fps,
-            "timestamps": "samples.npz/video_t_s",
+            "timestamps": "acquisition video_t_s or metadata video_fps cadence",
+            "frame_times_s": times.tolist(),
         },
     )
 
@@ -276,6 +302,10 @@ def compare(sim_run, real_run, out, time_offset=0.0, allow_incomplete=False):
         raise ValueError("expected sim and real sources")
     if sm["protocol_sha256"] != rm["protocol_sha256"]:
         raise ValueError("different protocols")
+    if "joint_pd_v1" in (sm.get("controller"), rm.get("controller")) and sm.get("controller") != rm.get("controller"):
+        raise ValueError("different controllers; collect both domains with joint_pd_v1")
+    if sm.get("controller") == "joint_pd_v1" and sm.get("joint_plan_sha256") != rm.get("joint_plan_sha256"):
+        raise ValueError("different joint plans; replay the real run")
     if sm["empty"] != rm["empty"]:
         raise ValueError("cannot compare loaded and empty runs")
     if not allow_incomplete and (not sm.get("completed") or not rm.get("completed")):

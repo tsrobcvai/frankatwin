@@ -16,6 +16,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "python"))
 from frankatwin.force_gap.protocol import Protocol
+from frankatwin.force_gap.joint_plan import JointPlan, joint_torque
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--out", type=Path, required=True)
@@ -68,7 +69,6 @@ from isaaclab_assets import FRANKA_PANDA_CFG
 from isaaclab_physx.physics import PhysxCfg
 from frankatwin.force_gap.math import (
     rotation,
-    multiply,
     pose_matrix,
     transform_wrench,
     support_wrench,
@@ -118,6 +118,8 @@ def main():
             raise ValueError("--real-run requires a completed real collection")
         if bool(real_meta["empty"]) != args.empty:
             raise ValueError("match --empty to the real collection load condition")
+        if real_meta.get("controller") != "joint_pd_v1" or not all(k in replay for k in ("target_q", "target_dq")):
+            raise ValueError("--real-run requires a joint_pd_v1 collection with applied joint references")
         protocol = Protocol(**real_meta["protocol"]).validate()
     if (
         args.dt <= 0
@@ -285,6 +287,11 @@ def main():
             raise RuntimeError(
                 "real/sim initial FK mismatch: check robot asset, q_init and F_T_EE"
             )
+    plan = None
+    if replay is None:
+        plan = JointPlan.build(protocol, f_t_ee, anchor_pos, anchor_quat)
+        plan.save(args.out / "joint_plan.npz")
+        anchor_pos, anchor_quat = plan.anchor_pos, plan.anchor_quat
     if block:
         bp = ee[:3, 3] + ee[:3, :3] @ np.array(protocol.ee_com_m)
         block.write_root_pose_to_sim_index(
@@ -331,7 +338,10 @@ def main():
         "robot_usd_sha256": hashlib.sha256(args.robot_usd.read_bytes()).hexdigest(),
         "initial_q": initial_q,
         "video_fps": args.video_fps,
-        "controller": "J^T Cartesian impedance + engine gravity/coriolis compensation; object unmodeled",
+        "controller": "joint_pd_v1",
+        "reference_hold": "zero-order hold of q and dq at control_hz",
+        "joint_plan_sha256": plan.digest if plan else real_meta["joint_plan_sha256"],
+        "joint_plan_metrics": plan.metrics if plan else real_meta["joint_plan_metrics"],
         "grasp": "physical finger contacts; no attachment constraint",
         "real_run": None if not args.real_run else str(args.real_run.resolve()),
         "completed": False,
@@ -347,10 +357,14 @@ def main():
     warmup_steps = round(args.warmup / args.dt)
     total_steps = round(duration / args.dt)
     control_steps = max(1, round(1 / (protocol.control_hz * args.dt)))
+    if abs(control_steps * args.dt * protocol.control_hz - 1) > 1e-6:
+        raise ValueError("control_hz must divide the physics frequency exactly")
     video_steps = max(1, round(1 / (args.video_fps * args.dt)))
     if args.video and abs(video_steps * args.dt * args.video_fps - 1) > 1e-6:
         raise ValueError("video_fps must divide the physics frequency exactly")
     target_pos, target_quat = anchor_pos.copy(), anchor_quat.copy()
+    target_q = np.asarray(initial_q).copy() if replay is None else replay["target_q"][0].copy()
+    target_dq = np.zeros(7)
     tau_previous = np.zeros(7)
     target_finger = np.full(
         len(finger_ids), protocol.dimensions_m[1] / 2 if args.empty else 0.0
@@ -363,9 +377,9 @@ def main():
             bp = poses(robot.data.body_link_pose_w)[0]
             flange = pose_matrix(bp[link7_id, :3], bp[link7_id, 3:]) @ link7_to_flange
             ee = flange @ f_t_ee
-            eq = matrix_quat(ee[:3, :3])
             if step >= 0 and (replay is not None or step % control_steps == 0):
                 if replay is None:
+                    target_q, target_dq = plan.sample(t)
                     target_pos, target_quat, _, _ = protocol.sample(
                         t, anchor_pos, anchor_quat
                     )
@@ -373,35 +387,15 @@ def main():
                     idx = max(0, np.searchsorted(replay["t_s"], t, side="right") - 1)
                     target_pos = replay["target_pos"][idx]
                     target_quat = replay["target_quat"][idx]
-            jac = array(robot.data.body_link_jacobian_w)[0, link7_id - 1, :, :][
-                :, arm_ids
-            ]
-            offset = ee[:3, 3] - bp[link7_id, :3]
-            jac[:3] += np.cross(jac[3:].T, offset).T
+                    target_q, target_dq = replay["target_q"][idx], replay["target_dq"][idx]
+            q_now = array(robot.data.joint_pos)[0, arm_ids]
             dq = array(robot.data.joint_vel)[0, arm_ids]
-            twist = jac @ dq
-            conjugate = eq * np.array([1, -1, -1, -1])
-            error = multiply(target_quat, conjugate)
-            if error[0] < 0:
-                error = -error
-            task = np.r_[
-                protocol.kp_pos * np.clip(target_pos - ee[:3, 3], -0.04, 0.04)
-                - 2 * np.sqrt(protocol.kp_pos) * twist[:3],
-                protocol.kp_ori * 2 * error[1:]
-                - 2 * np.sqrt(protocol.kp_ori) * twist[3:],
-            ]
             cv = array(
                 robot.root_view.get_coriolis_and_centrifugal_compensation_forces()
             )[0, arm_ids]
             gravity = array(robot.data.gravity_compensation_forces)[0, arm_ids]
-            tau = np.clip(
-                jac.T @ task + cv,
-                -np.array([87, 87, 87, 87, 12, 12, 12]),
-                np.array([87, 87, 87, 87, 12, 12, 12]),
-            )
-            tau = np.clip(
-                tau, tau_previous - 1000 * args.dt, tau_previous + 1000 * args.dt
-            )
+            tau = joint_torque(q_now, dq, target_q, target_dq,
+                               protocol.joint_kp, protocol.joint_kd, cv, tau_previous, args.dt)
             tau_previous = tau.copy()
             robot.set_joint_effort_target_index(
                 target=torch.tensor(
@@ -457,6 +451,10 @@ def main():
                     "settled": settled,
                     "q": array(robot.data.joint_pos)[0, arm_ids],
                     "dq": measured_dq,
+                    "target_q": target_q.copy(),
+                    "target_dq": target_dq.copy(),
+                    "control_mode": 1,
+                    "tau": tau.copy(),
                     "ee_pos": ee[:3, 3].copy(),
                     "ee_quat": matrix_quat(ee[:3, :3]),
                     "target_pos": target_pos.copy(),
@@ -549,6 +547,9 @@ def main():
     hold = arrays["settled"]
     hold_residual = arrays["wrench_O_K"][hold] - arrays["gravity_O_K"][hold]
     summary = {
+        "max_joint_tracking_error_rad": float(np.abs(arrays["q"]-arrays["target_q"]).max()),
+        "final_joint_offset_deg": np.rad2deg(arrays["q"][-1]-np.array(protocol.q_init)).tolist(),
+        "max_joint_excursion_deg": np.rad2deg(np.abs(arrays["q"]-np.array(protocol.q_init)).max(axis=0)).tolist(),
         "samples": len(rows),
         "settled_samples": int(hold.sum()),
         "dynamic_balance_rmse": np.sqrt(np.mean(residual**2, axis=0)).tolist(),
@@ -575,7 +576,8 @@ def main():
         "elapsed_wall_seconds": time.monotonic() - tic,
     }
     quality_ok = (
-        summary["max_grasp_drift_m"] <= 0.01
+        summary["max_joint_tracking_error_rad"] <= .15
+        and summary["max_grasp_drift_m"] <= 0.01
         and summary["max_tracking_error_m"] <= 0.04
         and summary["max_tracking_error_rad"] <= 0.4
         and (

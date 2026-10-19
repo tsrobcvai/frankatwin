@@ -9,6 +9,8 @@ from test_ring_log import _fresh_view, _StubController
 from test_force_gap import complete_frame
 from frankatwin.force_gap import real
 from frankatwin.force_gap.protocol import Protocol
+from frankatwin.force_gap.joint_plan import flange_fk, default_ee_transform
+from frankatwin.force_gap.math import matrix_quaternion
 from frankatwin.force_gap.data import load_bundle
 from frankatwin.local_controller import RobotState
 from frankatwin.shm_layout import (
@@ -29,8 +31,11 @@ class RobotFixture(_StubController):
         self.recording = False
         self.frame = complete_frame()
         self.frame["q"] = protocol.q_init
-        self.frame["ee_pos"] = [0.5, 0, 0.4]
-        self.frame["ee_quat"] = [1, 0, 0, 0]
+        f_t_ee = default_ee_transform()
+        self.frame["F_T_EE"] = f_t_ee.flatten(order="F")
+        pose = flange_fk(protocol.q_init) @ f_t_ee
+        self.frame["ee_pos"] = pose[:3, 3]
+        self.frame["ee_quat"] = matrix_quaternion(pose[:3, :3])
 
     def __enter__(self):
         return self
@@ -48,6 +53,10 @@ class RobotFixture(_StubController):
             cmd = self._view.read_command()
             self.frame["ee_pos"] = cmd["target_pos"][0]
             self.frame["ee_quat"] = cmd["target_quat"][0]
+            for name in ("target_q", "target_dq", "control_mode"):
+                self.frame[name] = cmd[name][0]
+            self.frame["command_seq"] = cmd["seq"][0]
+            self.frame["q"] = cmd["target_q"][0]
             self.frame["seq"] = seq
             self.frame["timestamp_s"] = seq / 1000
             self._view.states[seq % FRANKATWIN_SHM_STATE_FRAMES] = self.frame
@@ -58,7 +67,15 @@ class RobotFixture(_StubController):
     def get_state(self, **kwargs):
         state = RobotState.from_frame(self.frame)
         if self.fault == "stale" and self.elapsed > 0.25:
-            state.seq = 1
+            if not hasattr(self, "frozen_seq"):
+                self.frozen_seq = state.seq
+            state.seq = self.frozen_seq
+        if self.fault == "joint_tracking" and self.elapsed > 0.25:
+            state.q = state.q + .2
+        if self.fault == "mode_change" and self.elapsed > 0.25:
+            state.control_mode = 0
+        if self.fault == "restart" and self.elapsed > 0.25:
+            state.seq = 0
         if self.fault == "tracking" and self.elapsed > 0.25:
             state.ee_pos = state.ee_pos + [0.1, 0, 0]
         return state
@@ -73,6 +90,7 @@ class RobotFixture(_StubController):
 
     def enable(self):
         self.calls.append("enable")
+        self.sleep(.001)
 
     def gripper_open(self, **kwargs):
         self.calls.append("open")
@@ -116,6 +134,7 @@ def run_collection(tmp_path, monkeypatch, empty=False, fault=None):
         rotation_waypoints_deg=[[0, 0, 0], [5, 0, 0], [0, 0, 0]],
         hold_seconds=0.2,
         move_seconds=0.2,
+        max_joint_speed=2., max_joint_acceleration=30.,
         settle_seconds=0.05,
     ).validate()
     path = tmp_path / "protocol.json"
@@ -158,6 +177,11 @@ def test_guided_collection_saves_full_rate_wrench_and_operator_order(
     ]
     a, m = load_bundle(out)
     assert m["completed"] and m["empty"] == empty
+    assert m["controller"] == "joint_pd_v1"
+    assert (out / "joint_plan.npz").exists()
+    assert np.all(a["control_mode"] == 1)
+    assert a["target_q"].shape == a["q"].shape
+    np.testing.assert_allclose(a["target_q"], a["q"])
     assert len(a["t_s"]) >= 1000
     np.testing.assert_allclose(np.diff(a["t_s"]), 0.001, atol=1e-12)
     np.testing.assert_allclose(a["wrench_O_K"], a["O_F_ext_hat_K"])
@@ -166,7 +190,7 @@ def test_guided_collection_saves_full_rate_wrench_and_operator_order(
     assert len(json.loads((out / "events.json").read_text())) >= 50
 
 
-@pytest.mark.parametrize("fault", ["tracking", "stale", "dropped_frames", "lost_grasp"])
+@pytest.mark.parametrize("fault", ["tracking", "joint_tracking", "mode_change", "restart", "stale", "dropped_frames", "lost_grasp"])
 def test_failed_collection_saves_diagnostics_and_keeps_gripper_closed(
     tmp_path, monkeypatch, fault
 ):
@@ -188,5 +212,9 @@ def test_failed_collection_saves_diagnostics_and_keeps_gripper_closed(
         assert "state stream stale" in m["exception"]
     elif fault == "lost_grasp":
         assert m["grasp_lost"]
-    else:
+    elif fault == "dropped_frames":
         assert m["ring_log"]["dropped_frames"] == 1
+    else:
+        expected = {"joint_tracking": "joint tracking error", "mode_change": "left joint impedance", "restart": "restarted"}[fault]
+        assert expected in m["exception"]
+        np.testing.assert_allclose(robot._view.read_command()["target_dq"][0], 0)

@@ -192,6 +192,16 @@ class FrankaTwinClient:
         })
         return int(reply.get("head", 0))
 
+    def set_joint_target(self, q, dq, kp, kd, target_pos, target_quat) -> int:
+        """Send joint impedance targets; the daemon validates all vectors/ranges."""
+        reply = self._call({
+            "op": "set_joint_target",
+            **{name: np.asarray(value, float).tolist() for name, value in
+               (("q", q), ("dq", dq), ("kp", kp), ("kd", kd),
+                ("target_pos", target_pos), ("target_quat", target_quat))},
+        })
+        return int(reply["head"])
+
     def set_gains(
         self,
         kp_pos: Optional[float] = None,

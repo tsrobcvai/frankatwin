@@ -98,6 +98,7 @@ class _StubController:
         self._recorder = None
 
     set_ee_target = LocalController.set_ee_target
+    set_joint_target = LocalController.set_joint_target
     log_start = LocalController.log_start
     log_stop = LocalController.log_stop
     log_fetch = LocalController.log_fetch
@@ -405,6 +406,16 @@ def test_client_fetches_the_log_from_the_daemon_and_writes_it_here(tmp_path, mon
             assert (tmp_path / "data").is_dir()                      # created before the run
             rec = ctl._recorder
             assert rec.path is None                                  # the daemon has no file to write
+            rec._stop_evt.set(); rec._thread.join(); rec._thread = None
+            q_ref = np.array([0, -.7854, 0, -2.3562, 0, 1.5708, .7854])
+            robot.set_joint_target(q_ref, np.zeros(7), np.full(7, 100.), np.full(7, 10.),
+                                   [.5, 0, .4], [1, 0, 0, 0])
+            np.testing.assert_equal(ctl._view.read_command()["target_q"][0], q_ref)
+            assert ctl._view.read_command()["control_mode"][0] == 1
+            # Start a fresh recorder for the legacy Cartesian transport checks.
+            robot.log_stop(save=False)
+            robot.log_start(tmp_path / "data" / "run.csv")
+            rec = ctl._recorder
             rec._stop_evt.set(); rec._thread.join(); rec._thread = None
             heads = []
             for k in range(25):                                      # 25 targets, 50 frames each

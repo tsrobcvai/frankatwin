@@ -36,6 +36,12 @@ int main() {
   PRINT_OFFSET(ShmCommand, kd_ori);
   PRINT_OFFSET(ShmCommand, error_delta_pos);
   PRINT_OFFSET(ShmCommand, enabled);
+  PRINT_OFFSET(ShmCommand, control_mode);
+  PRINT_OFFSET(ShmCommand, target_q);
+  PRINT_OFFSET(ShmCommand, target_dq);
+  PRINT_OFFSET(ShmCommand, joint_kp);
+  PRINT_OFFSET(ShmCommand, joint_kd);
+
 
   PRINT_OFFSET(ShmStateFrame, seq);
   PRINT_OFFSET(ShmStateFrame, timestamp_s);
@@ -60,6 +66,11 @@ int main() {
   PRINT_OFFSET(ShmStateFrame, F_x_Ctotal);
   PRINT_OFFSET(ShmStateFrame, I_total);
   PRINT_OFFSET(ShmStateFrame, control_command_success_rate);
+  PRINT_OFFSET(ShmStateFrame, target_q);
+  PRINT_OFFSET(ShmStateFrame, target_dq);
+  PRINT_OFFSET(ShmStateFrame, control_mode);
+  PRINT_OFFSET(ShmStateFrame, command_seq);
+
 
   return 0;
 }

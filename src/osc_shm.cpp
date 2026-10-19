@@ -1,6 +1,6 @@
 // osc_shm.cpp
 //
-// Long-running 1 kHz Jacobian-transpose Cartesian 6D pose impedance controller
+// Long-running 1 kHz Cartesian or joint impedance controller
 // that reads its setpoint and gains from POSIX shared memory.
 //
 // Control law:
@@ -39,6 +39,7 @@
 
 #include "fci_lock.h"
 #include "shm_layout.h"
+#include "impedance_math.h"
 
 #include <franka/duration.h>
 #include <franka/exception.h>
@@ -460,6 +461,13 @@ int main(int argc, char** argv) {
       // A client may still re-enable clipping at runtime via set_gains.
       cmd->error_delta_pos = 0.0;
       cmd->enabled = 1u;
+      cmd->control_mode = 0u;
+      for (int j = 0; j < 7; ++j) {
+        cmd->target_q[j] = q_init(j);
+        cmd->target_dq[j] = 0.0;
+        cmd->joint_kp[j] = 0.0;
+        cmd->joint_kd[j] = 0.0;
+      }
       panda_shm::cmd_write_end(cmd, s);
     }
 
@@ -470,6 +478,8 @@ int main(int argc, char** argv) {
               << anchor.quaternion.z() << "\n"
               << "[osc_shm] starting 1 kHz loop. SIGINT to stop." << std::endl;
 
+    uint64_t last_command_seq = 0;
+    double command_age = 0.0;
     size_t tick = 0;
     double elapsed = 0.0;
     int abort_code = 0;
@@ -507,6 +517,11 @@ int main(int argc, char** argv) {
       // Snapshot the command (lock-free seqlock).
       ShmCommand cmd_snap;
       panda_shm::cmd_read(&shm->command, &cmd_snap);
+      command_age = cmd_snap.seq == last_command_seq ? command_age + period.toSec() : 0.0;
+      last_command_seq = cmd_snap.seq;
+      if (command_age > 0.25) {
+        for (double& value : cmd_snap.target_dq) value = 0.0;
+      }
 
       const Eigen::Vector3d x_des(cmd_snap.target_pos[0],
                                   cmd_snap.target_pos[1],
@@ -536,21 +551,26 @@ int main(int argc, char** argv) {
       f_task.tail<3>() = kp_ori * e_ori - kd_ori * w;
 
       Eigen::Matrix<double, 7, 1> c_vec = Eigen::Matrix<double, 7, 1>::Zero();
-      if (!args.no_coriolis) {
+      if (!args.no_coriolis || cmd_snap.control_mode == 1u) {
         const std::array<double, 7> c_arr = model.coriolis(s);
         c_vec = Eigen::Map<const Eigen::Matrix<double, 7, 1>>(c_arr.data());
       }
 
       Eigen::Matrix<double, 7, 1> tau_pd =
           jac6x7.transpose() * f_task + c_vec;
+      if (cmd_snap.control_mode == 1u) {
+        for (int j = 0; j < 7; ++j) {
+          tau_pd(j) = frankatwin::joint_pd(q(j), dq(j), cmd_snap.target_q[j],
+              cmd_snap.target_dq[j], cmd_snap.joint_kp[j], cmd_snap.joint_kd[j], c_vec(j));
+        }
+      }
       if (cmd_snap.enabled == 0u || stopping) {
         // Hold mode (enabled==0) or controlled stop (stopping): zero the pre-slew
         // command torque.  The slew limiter below then RAMPS tau_cmd toward 0
         // instead of stepping.  libfranka still adds gravity + friction comp.
         tau_pd.setZero();
       }
-      Eigen::Matrix<double, 7, 1> tau_cmd =
-          tau_pd.cwiseMax(-TAU_LIMIT).cwiseMin(TAU_LIMIT);
+      Eigen::Matrix<double, 7, 1> tau_cmd;
 
       // Torque slew-rate limiter.  The Jacobian-transpose impedance law emits a
       // STEP in commanded torque whenever its inputs jump discontinuously --
@@ -564,23 +584,22 @@ int main(int argc, char** argv) {
       // ANY configuration.  During normal in-phase motion dtau/dt is far below
       // the limit, so the limiter is inactive and does not alter the tracked
       // trajectory -- it only shapes the few-ms transitions at boundaries.
-      if (args.max_torque_rate > 0.0) {
-        double dt = period.toSec();
-        if (dt <= 0.0) dt = 1e-3;  // libfranka's first callback reports period 0
-        const double max_dtau = args.max_torque_rate * dt;
-        for (int j = 0; j < 7; ++j) {
-          const double lo = tau_prev(j) - max_dtau;
-          const double hi = tau_prev(j) + max_dtau;
-          if (tau_cmd(j) < lo) tau_cmd(j) = lo;
-          else if (tau_cmd(j) > hi) tau_cmd(j) = hi;
-        }
+      // The force-gap joint profile fixes the same rate limit as the simulator.
+      const double torque_rate_limit = cmd_snap.control_mode == 1u ? 1000.0 : args.max_torque_rate;
+      for (int j = 0; j < 7; ++j) {
+        tau_cmd(j) = frankatwin::limit_effort(
+            tau_pd(j), tau_prev(j), TAU_LIMIT(j), torque_rate_limit, period.toSec());
       }
       tau_prev = tau_cmd;
 
       // Publish the state frame to the ring buffer.
       ShmStateFrame frame{};
+      frame.control_mode = cmd_snap.control_mode;
+      frame.command_seq = static_cast<double>(cmd_snap.seq);
       frame.timestamp_s = monotonic_seconds() - t_start_mono;
       for (int j = 0; j < 7; ++j) {
+        frame.target_q[j] = cmd_snap.target_q[j];
+        frame.target_dq[j] = cmd_snap.target_dq[j];
         frame.q[j] = s.q[j];
         frame.dq[j] = s.dq[j];
         frame.tau[j] = tau_cmd(j);

@@ -3,7 +3,7 @@
 Responsibilities:
 - Own the POSIX shm segment (`shm_open(name, O_CREAT)`).
 - Start the C++ `osc_shm` subprocess as the 1 kHz controller.
-- Provide `set_ee_target`, `set_gains`, `enable`, `disable`, `get_state`.
+- Provide `set_ee_target`, `set_joint_target`, `set_gains`, `enable`, `disable`, `get_state`.
 - For one-shot resets, stop `osc_shm`, spawn `move_to`, wait, restart `osc_shm`.
   Mutual exclusion is required because libfranka grants only one TCP session
   to the FCI port at a time.
@@ -242,6 +242,10 @@ class RobotState:
     F_x_Ctotal: np.ndarray = field(default_factory=lambda: np.full(3, np.nan))
     I_total: np.ndarray = field(default_factory=lambda: np.full(9, np.nan))
     control_command_success_rate: float = float("nan")
+    target_q: np.ndarray = field(default_factory=lambda: np.full(7, np.nan))
+    target_dq: np.ndarray = field(default_factory=lambda: np.full(7, np.nan))
+    control_mode: float = float("nan")
+    command_seq: float = float("nan")
 
     @classmethod
     def from_frame(cls, frame: np.ndarray) -> "RobotState":
@@ -604,11 +608,45 @@ class LocalController:
         self._view.write_command(
             target_pos=pos,
             target_quat=quat,
+            control_mode=0,
             kp_pos=float(prev["kp_pos"][0]),
             kp_ori=float(prev["kp_ori"][0]),
             kd_pos=float(prev["kd_pos"][0]),
             kd_ori=float(prev["kd_ori"][0]),
             error_delta_pos=float(prev["error_delta_pos"][0]),
+            enabled=bool(prev["enabled"][0]),
+        )
+        head = int(self._view.state_head)
+        recorder = getattr(self, "_recorder", None)
+        if recorder is not None:
+            recorder.record_target(head, pos, quat)
+        return head
+
+    def set_joint_target(self, q, dq, kp, kd, target_pos, target_quat) -> int:
+        """Select joint impedance and atomically publish references and gains.
+
+        EE targets are monitoring/logging references; they contribute no torque
+        in joint mode. References are held between updates at the 1 kHz loop.
+        """
+        from frankatwin.force_gap.joint_plan import Q_MIN, Q_MAX
+        values = [np.asarray(v, dtype=float) for v in (q, dq, kp, kd)]
+        if any(v.shape != (7,) or not np.all(np.isfinite(v)) for v in values):
+            raise ValueError("joint references and gains must be finite seven-vectors")
+        q, dq, kp, kd = values
+        if (np.any(q < Q_MIN) or np.any(q > Q_MAX) or np.any(np.abs(dq) > 2)
+                or np.any(kp <= 0) or np.any(kp > 1000)
+                or np.any(kd <= 0) or np.any(kd > 100)):
+            raise ValueError("joint reference or gain outside supported Panda range")
+        pos, quat = np.asarray(target_pos, float), np.asarray(target_quat, float)
+        if (pos.shape != (3,) or quat.shape != (4,) or not np.all(np.isfinite(pos))
+                or not np.all(np.isfinite(quat)) or abs(np.linalg.norm(quat)-1) > 1e-3):
+            raise ValueError("invalid monitoring EE pose")
+        prev = self._view.read_command()
+        self._view.write_command(
+            target_pos=pos, target_quat=quat, control_mode=1,
+            target_q=q, target_dq=dq, joint_kp=kp, joint_kd=kd,
+            **{name: float(prev[name][0]) for name in
+               ("kp_pos", "kp_ori", "kd_pos", "kd_ori", "error_delta_pos")},
             enabled=bool(prev["enabled"][0]),
         )
         head = int(self._view.state_head)

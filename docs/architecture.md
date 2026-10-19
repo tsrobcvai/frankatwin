@@ -26,7 +26,7 @@ flowchart LR
 
 ## Control law (`osc_shm`)
 
-Per 1 kHz tick, with `x`, `q_cur` from `model.pose(kEndEffector)` and
+The default Cartesian mode (`control_mode=0`) uses, per 1 kHz tick, with `x`, `q_cur` from `model.pose(kEndEffector)` and
 `J` = `model.zeroJacobian(kEndEffector)`:
 
 ```
@@ -56,22 +56,33 @@ The IsaacLab mirror is `isaaclab_sysid/.../franka_sysid/control.py`
 (`compute_task_space_torques`, `control_mode="task_impedance"`). If you touch one,
 touch the other.
 
+The force-gap workflow selects **joint mode** (`control_mode=1`) through
+`set_joint_target`. Its pre-limit torque is
+`joint_kp*(target_q-q) + joint_kd*(target_dq-dq) + coriolis`. The same magnitude
+limits apply; this mode fixes the rate limit at 1000 Nm/s to match
+`scripts/force_gap_sim.py`. Joint q/dq targets are held between updates. After
+250 ms without a command update, target dq becomes zero while target q stays
+fixed. Native state frames record the applied references and command sequence.
+`set_ee_target` switches back to Cartesian mode; enable and gain changes preserve
+mode. Startup/restart seeds Cartesian mode. See [force-gap planning](force_gap.md)
+for IK, limits, frame checks, and real commissioning requirements.
+
 ## Shared memory
 
-`osc_shm` and the daemon meet in one 393 360 B POSIX segment
-(`/frankatwin_osc`): a 32 B header, a 112 B command block written under a
-seqlock, and a 1024-frame ring of 1024 B state frames. The layout is an ABI —
+`osc_shm` and the daemon meet in one 1 180 016 B POSIX segment
+(`/frankatwin_osc`): a 32 B header, a 336 B command block written under a
+seqlock, and a 1024-frame ring of 1152 B state frames. The layout is an ABI —
 `src/shm_layout.h` (with `static_assert`s on every offset) and
 `python/frankatwin/shm_layout.py` (numpy dtypes) must agree, and
 `tests/test_shm_layout.py` compiles the header with `g++` and diffs `offsetof`
 against the dtypes to prove they do. Any field change bumps
-`FRANKATWIN_SHM_VERSION` (currently 4).
+`FRANKATWIN_SHM_VERSION` (currently 5).
 
 | region | size | writer → reader | protocol |
 |---|---|---|---|
-| `ShmHeader` | 32 B | both | `magic`, `version` (4), `state_frames` (1024), `controller_pid`, `state_head` (atomic 64-bit) |
-| `ShmCommand` | 112 B | client → `osc_shm` | **seqlock**: writer bumps `seq` to odd, writes, bumps to even; reader retries while `seq` is odd or changed. Fields: `target_pos[3]`, `target_quat[4]` wxyz, `kp_pos`, `kp_ori`, `kd_pos`, `kd_ori`, `error_delta_pos`, `enabled` |
-| `ShmStateFrame[1024]` | 1024 B each | `osc_shm` → client | **SPSC ring** indexed by `state_head`; frame `seq` validates a read. Motion fields plus `O_F_ext_hat_K`, `K_F_ext_hat_K`, `EE_T_K`, `F_T_EE`, `tau_ext_hat_filtered`, configured load mass/COM/inertia, and command success rate. Exact fields are pinned in `src/shm_layout.h` and `python/frankatwin/shm_layout.py`. |
+| `ShmHeader` | 32 B | both | `magic`, `version` (5), `state_frames` (1024), `controller_pid`, `state_head` (atomic 64-bit) |
+| `ShmCommand` | 336 B | client → `osc_shm` | **seqlock**: writer bumps `seq` to odd, writes, bumps to even; reader retries while `seq` is odd or changed. Fields: `target_pos[3]`, `target_quat[4]` wxyz, `kp_pos`, `kp_ori`, `kd_pos`, `kd_ori`, `error_delta_pos`, `enabled`, `control_mode`, `target_q[7]`, `target_dq[7]`, `joint_kp[7]`, `joint_kd[7]` |
+| `ShmStateFrame[1024]` | 1152 B each | `osc_shm` → client | **SPSC ring** indexed by `state_head`; frame `seq` validates a read. Motion fields plus `O_F_ext_hat_K`, `K_F_ext_hat_K`, `EE_T_K`, `F_T_EE`, `tau_ext_hat_filtered`, configured load mass/COM/inertia, command success rate, applied joint references, control mode and command sequence. Exact fields are pinned in `src/shm_layout.h` and `python/frankatwin/shm_layout.py`. |
 
 - **Python**: `SharedMemoryAccess(name="/frankatwin_osc", create=False).view`
   → `ShmView` with `read_command()`, `write_command(...)`, `latest_state()`,
@@ -166,6 +177,7 @@ binary frame (read it with `recv_multipart`).
 |---|---|---|---|
 | `ping` | — | `pid` (osc_shm pid, `0` = controller not running) | no |
 | `set_ee_target` | `pos: [x, y, z]`, `quat: [w, x, y, z]` | `head` (state_head after the write) | no |
+| `set_joint_target` | `q,dq,kp,kd`: seven-vectors; `target_pos`: [3], `target_quat`: [4] wxyz monitoring pose | `head` | no |
 | `set_gains` | any of `kp_pos`, `kp_ori`, `kd_pos`, `kd_ori`, `error_delta_pos` | — | no |
 | `enable` / `disable` | — | — | no |
 | `get_state` | — | `state`: object (fields as below) or `null` | no |
@@ -233,7 +245,8 @@ Ordered from first to last line of defence:
    at any setting. Override at runtime with `set_gains(error_delta_pos=…)` or
    `python examples/cart_impedance.py --err-delta-pos`.
 3. **Torque clamp** `τ_max` per joint.
-4. **Torque slew limiter** 800 N·m/s per joint (libfranka's own limit is
+4. **Torque slew limiter** 800 N·m/s by default in Cartesian mode,
+   fixed 1000 N·m/s in joint mode (libfranka's own limit is
    1000). The Jᵀ law emits a torque *step* whenever its input jumps — a new
    setpoint, `set_gains`, `enable`/`disable`, a phase boundary in a scripted
    motion. Without the limiter a 7.5 N lateral step at an outstretched

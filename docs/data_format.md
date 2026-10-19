@@ -190,13 +190,15 @@ Common arrays in `samples.npz`:
 | `phase`, `settled` | N | Pose index and settled-hold scoring mask |
 | `q`, `dq` | N x 7 | Measured arm position / velocity in rad / rad/s |
 | `ee_pos`, `ee_quat` | N x 3, N x 4 | Measured EE pose in base |
-| `target_pos`, `target_quat` | N x 3, N x 4 | Commanded EE pose |
+| `target_pos`, `target_quat` | N x 3, N x 4 | Desired EE pose (monitoring reference in joint mode) |
+| `target_q`, `target_dq` | N x 7 | Applied joint position / velocity references (`joint_pd_v1`) |
+| `control_mode` | N | 1 for joint impedance |
 | `wrench_O_K`, `wrench_K_K` | N x 6 | Canonical wrench, base or K axes, moment about K |
 | `gravity_O_K`, `gravity_K_K` | N x 6 | Nominal block gravity support at measured EE pose |
 | `k_pos`, `k_rot` | N x 3, N x 3 x 3 | Derived K frame in base |
 
 Real bundles additionally retain producer `seq`, `timestamp_s`, and every raw
-v4 API field below. Simulation bundles additionally retain `wrist_raw_S`,
+v5 telemetry field below. Simulation bundles additionally retain `wrist_raw_S`,
 `wrist_raw_O_K`, `tool_support_O_K`, `object_dynamics_O_K`, tool COM motion,
 object motion, finger positions, and measured object COM in EE. `video_t_s`
 has one timestamp per rendered frame, so its length differs from N.
@@ -209,6 +211,10 @@ Metadata records the protocol and its SHA-256, source domain, `F_T_EE`,
 `EE_T_K`, anchor pose, load condition, and completion state. JSON transforms
 are nested 4x4 matrices. Simulation also records asset/source hashes, tool
 masses/inertias, physics step, controller description, and quality metrics.
+Joint-mode metadata includes `controller=joint_pd_v1`, `joint_plan_sha256`,
+planning metrics and the reference-hold rule. `joint_plan.npz` stores the
+planned knots, velocities, tool transform and nominal anchor. Real 1 kHz
+applied targets come from native telemetry, not reconstructed sender timing.
 Real metadata records the configured load, gripper checks, ring summary,
 exceptions, zero-estimate fraction, and consistency between the two API frames.
 Incomplete runs remain readable for diagnostics but comparison rejects them
@@ -216,7 +222,7 @@ unless explicitly given `--allow-incomplete`.
 
 ### Full-rate wrench transport
 
-ABI v4 adds a `wrench` table to `log_fetch`, with 81 float64 columns:
+ABI v5 extends the `wrench` table in `log_fetch` to 97 float64 columns:
 `seq,timestamp_s`, followed by the fields below, in this order. Vector/matrix
 columns use zero-based suffixes (`O_F_ext_hat_K_0`, ...); scalar names are bare.
 
@@ -231,6 +237,8 @@ columns use zero-based suffixes (`O_F_ext_hat_K_0`, ...); scalar names are bare.
 | `F_x_Ctotal` | 3 |
 | `I_total` | 9 |
 | `control_command_success_rate` | 1 |
+| `target_q`, `target_dq` | 7 each |
+| `control_mode`, `command_seq` | 1 each |
 
 Raw transform/inertia entries preserve libfranka's **column-major** order.
 The wrench and merged tables come from the same recorded state frames and are

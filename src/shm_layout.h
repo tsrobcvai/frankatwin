@@ -41,7 +41,7 @@ extern "C" {
 #endif
 
 #define FRANKATWIN_SHM_MAGIC          0x50414e44u  // 'PAND' little-endian
-#define FRANKATWIN_SHM_VERSION        4u           // v4: external wrench, frame transforms and load model
+#define FRANKATWIN_SHM_VERSION        5u           // v5: joint impedance commands and applied references
 #define FRANKATWIN_SHM_STATE_FRAMES   1024u        // ring buffer depth
 #define FRANKATWIN_SHM_DEFAULT_NAME   "/frankatwin_osc" // POSIX shm name (must start with '/')
 
@@ -58,7 +58,7 @@ struct ShmHeader {
 };
 
 // ---------------------------------------------------------------------------
-// Command (Python -> C++). Size: 112 B.
+// Command (Python -> C++). Size: 336 B.
 // ---------------------------------------------------------------------------
 // Seqlock convention:
 //   seq even  => stable, payload valid
@@ -84,11 +84,15 @@ struct ShmCommand {
   double   kd_ori;              // rotational damping  (Nms/rad); 0 = auto 2*sqrt(kp_ori)
   double   error_delta_pos;     // clip |pose_error_pos| coordinate-wise (m); 0 disables
   uint32_t enabled;             // 0 = output zero command torque (hold), 1 = active
-  uint32_t reserved0;           // pad
+  uint32_t control_mode;        // 0 = Cartesian impedance, 1 = joint impedance
+  double target_q[7];
+  double target_dq[7];
+  double joint_kp[7];
+  double joint_kd[7];
 };
 
 // ---------------------------------------------------------------------------
-// State frame (C++ -> Python). Size: 1024 B.
+// State frame (C++ -> Python). Size: 1152 B.
 // ---------------------------------------------------------------------------
 struct ShmStateFrame {
   uint64_t seq;                 // matches the write index (== state_head value when written)
@@ -114,7 +118,11 @@ struct ShmStateFrame {
   double   F_x_Ctotal[3];
   double   I_total[9];          // column-major inertia about total COM
   double   control_command_success_rate;
-  uint64_t reserved0;           // pad to 1024 B (cache-line multiple)
+  double target_q[7];          // effective joint reference used on this tick
+  double target_dq[7];         // zeroed after a 250 ms command timeout
+  double control_mode;
+  double command_seq;          // command seqlock sequence used on this tick
+  uint64_t reserved0;           // pad to 1152 B (cache-line multiple)
   uint64_t reserved1;
   uint64_t reserved2;
   uint64_t reserved3;
@@ -123,7 +131,7 @@ struct ShmStateFrame {
 };
 
 // ---------------------------------------------------------------------------
-// Top-level layout. Size: 32 + 112 + 1024 * 1024 = 1048720 B.
+// Top-level layout. Size: 32 + 336 + 1024 * 1152 = 1180016 B.
 // ---------------------------------------------------------------------------
 struct ShmSegment {
   ShmHeader     header;
@@ -137,9 +145,9 @@ struct ShmSegment {
 // ---------------------------------------------------------------------------
 #ifdef __cplusplus
 static_assert(sizeof(ShmHeader) == 32, "ShmHeader size drift");
-static_assert(sizeof(ShmCommand) == 112, "ShmCommand size drift");
-static_assert(sizeof(ShmStateFrame) == 1024, "ShmStateFrame size drift");
-static_assert(sizeof(ShmSegment) == 32 + 112 + 1024 * 1024, "ShmSegment size drift");
+static_assert(sizeof(ShmCommand) == 336, "ShmCommand size drift");
+static_assert(sizeof(ShmStateFrame) == 1152, "ShmStateFrame size drift");
+static_assert(sizeof(ShmSegment) == 32 + 336 + 1024 * 1152, "ShmSegment size drift");
 static_assert(offsetof(ShmHeader, controller_pid) == 16, "header.controller_pid offset drift");
 static_assert(offsetof(ShmHeader, state_head) == 24, "header.state_head offset drift");
 static_assert(offsetof(ShmCommand, target_pos) == 8, "command.target_pos offset drift");
@@ -150,6 +158,12 @@ static_assert(offsetof(ShmCommand, kd_pos) == 80, "command.kd_pos offset drift")
 static_assert(offsetof(ShmCommand, kd_ori) == 88, "command.kd_ori offset drift");
 static_assert(offsetof(ShmCommand, error_delta_pos) == 96, "command.error_delta_pos offset drift");
 static_assert(offsetof(ShmCommand, enabled) == 104, "command.enabled offset drift");
+static_assert(offsetof(ShmCommand, control_mode) == 108, "command.control_mode offset drift");
+static_assert(offsetof(ShmCommand, target_q) == 112, "command.target_q offset drift");
+static_assert(offsetof(ShmCommand, target_dq) == 168, "command.target_dq offset drift");
+static_assert(offsetof(ShmCommand, joint_kp) == 224, "command.joint_kp offset drift");
+static_assert(offsetof(ShmCommand, joint_kd) == 280, "command.joint_kd offset drift");
+
 static_assert(offsetof(ShmStateFrame, q) == 16, "state.q offset drift");
 static_assert(offsetof(ShmStateFrame, dq) == 72, "state.dq offset drift");
 static_assert(offsetof(ShmStateFrame, ee_pos) == 128, "state.ee_pos offset drift");
@@ -161,6 +175,11 @@ static_assert(offsetof(ShmStateFrame, tau_J) == 288, "state.tau_J offset drift")
 static_assert(offsetof(ShmStateFrame, O_F_ext_hat_K) == 344, "state.O_F_ext_hat_K offset drift");
 static_assert(offsetof(ShmStateFrame, EE_T_K) == 440, "state.EE_T_K offset drift");
 static_assert(offsetof(ShmStateFrame, control_command_success_rate) == 968, "state.success_rate offset drift");
+static_assert(offsetof(ShmStateFrame, target_q) == 976, "state.target_q offset drift");
+static_assert(offsetof(ShmStateFrame, target_dq) == 1032, "state.target_dq offset drift");
+static_assert(offsetof(ShmStateFrame, control_mode) == 1088, "state.control_mode offset drift");
+static_assert(offsetof(ShmStateFrame, command_seq) == 1096, "state.command_seq offset drift");
+
 #endif
 
 #ifdef __cplusplus

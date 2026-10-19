@@ -30,7 +30,7 @@ import numpy as np
 # Constants (must match src/shm_layout.h)
 # ---------------------------------------------------------------------------
 FRANKATWIN_SHM_MAGIC = 0x50414E44
-FRANKATWIN_SHM_VERSION = 4  # v4: external wrench, transforms and configured load
+FRANKATWIN_SHM_VERSION = 5  # v5: joint impedance commands and applied references
 FRANKATWIN_SHM_STATE_FRAMES = 1024
 FRANKATWIN_SHM_DEFAULT_NAME = "/frankatwin_osc"
 
@@ -42,6 +42,7 @@ WRENCH_STATE_FIELDS = {
     "m_ee": 1, "m_load": 1, "m_total": 1,
     "F_x_Cload": 3, "I_load": 9, "F_x_Ctotal": 3, "I_total": 9,
     "control_command_success_rate": 1,
+    "target_q": 7, "target_dq": 7, "control_mode": 1, "command_seq": 1,
 }
 
 # ---------------------------------------------------------------------------
@@ -71,12 +72,16 @@ COMMAND_DTYPE = np.dtype(
         ("kd_ori", np.float64),
         ("error_delta_pos", np.float64),
         ("enabled", np.uint32),
-        ("reserved0", np.uint32),
+        ("control_mode", np.uint32),
+        ("target_q", np.float64, (7,)),
+        ("target_dq", np.float64, (7,)),
+        ("joint_kp", np.float64, (7,)),
+        ("joint_kd", np.float64, (7,)),
     ],
     align=True,
 )
-assert COMMAND_DTYPE.itemsize == 112, (
-    f"COMMAND_DTYPE size {COMMAND_DTYPE.itemsize} != 112"
+assert COMMAND_DTYPE.itemsize == 336, (
+    f"COMMAND_DTYPE size {COMMAND_DTYPE.itemsize} != 336"
 )
 
 STATE_FRAME_DTYPE = np.dtype(
@@ -102,8 +107,8 @@ STATE_FRAME_DTYPE = np.dtype(
     ],
     align=True,
 )
-assert STATE_FRAME_DTYPE.itemsize == 1024, (
-    f"STATE_FRAME_DTYPE size {STATE_FRAME_DTYPE.itemsize} != 1024"
+assert STATE_FRAME_DTYPE.itemsize == 1152, (
+    f"STATE_FRAME_DTYPE size {STATE_FRAME_DTYPE.itemsize} != 1152"
 )
 
 SHM_TOTAL_BYTES = (
@@ -111,7 +116,7 @@ SHM_TOTAL_BYTES = (
     + COMMAND_DTYPE.itemsize
     + STATE_FRAME_DTYPE.itemsize * FRANKATWIN_SHM_STATE_FRAMES
 )
-assert SHM_TOTAL_BYTES == 32 + 112 + 1024 * 1024
+assert SHM_TOTAL_BYTES == 32 + 336 + 1024 * 1152
 
 # Offset of each region within the shm buffer.
 OFFSET_HEADER = 0
@@ -189,6 +194,7 @@ class ShmView:
         kd_ori: float,
         error_delta_pos: float,
         enabled: bool,
+        control_mode=None, target_q=None, target_dq=None, joint_kp=None, joint_kd=None,
     ) -> None:
         """Atomically publish a new command. Uses the seqlock protocol.
 
@@ -212,6 +218,11 @@ class ShmView:
         c["kd_ori"][0] = kd_ori
         c["error_delta_pos"][0] = error_delta_pos
         c["enabled"][0] = np.uint32(1 if enabled else 0)
+
+        for name, value in (("control_mode", control_mode), ("target_q", target_q),
+                            ("target_dq", target_dq), ("joint_kp", joint_kp), ("joint_kd", joint_kd)):
+            if value is not None:
+                c[name][0] = value
 
         _atomic_store_u64(self.raw, seq_offset, odd + 1)
 

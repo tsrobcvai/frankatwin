@@ -34,7 +34,7 @@ import isaaclab.sim as sim_utils
 from isaaclab.assets import Articulation
 from isaaclab_assets import FRANKA_PANDA_CFG
 from isaaclab_physx.physics import PhysxCfg
-from frankatwin.force_gap.data import load_bundle, write_json
+from frankatwin.force_gap.data import load_bundle, write_json, video_times
 from frankatwin.force_gap.math import pose_matrix
 
 
@@ -44,7 +44,7 @@ def main():
         raise ValueError(
             "rendering requires recorded simulation object and finger states"
         )
-    times = data["video_t_s"]
+    times = video_times(data, metadata)
     if len(times) < 2:
         raise ValueError("recorded video timestamps are required")
     fps = 1 / np.median(np.diff(times))
@@ -203,7 +203,8 @@ def main():
             "max_recorded_ee_position_error_m": max_fk_error,
             "camera_position": camera_position,
             "camera_target": camera_target,
-            "timestamps": "original samples.npz video_t_s; nearest original 1 kHz state",
+            "timestamps": "acquisition video_t_s or metadata video_fps cadence; nearest original state",
+            "frame_times_s": times.tolist(),
             "completed": count == len(times),
         },
     )

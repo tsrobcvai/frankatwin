@@ -14,6 +14,7 @@ from frankatwin.remote_client import FrankaTwinClient
 from frankatwin.ring_log import MERGED_COLUMNS, WRENCH_COLUMNS
 from frankatwin.shm_layout import WRENCH_STATE_FIELDS
 from .protocol import Protocol
+from .joint_plan import JointPlan, default_ee_transform
 from .math import quaternion_angle, validate_transform
 from .data import save_bundle, write_json, derive_frames, load_bundle
 
@@ -30,7 +31,7 @@ def require_wrench_state(state):
     for name in WRENCH_STATE_FIELDS:
         if not np.all(np.isfinite(getattr(state, name))):
             raise RuntimeError(
-                f"{name} unavailable: rebuild osc_shm and update both daemon and client to shm v4"
+                f"{name} unavailable: rebuild osc_shm and update both daemon and client to shm v5"
             )
     validate_transform(state.EE_T_K.reshape(4, 4, order="F"))
     validate_transform(state.F_T_EE.reshape(4, 4, order="F"))
@@ -137,10 +138,14 @@ def collect(
     write_json(out / "protocol.json", protocol.to_dict())
     if args.dry_run:
         t = np.arange(0, protocol.duration + 1e-8, 1 / protocol.control_hz)
-        samples = [protocol.sample(x, [0.4, 0, 0.4], [0, 1, 0, 0]) for x in t]
+        plan = JointPlan.build(protocol, default_ee_transform())
+        plan.save(out / "joint_plan.npz")
+        samples = [protocol.sample(x, plan.anchor_pos, plan.anchor_quat) for x in t]
         np.savez_compressed(
             out / "preview_targets.npz",
             t_s=t,
+            target_q=plan.sample(t)[0],
+            target_dq=plan.sample(t)[1],
             pos=np.array([x[0] for x in samples]),
             quat=np.array([x[1] for x in samples]),
             phase=np.array([x[2] for x in samples]),
@@ -149,6 +154,8 @@ def collect(
             out / "dry_run.json",
             {
                 "robot_connected": False,
+                "joint_plan_sha256": plan.digest,
+                "joint_plan_metrics": plan.metrics,
                 "duration_s": protocol.duration,
                 "protocol_sha256": protocol.digest,
             },
@@ -177,6 +184,8 @@ def collect(
         "empty": args.empty,
         "baseline": None if not args.baseline else str(Path(args.baseline).resolve()),
         "sensor": "libfranka O_F_ext_hat_K",
+        "controller": "joint_pd_v1",
+        "reference_hold": "zero-order hold of q and dq at control_hz",
         "object_in_compensation_model": False,
         "completed": False,
         "exception": None,
@@ -222,6 +231,10 @@ def collect(
                     )
             anchor_pos = np.asarray(baseline["anchor_pos"])
             anchor_quat = np.asarray(baseline["anchor_quat"])
+        plan = JointPlan.build(protocol, f_t_ee, anchor_pos, anchor_quat)
+        plan.save(out / "joint_plan.npz")
+        anchor_pos, anchor_quat = plan.anchor_pos, plan.anchor_quat
+        metadata.update(joint_plan_sha256=plan.digest, joint_plan_metrics=plan.metrics)
         metadata.update(
             anchor_pos=anchor_pos.tolist(),
             anchor_quat=anchor_quat.tolist(),
@@ -247,7 +260,8 @@ def collect(
             kd_ori=2 * np.sqrt(protocol.kp_ori),
             error_delta_pos=0.04,
         )
-        robot.set_ee_target(anchor_pos, anchor_quat)
+        robot.set_joint_target(np.asarray(protocol.q_init), np.zeros(7),
+                               protocol.joint_kp, protocol.joint_kd, anchor_pos, anchor_quat)
         robot.enable()
         print("Current controller load model:", json.dumps(metadata["load_model"]))
         prompt(
@@ -313,6 +327,10 @@ def collect(
                 elapsed = clock() - start
                 state = robot.get_state()
                 require_wrench_state(state)
+                if last_seq is not None and state.seq < last_seq:
+                    raise RuntimeError("controller restarted during collection")
+                if state.control_mode != 1:
+                    raise RuntimeError("controller left joint impedance mode")
                 if state.seq != last_seq:
                     last_change = clock()
                     last_seq = state.seq
@@ -326,13 +344,19 @@ def collect(
                     or quaternion_angle(state.ee_quat, quat) > 0.4
                 ):
                     raise RuntimeError("motion tracking error exceeded 40 mm / 0.4 rad")
-                head = robot.set_ee_target(pos, quat)
+                target_q, target_dq = plan.sample(elapsed)
+                if np.max(np.abs(state.q-target_q)) > .15:
+                    raise RuntimeError("joint tracking error exceeded 0.15 rad")
+                head = robot.set_joint_target(target_q, target_dq, protocol.joint_kp,
+                                              protocol.joint_kd, pos, quat)
                 events.append(
                     {
                         "elapsed_s": elapsed,
                         "phase": phase,
                         "settled": bool(settled),
                         "head": int(head),
+                        "target_q": target_q.tolist(),
+                        "target_dq": target_dq.tolist(),
                     }
                 )
                 if clock() >= next_status:
@@ -360,7 +384,8 @@ def collect(
             try:
                 state = robot.get_state(fresh=True)
                 if state is not None:
-                    robot.set_ee_target(state.ee_pos, state.ee_quat)
+                    robot.set_joint_target(state.q, np.zeros(7), protocol.joint_kp,
+                                           protocol.joint_kd, state.ee_pos, state.ee_quat)
             except Exception as hold_exc:
                 metadata["hold_error"] = str(hold_exc)
         finally:
@@ -385,6 +410,7 @@ def collect(
                         completed
                         and log.get("dropped_frames", 0) == 0
                         and log.get("resets", 0) == 0
+                        and np.all(arrays["control_mode"] == 1)
                     )
                     metadata["gripper_after"] = robot.gripper_state()
                     if not args.empty and not metadata["gripper_after"].get(

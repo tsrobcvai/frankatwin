@@ -246,6 +246,12 @@ class FrankaTwinDaemon:
         head = self.controller.set_ee_target(pos, quat)
         return {"head": int(head)}
 
+    def _op_set_joint_target(self, req: Dict[str, Any]) -> Dict[str, Any]:
+        head = self.controller.set_joint_target(**{
+            name: req[name] for name in ("q", "dq", "kp", "kd", "target_pos", "target_quat")
+        })
+        return {"head": head}
+
     def _op_set_gains(self, req: Dict[str, Any]) -> None:
         self.controller.set_gains(
             kp_pos=req.get("kp_pos"),

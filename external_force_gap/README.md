@@ -12,10 +12,11 @@ rectangular payload and rotates through a shared pose sequence. It provides:
   synchronized video. A separate command compares actual real and sim bundles.
 
 The default is a 50-second, nine-pose sequence with smooth 4-second transitions,
-2-second holds, 50 Hz Cartesian targets and 1 kHz physics / real controller
+2-second holds, 50 Hz joint position/velocity targets and 1 kHz physics / real controller
 logging. Rotations are rotation vectors relative to the anchor EE orientation.
 Position is held at the anchor; the sequence ends at its initial orientation.
-The arm can retain a different redundant joint posture, so reset before each run.
+A shared nominal-Panda IK planner selects a posture near `q_init` and returns to
+that joint configuration at the end. Reset before each run.
 
 ## What the signals mean
 
@@ -78,15 +79,77 @@ Newton-Euler reference checks balance during motion. Gravity-only comparisons
 are scored on settled holds (after 0.7 seconds and with every arm joint below
 0.04 rad/s). `completed` means the trajectory finished and the acquisition checks
 passed; it does not imply every hold settled. `analysis.json` explicitly lists
-poses without settled samples. The existing Cartesian controller has no
-null-space damping, so redundant joint motion can continue during an EE hold;
-such samples remain in dynamic traces and are excluded from static scores.
+poses without settled samples. Joint impedance constrains all seven joints;
+static scores still require measured settling rather than assuming commanded
+holds are stationary.
 Franka's proprietary estimator, filtering, friction and model
 errors are not reproduced by this compensation; they remain part of the gap.
 
 References: [libfranka RobotState](https://frankarobotics.github.io/libfranka/latest/structfranka_1_1RobotState.html),
 [Isaac Lab joint wrench convention](https://isaac-sim.github.io/IsaacLab/release/3.0.0/source/concepts/sensors/joint_wrench_sensor.html),
 [FORGE](https://arxiv.org/abs/2408.04587).
+
+## Shared joint planning and control
+
+The force-gap workflow uses `joint_pd_v1`. The existing Cartesian API remains
+available for other experiments. Both domains follow this pipeline:
+
+```text
+EE pose sequence -> bounded, continuous nominal-Panda IK -> q_des(t), dq_des(t)
+-> 50 Hz reference updates -> 1 kHz joint PD + Coriolis -> limited torque
+```
+
+`joint_plan.py` uses the Panda modified-DH chain and the recorded `F_T_EE`.
+Each IK solve is seeded by the previous solution and regularized toward
+`q_init`. A cubic spline with zero endpoint velocity connects the IK samples.
+Planning rejects EE residuals above 0.2 mm / 0.001 rad, joint-limit violations,
+excessive velocity/acceleration, and a final posture more than 0.002 rad from
+`q_init`. Defaults limit planned speed to 0.6 rad/s and acceleration to
+1.5 rad/s². These checks do not perform collision planning; the free-motion
+experiment requires the cleared workspace checked by the operator.
+
+The planner checks the nominal reset FK against the observed anchor (within
+3 mm / 0.015 rad), then anchors the requested relative EE motion to nominal FK.
+The measured anchor position discrepancy is recorded. This is a nominal Panda
+planner, not an FR3 planner or a calibrated real-arm kinematic identification.
+Real-vs-sim execution differences remain visible in the measured EE traces.
+`joint_plan.npz` stores time, q, dq, EE transform and anchor; its content hash
+is saved in metadata. `--dry-run` plans against the bundled tool transform;
+actual collection uses the transform reported by the robot.
+
+Both controllers use componentwise gains from the protocol:
+
+```text
+tau = joint_kp * (q_des - q) + joint_kd * (dq_des - dq) + coriolis
+joint_kp = [400, 400, 400, 400, 120, 100, 60] Nm/rad
+joint_kd = [40, 40, 40, 40, 14, 12, 8] Nm s/rad
+tau = clip(tau, +/-[87,87,87,87,12,12,12] Nm)
+tau = clip(tau, tau_previous +/- 1000*dt Nm)
+```
+
+The real joint mode fixes the rate limit at 1000 Nm/s; the legacy Cartesian
+mode retains its CLI-configured limit. Joint mode always includes Coriolis
+compensation, independently of the Cartesian `--no-coriolis` switch. libfranka supplies gravity and
+friction compensation; PhysX receives robot gravity compensation explicitly.
+The held block is excluded from both configured compensation models. There is
+no inverse-dynamics acceleration feedforward in either implementation.
+
+Targets use zero-order hold between updates in both domains. The protocol
+requires at least 10 Hz updates and a speed limit no greater than 2 rad/s;
+`control_hz` must divide the simulation physics frequency exactly. The real native
+loop zeros target velocity after 250 ms without a command update and retains
+the last joint position target. The collector also stops on stale telemetry,
+controller restart/mode change, or joint tracking error above 0.15 rad.
+`set_joint_target(q,dq,kp,kd,target_pos,target_quat)` atomically selects joint
+mode; its EE pose arguments are monitoring references and contribute no torque.
+`set_ee_target` explicitly switches back to Cartesian mode. Gain/enable updates
+preserve the selected mode. A controller restart seeds Cartesian mode at the
+measured pose; an active collection detects and rejects that restart.
+
+Simulation writes joint states only at initialization. During measurement it
+uses effort commands and physical contacts. The separate video renderer may
+write recorded states because it does not produce force measurements.
+`joint_tracking.png` compares measured q, applied q targets and the reset pose.
 
 ## Payload and repeatable placement
 
@@ -120,7 +183,7 @@ From the repository root on the workstation and NUC:
 pip install -e '.[analysis,test]'
 ```
 
-This branch changes the shared-memory ABI from v3 to v4 (1024-byte frames).
+This workflow requires shared-memory ABI v5 (336-byte commands, 1152-byte frames).
 Rebuild `osc_shm` using your normal libfranka toolchain and restart the daemon;
 update the client and NUC Python package together. Older producers are rejected
 by the collector instead of treating absent wrench data as zero.
@@ -162,16 +225,17 @@ The terminal requires explicit tokens for RESET, MODEL, OPEN, GRASP/EMPTY, and
 RUN. Reset happens before placement. The loaded hand is never automatically
 opened when acquisition ends or fails. The arm holds its final target; support
 the block before opening it manually. On a runtime failure the collector tries
-to hold the latest measured pose, stops/fetches the ring log, and saves the
-exception and partial data. It rejects stale state, missing v4 telemetry,
+to hold the latest measured joint configuration, stops/fetches the ring log, and saves the
+exception and partial data. It rejects stale state, missing v5 telemetry,
 excessive tracking error, invalid grasp width, changed load/frame settings,
 dropped ring frames, and controller restarts. An unreachable daemon cannot
 accept a software hold request; its existing local controller/reflex behavior
 still governs the arm.
 
-Actual producer timestamps and sequence IDs are preserved. The target events
+Actual producer timestamps and sequence IDs are preserved. EE target events
 are joined by sequence ID, with the existing logger's one-tick command timing
-uncertainty. The 100 Hz ZMQ stream is only used for progress checks; the saved
+uncertainty. Applied `target_q`, `target_dq`, `control_mode`, and `command_seq`
+are copied directly from the native control tick into the 1 kHz state frame. The 100 Hz ZMQ stream is only used for progress checks; the saved
 measurement is the controller's full 1 kHz ring log.
 
 ## Simulation and first preview
@@ -200,13 +264,14 @@ python scripts/force_gap_report.py analyze data/force_gap/sim_loaded --video \
     --scene data/force_gap/render/scene.mp4
 ```
 
-The replay uses the original frame timestamps and measured object pose, including
+The renderer uses acquisition frame timestamps, or derives a cadence from
+`video_fps` when acquisition ran without `--video`. It uses measured object pose, including
 any recorded slip. The original acquisition video is retained. `dashboard.json`
 identifies which scene was used; `--scene` requires a matching render manifest.
 
 The hand closes with physical contacts; the payload is not welded or teleported
 along the trajectory. Gravity acts on the robot and block. The arm uses the
-same Cartesian impedance form and damping rule as `osc_shm`, with PhysX robot
+same joint impedance law and gains as `osc_shm` joint mode, with PhysX robot
 gravity/coriolis compensation and an unmodeled grasped block. This does not
 assume motor dynamics or friction are already identified.
 
@@ -216,7 +281,7 @@ Output directories must be new to avoid overwriting an earlier measurement.
 
 ## Replay real commands and measure the gap
 
-After collecting real data, replay its logged Cartesian targets, actual starting
+After collecting real data, replay its applied joint position/velocity targets, actual starting
 joint positions, and recorded `F_T_EE` / `EE_T_K`:
 
 ```bash
@@ -229,7 +294,7 @@ python scripts/force_gap_report.py compare \
     --out data/force_gap/comparison
 ```
 
-Comparison requires matching protocol and EE/K transforms, matching empty/loaded
+Comparison requires matching protocol, controller, joint-plan hash and EE/K transforms, matching empty/loaded
 conditions, and complete runs. It uses overlapping timestamps without
 extrapolation, reports actual position/orientation/joint mismatch, and also
 compares per-pose hold means and variability. There is no automatic sign,
@@ -247,6 +312,7 @@ mix posture differences into the result. Keep and inspect both runs.
 | --- | --- |
 | `samples.npz` | Full arrays, including measured/target motion and raw/derived wrench channels |
 | `samples.csv` | Common time, phase, wrench, gravity, and joint columns |
+| `joint_plan.npz`, `joint_tracking.png` | Shared planned references and measured-vs-target joint traces |
 | `metadata.json`, `protocol.json` | Frames, load/asset provenance, sequence, completion and quality |
 | `ring.csv`, `ring_targets.csv`, `wrench_raw.csv` | Real full-rate state/targets/API values; matrices flattened column-major |
 | `session.json`, `events.json` | Real operator session result, exceptions, target phase events |

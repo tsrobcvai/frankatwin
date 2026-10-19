@@ -1,10 +1,67 @@
-# Validation record: 2026-10-17
+# Validation record
+
+## Joint impedance update: 2026-10-18
+
+The force-gap workflow now plans bounded Panda joint references from the EE
+sequence and uses `joint_pd_v1` in both domains. Real hardware was not connected.
+The previous Cartesian measurement is retained below as a comparison.
+
+The loaded 50-second run used Slurm job `4115779` on `neu305`, with 50,000
+samples and physical finger contacts. The full run and independent audit passed:
+
+| Metric | Previous Cartesian run | Joint impedance run |
+| --- | ---: | ---: |
+| Maximum joint-1 excursion from reset | 125.14 deg | 8.516 deg |
+| Maximum final joint deviation from reset | about 97 deg | 0.1874 deg |
+| Poses with settled samples | 4/9 | 9/9 |
+| Maximum EE position error | 7.05 mm | 4.426 mm |
+| Maximum EE orientation error | 0.1756 rad | 0.01507 rad |
+
+- Maximum joint tracking error: 0.008802 rad; all seven joints return close to reset.
+- The planned maximum speed/acceleration was 0.4463 rad/s / 0.3605 rad/s².
+- There were 11,706 settled samples; mean base-Z force was 3.041097 N, versus
+  the nominal weight 3.041100 N.
+- Static force RMSE per base axis: `[0.05132, 0.04673, 0.03742]` N.
+- Dynamic force balance RMSE against block Newton-Euler support:
+  `[0.12443, 0.07186, 0.06138]` N. These dynamic residuals are retained; better
+  posture repeatability does not establish lower error for every force metric.
+- Maximum physical grasp drift was 5.23 micrometers.
+- Nominal planner FK and measured Isaac poses agreed within 0.631 micrometers
+  and 1.71e-6 rad across 500 sampled configurations along the measured path.
+
+A 3-second empty-hand run (`4115785`) had settled force RMSE below 9.1e-7 N
+on each base axis. It remains marked incomplete because it is a debug truncation.
+An additional 2,999-step Isaac replay (`4115788`) used a clearly marked
+**synthetic input fixture derived from simulation**, not a real measurement.
+Applied q/dq and EE reference arrays matched the fixture exactly at every tick.
+
+Software validation: 121 tests passed. These cover planning between IK knots,
+limit rejection, endpoint return, joint commands through loopback ZMQ, v5 ABI
+sizes/offsets, full-rate applied references, and recovery on stale data, tracking
+errors, mode changes and restarts. A compiled C++ test compared the torque math
+used by `osc_shm` with the simulator for 2,800 inputs, including magnitude and
+rate saturation; agreement was within 1e-12 absolute/relative tolerance.
+`osc_shm.cpp` passed C++17 syntax compilation against libfranka 0.20 headers.
+A linked NUC build and actual hardware tracking remain untested. The shared
+memory ABI is now v5; update and rebuild the native controller and both Python
+endpoints before real collection.
+
+Local measurement and plots: `data/force_gap/sim_joint_preview_20261018/`.
+`joint_control_audit.json` contains the detailed checks. The synchronized
+dashboard is 1600 x 720, 20 fps, 50 seconds, 1,000 frames and 31.4 MB, with
+fast-start MP4 metadata. Rendering job `4115790` reproduced measured EE
+positions within 0.179 micrometers. `artifact_audit.json` pins the measurement
+hash and video checks; the original October 17 video remains unchanged.
+Persistent launch and
+monitor records are under `scratch/ft_joint_*_20261018*` in the parent workspace.
+
+## Historical Cartesian run: 2026-10-17
 
 The v0.4 Beta feature was exercised in Isaac Lab 3 / PhysX with the bundled
 Panda asset and a physically grasped 0.310 kg, 50 x 50 x 100 mm block.
 No physical Franka was connected during this validation.
 
-## Measurement run
+### Measurement run
 
 - Slurm job: `4112613`, interactive partition, GPU node `neu320`.
 - Duration: 50 seconds; 50,000 samples at a 1 ms physics step.
@@ -51,7 +108,7 @@ The independent monitor collected terminal status and stopped. Both output
 streams were inspected: there were headless display/NGX/OmniHub startup messages,
 but no reported numerical failure, dropped-contact buffer, or overflow.
 
-## Software checks
+### Software checks
 
 - 112 CPU tests passed, including independent wrench-transform fixtures,
   C++/NumPy ABI offsets, full-rate wrench transfer through loopback ZMQ,

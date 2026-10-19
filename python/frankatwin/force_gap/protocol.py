@@ -46,6 +46,10 @@ class Protocol:
     control_hz: float = 50.0
     kp_pos: float = 500.0
     kp_ori: float = 30.0
+    joint_kp: list = field(default_factory=lambda: [400., 400., 400., 400., 120., 100., 60.])
+    joint_kd: list = field(default_factory=lambda: [40., 40., 40., 40., 14., 12., 8.])
+    max_joint_speed: float = 0.6
+    max_joint_acceleration: float = 1.5
     grasp_force_n: float = 35.0
     gripper_width_tolerance_m: float = 0.004
 
@@ -57,12 +61,20 @@ class Protocol:
             "control_hz",
             "kp_pos",
             "kp_ori",
+            "max_joint_speed",
+            "max_joint_acceleration",
         ):
             if not np.isfinite(getattr(self, name)) or getattr(self, name) <= 0:
                 raise ValueError(f"{name} must be positive and finite")
+        if self.control_hz < 10 or self.max_joint_speed > 2:
+            raise ValueError("joint mode requires control_hz >= 10 and max_joint_speed <= 2 rad/s")
         for name, size in (("dimensions_m", 3), ("ee_com_m", 3), ("q_init", 7)):
             a = np.asarray(getattr(self, name), float)
             if a.shape != (size,) or not np.all(np.isfinite(a)):
+                raise ValueError(f"invalid {name}")
+        for name, limit in (("joint_kp", 1000), ("joint_kd", 100)):
+            value = np.asarray(getattr(self, name), float)
+            if value.shape != (7,) or not np.all(np.isfinite(value)) or np.any(value <= 0) or np.any(value > limit):
                 raise ValueError(f"invalid {name}")
         if np.any(np.asarray(self.dimensions_m) <= 0) or self.dimensions_m[1] >= 0.08:
             raise ValueError(

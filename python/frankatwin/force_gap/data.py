@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 
 import numpy as np
@@ -12,6 +13,15 @@ from .protocol import Protocol
 SCHEMA_VERSION = 1
 CONVENTION = "robot_on_payload; axes=O(base); moment_origin=K; SI"
 AXES = ["fx", "fy", "fz", "tx", "ty", "tz"]
+
+
+def video_times(arrays, metadata):
+    """Use acquisition frame times, or derive a cadence for a headless-only run."""
+    recorded = arrays.get("video_t_s", np.array([]))
+    if len(recorded):
+        return recorded
+    fps = float(metadata.get("video_fps", 20))
+    return np.arange(arrays["t_s"][0], arrays["t_s"][-1]+1e-9, 1/fps)
 
 
 def write_json(path, data):
@@ -68,9 +78,18 @@ def load_bundle(directory):
         or np.any(np.diff(t) <= 0)
     ):
         raise ValueError("invalid timestamps")
-    protocol = Protocol(**metadata["protocol"]).validate()
-    if protocol.digest != metadata["protocol_sha256"]:
+    Protocol(**metadata["protocol"]).validate()
+    # Hash the stored configuration, so adding optional protocol fields does
+    # not invalidate previously recorded Cartesian experiments.
+    stored_digest = hashlib.sha256(json.dumps(metadata["protocol"], sort_keys=True).encode()).hexdigest()
+    if stored_digest != metadata["protocol_sha256"]:
         raise ValueError("protocol hash mismatch")
+    if metadata.get("controller") == "joint_pd_v1":
+        for key in ("target_q", "target_dq"):
+            if key not in arrays or arrays[key].shape != (len(t), 7) or not np.all(np.isfinite(arrays[key])):
+                raise ValueError(f"missing or invalid applied joint reference: {key}")
+        if "control_mode" not in arrays or (metadata.get("completed") and not np.all(arrays["control_mode"] == 1)):
+            raise ValueError("joint collection contains a different controller mode")
     for key, width in (
         ("q", 7),
         ("ee_pos", 3),

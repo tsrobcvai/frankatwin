@@ -143,7 +143,7 @@ def test_wrench_state_cpp_numpy_wire_roundtrip():
     old = _state_to_dict(state)
     for name in WRENCH_STATE_FIELDS:
         old.pop(name)
-    with pytest.raises(RuntimeError, match="shm v4"):
+    with pytest.raises(RuntimeError, match="shm v5"):
         require_wrench_state(_state_from_dict(old))
 
 
@@ -184,13 +184,13 @@ def test_normalize_rejects_midrun_payload_change():
         normalize_log(merged, wrench, [], Protocol(), {"empty": False})
 
 
-def test_every_v4_field_has_cpp_pinned_offset():
+def test_every_v5_field_has_cpp_pinned_offset():
     # Detailed C++ comparison is in test_shm_layout; check the extension is contiguous.
     offset = 344
     for name, width in WRENCH_STATE_FIELDS.items():
         assert STATE_FRAME_DTYPE.fields[name][1] == offset
         offset += 8 * width
-    assert offset == 976
+    assert offset == 1104
 
 
 def synthetic_bundle(path, source, bias=0.0):
