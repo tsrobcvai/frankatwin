@@ -392,6 +392,10 @@ class FrankaTwinDaemon:
             out["state"] = self.controller.gripper_state()
         return out
 
+    def _op_gripper_latest_sample(self, _req: Dict[str, Any]) -> Dict[str, Any]:
+        """Return the last streamed sample without waiting for the hand."""
+        return {"busy": self._gripper_busy(), "sample": self.controller.gripper_latest_sample()}
+
     def _op_shutdown(self, _req: Dict[str, Any]) -> Dict[str, Any]:
         # Signal the main loop to stop after we ack the request.
         threading.Thread(target=self.request_stop, daemon=True).start()

@@ -128,7 +128,7 @@ std::string json_escape(const std::string& in) {
 
 std::string state_json(const franka::GripperState& s) {
   std::ostringstream o;
-  o << std::fixed << std::setprecision(4) << "{\"width\":" << s.width
+  o << std::fixed << std::setprecision(6) << "{\"width\":" << s.width
     << ",\"max_width\":" << s.max_width << ",\"is_grasped\":" << (s.is_grasped ? "true" : "false")
     << ",\"temperature\":" << static_cast<unsigned>(s.temperature) << "}";
   return o.str();
@@ -187,6 +187,19 @@ int main(int argc, char** argv) {
             gripper.stop();
           } catch (const franka::Exception& e) {
             std::cerr << "[gripper_cmd] stop failed: " << e.what() << std::endl;
+          }
+        }
+        // The blocking command runs on the worker; this is the only thread
+        // calling readOnce. Flush each sample so the daemon can publish it
+        // before the command completes.
+        try {
+          const auto sample = gripper.readOnce();
+          std::cout << "{\"event\":\"state\",\"state\":" << state_json(sample) << "}" << std::endl;
+        } catch (const franka::Exception& e) {
+          std::cerr << "[gripper_cmd] state read failed: " << e.what() << std::endl;
+          if (!stopped) {
+            stopped = true;
+            try { gripper.stop(); } catch (const franka::Exception&) {}
           }
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));

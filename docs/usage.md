@@ -243,3 +243,33 @@ out = robot.gripper_close(force=30)               # returns when the fingers sta
 held = out["state"]["width"]                      # the object's width, real-side twin of the sim finger joint
 robot.gripper_open(0.06, wait=False)              # or fire-and-forget, then robot.gripper_wait()
 ```
+
+### Live gripper width during a command
+
+The daemon can report intermediate hand-state samples while `move`, `grasp`,
+or `homing` is running. Rebuild `gripper_cmd` and restart the updated daemon on
+the NUC; update the Python client on the PC as well. The C++ helper reads from
+the same gripper connection used for the command, so no second hand connection
+is required. This has not yet been validated on hardware.
+
+```python
+from frankatwin.config import load_config
+from frankatwin.remote_client import FrankaTwinClient
+
+with FrankaTwinClient(load_config()) as robot:
+    # Read-only: another client must have started a gripper command.
+    status = robot.gripper_latest_sample()
+    sample = status["sample"]
+    if sample is not None and sample["age_s"] < 0.1:
+        print("width [m]", sample["width"], "busy", status["busy"])
+```
+
+`age_s` is the age at the NUC when it responds; transport adds latency. The
+API is a quick request to the daemon and does not wait for a new hand reading.
+During motion the helper attempts a sample after each read and 10 ms sleep;
+actual rate and latency depend on the hand, network and scheduling. Between
+commands it holds the final sample and its age increases; it is **not an idle
+state stream**. A `None` sample means no sample is available. Reject stale
+samples according to the application. `gripper_state()` remains the separate,
+blocking fresh read when idle. Width is the total jaw opening, not two
+independently measured finger positions; velocity is not included.

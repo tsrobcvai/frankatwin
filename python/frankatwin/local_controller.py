@@ -23,6 +23,7 @@ import logging
 import os
 import signal
 import subprocess
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
@@ -305,6 +306,9 @@ class LocalController:
         self._gripper_bin = cfg.paths.build_dir / "gripper_cmd"
         self._gripper_proc: Optional[subprocess.Popen] = None
         self._gripper_lock = threading.Lock()
+        self._gripper_sample_lock = threading.Lock()
+        self._gripper_sample = None
+        self._gripper_sample_time = None
         for b in (self._osc_shm_bin, self._move_to_bin):
             if not b.is_file():
                 raise FileNotFoundError(
@@ -950,6 +954,18 @@ class LocalController:
         """`{"width", "max_width", "is_grasped", "temperature"}` from one readOnce()."""
         return self._run_gripper(gripper_command_args(self.cfg.gripper, "state"))["state"]
 
+    def gripper_latest_sample(self) -> Optional[Dict[str, Any]]:
+        """Latest received hand state and its age in seconds, or None before a sample."""
+        with self._gripper_sample_lock:
+            if self._gripper_sample is None:
+                return None
+            return {**self._gripper_sample, "age_s": time.monotonic() - self._gripper_sample_time}
+
+    def _cache_gripper_sample(self, state: Dict[str, Any]) -> None:
+        with self._gripper_sample_lock:
+            self._gripper_sample = dict(state)
+            self._gripper_sample_time = time.monotonic()
+
     def _run_gripper(self, args: List[str]) -> Dict[str, Any]:
         if not self.cfg.gripper.enabled:
             raise RuntimeError("gripper disabled in robot.yaml (gripper.enabled: false)")
@@ -958,27 +974,52 @@ class LocalController:
                 f"gripper_cmd not found at {self._gripper_bin}. Build the C++ side "
                 "(`cmake --build build`, docs/installation.md) or point paths.build_dir at it."
             )
-        with self._gripper_lock:
-            if self._gripper_proc is not None and self._gripper_proc.poll() is None:
-                raise RuntimeError("a gripper command is already running; gripper_stop() first")
-            cmd = [str(self._gripper_bin), self.cfg.robot.ip, *args]
-            if self.verbose:
-                logger.info("running %s", " ".join(cmd))
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            self._gripper_proc = proc
-        try:
-            out, err = proc.communicate(timeout=_GRIPPER_TIMEOUT_S)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.communicate()
-            raise RuntimeError(f"gripper_cmd {args[0]} timed out after {_GRIPPER_TIMEOUT_S:.0f}s")
-        finally:
+        cmd = [str(self._gripper_bin), self.cfg.robot.ip, *args]
+        if self.verbose:
+            logger.info("running %s", " ".join(cmd))
+        with tempfile.TemporaryFile() as err_file:
             with self._gripper_lock:
-                self._gripper_proc = None
-        result = parse_gripper_output(out.decode(errors="replace"))
-        if proc.returncode != 0 or not result.get("ok"):
-            raise RuntimeError(
-                f"gripper_cmd {args[0]} failed (exit {proc.returncode}): "
-                f"{result.get('error') or err.decode(errors='replace').strip()[:512]}"
-            )
-        return result
+                if self._gripper_proc is not None:
+                    raise RuntimeError("a gripper command is already running; gripper_stop() first")
+                with self._gripper_sample_lock:
+                    self._gripper_sample = None
+                    self._gripper_sample_time = None
+                proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=err_file)
+                self._gripper_proc = proc
+            last_line = []
+
+            def read_stdout():
+                for line in proc.stdout:
+                    decoded = line.decode(errors="replace").strip()
+                    try:
+                        item = json.loads(decoded)
+                    except ValueError:
+                        continue
+                    if isinstance(item, dict) and isinstance(item.get("state"), dict):
+                        self._cache_gripper_sample(item["state"])
+                    if isinstance(item, dict) and item.get("event") != "state":
+                        last_line[:] = [decoded]
+
+            reader = threading.Thread(target=read_stdout, daemon=True)
+            reader.start()
+            try:
+                try:
+                    proc.wait(timeout=_GRIPPER_TIMEOUT_S)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+                    raise RuntimeError(f"gripper_cmd {args[0]} timed out after {_GRIPPER_TIMEOUT_S:.0f}s")
+                finally:
+                    reader.join(timeout=2.0)
+            finally:
+                with self._gripper_lock:
+                    self._gripper_proc = None
+            err_file.seek(0)
+            err = err_file.read().decode(errors="replace")
+            result = parse_gripper_output(last_line[0] if last_line else "")
+            if proc.returncode != 0 or not result.get("ok"):
+                raise RuntimeError(
+                    f"gripper_cmd {args[0]} failed (exit {proc.returncode}): "
+                    f"{result.get('error') or err.strip()[:512]}"
+                )
+            return result

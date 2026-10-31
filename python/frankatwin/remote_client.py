@@ -453,6 +453,15 @@ class FrankaTwinClient:
             raise RuntimeError("gripper busy; gripper_wait() before reading a live state")
         return reply["state"]
 
+    def gripper_latest_sample(self) -> Dict[str, Any]:
+        """Return the latest streamed hand sample and its age, without a hand read.
+
+        Samples update during gripper commands. Between commands the last sample
+        ages; callers must reject it when it is too old for their application.
+        """
+        reply = self._call({"op": "gripper_latest_sample"})
+        return {"busy": reply["busy"], "sample": reply.get("sample")}
+
     def gripper_wait(self, seq: Optional[int] = None, timeout_s: float = GRIPPER_WAIT_S) -> Dict[str, Any]:
         """Block until the running gripper command (or the one with `seq`) finished.
 

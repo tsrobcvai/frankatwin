@@ -170,3 +170,54 @@ def test_daemon_gripper_failure_is_reported_via_state():
     d._gripper_thread.join(2.0)
     last = d._op_gripper_state({})["last"]
     assert last["ok"] is False and "refused" in last["error"] and last["cmd"] == "homing"
+
+
+def test_live_samples_arrive_while_command_is_running(tmp_path):
+    import os
+    from types import SimpleNamespace
+    from frankatwin.local_controller import LocalController
+
+    binary = tmp_path / "gripper_cmd"
+    binary.write_text('''#!/usr/bin/env python3
+import json, time
+print(json.dumps({"event": "state", "state": {"width": 0.031}}), flush=True)
+time.sleep(0.4)
+print(json.dumps({"event": "state", "state": {"width": 0.045}}), flush=True)
+time.sleep(0.2)
+print(json.dumps({"ok": True, "state": {"width": 0.05}}), flush=True)
+''')
+    os.chmod(binary, 0o755)
+    c = LocalController.__new__(LocalController)
+    c.cfg = SimpleNamespace(gripper=SimpleNamespace(enabled=True), robot=SimpleNamespace(ip="test"))
+    c.verbose = False
+    c._gripper_bin = binary
+    c._gripper_lock = threading.Lock()
+    c._gripper_proc = None
+    c._gripper_sample_lock = threading.Lock()
+    c._gripper_sample = None
+    c._gripper_sample_time = None
+    result = []
+    worker = threading.Thread(target=lambda: result.append(c._run_gripper(["move"])))
+    worker.start()
+    deadline = time.monotonic() + 2
+    while c.gripper_latest_sample() is None and time.monotonic() < deadline:
+        time.sleep(0.01)
+    sample = c.gripper_latest_sample()
+    assert worker.is_alive() and sample["width"] == pytest.approx(0.031)
+    assert 0 <= sample["age_s"] < 0.4
+    with pytest.raises(RuntimeError, match="already running"):
+        c._run_gripper(["move"])
+    worker.join(2)
+    assert not worker.is_alive() and result[0]["state"]["width"] == pytest.approx(0.05)
+    assert c.gripper_latest_sample()["width"] == pytest.approx(0.05)
+    old_age = c.gripper_latest_sample()["age_s"]
+    time.sleep(0.02)
+    assert c.gripper_latest_sample()["age_s"] > old_age
+
+
+def test_daemon_exposes_latest_sample_during_motion():
+    d = _daemon_with_stub()
+    d.controller.gripper_latest_sample = lambda: {"width": 0.033, "age_s": 0.01}
+    assert d._op_gripper_latest_sample({}) == {
+        "busy": False, "sample": {"width": 0.033, "age_s": 0.01}
+    }
