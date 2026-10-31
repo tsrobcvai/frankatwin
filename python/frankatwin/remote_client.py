@@ -445,6 +445,14 @@ class FrankaTwinClient:
         """Abort the gripper motion in flight."""
         return self._call({"op": "gripper_stop"}, timeout_s=GRIPPER_REQ_TIMEOUT_S)
 
+    def gripper_stop_async(self) -> Dict[str, Any]:
+        """Request a stop without waiting for the hand; poll gripper_latest_sample.
+
+        Requires supports_async_stop in the daemon status. Completion is reported
+        by stopping=False and stop_result.ok=True, not by this acknowledgement.
+        """
+        return self._call({"op": "gripper_stop_async"})
+
     def gripper_state(self) -> Dict[str, Any]:
         """Live `{"width", "max_width", "is_grasped", "temperature"}` (one round trip
         to the hand). Raises if a command is running; use gripper_wait first."""
@@ -459,8 +467,7 @@ class FrankaTwinClient:
         Samples update during gripper commands. Between commands the last sample
         ages; callers must reject it when it is too old for their application.
         """
-        reply = self._call({"op": "gripper_latest_sample"})
-        return {"busy": reply["busy"], "sample": reply.get("sample")}
+        return self._call({"op": "gripper_latest_sample"})
 
     def gripper_wait(self, seq: Optional[int] = None, timeout_s: float = GRIPPER_WAIT_S) -> Dict[str, Any]:
         """Block until the running gripper command (or the one with `seq`) finished.

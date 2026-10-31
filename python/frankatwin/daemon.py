@@ -100,9 +100,11 @@ class FrankaTwinDaemon:
         self._watchdog_thread: Optional[threading.Thread] = None
         # Gripper commands run on their own thread (see _gripper_start).
         self._gripper_thread: Optional[threading.Thread] = None
+        self._gripper_stop_thread: Optional[threading.Thread] = None
         self._gripper_lock = threading.Lock()
         self._gripper_seq = 0
         self._gripper_last: Dict[str, Any] = {}
+        self._gripper_stop_last: Dict[str, Any] = {}
 
     # ---------------------------------------------------------------- run loop
     def run(self) -> None:
@@ -157,6 +159,8 @@ class FrankaTwinDaemon:
 
     def _shutdown(self) -> None:
         logger.info("daemon shutting down")
+        if self._gripper_stop_thread is not None:
+            self._gripper_stop_thread.join(timeout=8.0)
         if self._gripper_thread is not None and self._gripper_thread.is_alive():
             try:
                 self.controller.gripper_stop()
@@ -336,11 +340,18 @@ class FrankaTwinDaemon:
     # client polls gripper_state until busy == false and last.seq == n.
     def _gripper_busy(self) -> bool:
         t = self._gripper_thread
+        return (t is not None and t.is_alive()) or self._gripper_stopping()
+
+    def _gripper_stopping(self) -> bool:
+        t = self._gripper_stop_thread
         return t is not None and t.is_alive()
 
     def _gripper_start(self, name: str, fn) -> Dict[str, Any]:
         if self._gripper_busy():
             raise RuntimeError("gripper busy: previous command still running (gripper_stop to abort)")
+        with self._gripper_lock:
+            if self._gripper_stop_last and not self._gripper_stop_last["ok"]:
+                raise RuntimeError("previous gripper stop failed; complete a successful stop before a new motion")
         self._gripper_seq += 1
         seq = self._gripper_seq
 
@@ -373,28 +384,79 @@ class FrankaTwinDaemon:
         return self._gripper_start("grasp", lambda: self.controller.gripper_grasp(**kw))
 
     def _op_gripper_stop(self, _req: Dict[str, Any]) -> Dict[str, Any]:
-        # Synchronous and quick: signals the running gripper_cmd (or sends a
-        # standalone stop). The running command's thread records its final output.
+        # Retain the blocking API for manual clients. Policy clients use
+        # gripper_stop_async so a slow hardware stop cannot hold the REP loop.
+        if self._gripper_stopping():
+            self._gripper_stop_thread.join(timeout=8.0)
+            if self._gripper_stopping():
+                raise RuntimeError("gripper stop is still running")
+            with self._gripper_lock:
+                result = dict(self._gripper_stop_last)
+            if not result.get("ok"):
+                raise RuntimeError(result.get("error", "gripper stop failed"))
+            return {"result": True}
         res = self.controller.gripper_stop()
         if self._gripper_thread is not None:
             self._gripper_thread.join(timeout=2.0)
+        if res.get("result", True):
+            with self._gripper_lock:
+                self._gripper_stop_last = {"ok": True, "result": True}
         return {"result": bool(res.get("result", True))}
+
+    def _op_gripper_stop_async(self, _req: Dict[str, Any]) -> Dict[str, Any]:
+        """Acknowledge cancellation immediately; report completion in gripper status."""
+        if self._gripper_stopping():
+            return {"stopping": True}
+        motion = self._gripper_thread
+        with self._gripper_lock:
+            self._gripper_stop_last = {}
+
+        def run() -> None:
+            try:
+                res = self.controller.gripper_stop()
+                if not res.get("ok", True) or not res.get("result", True):
+                    raise RuntimeError("hardware rejected gripper stop")
+                if motion is not None:
+                    motion.join(timeout=2.0)
+                    if motion.is_alive():
+                        raise RuntimeError("gripper motion did not finish after stop")
+                result = {"ok": True, "result": True}
+            except Exception as exc:
+                logger.exception("asynchronous gripper stop failed")
+                result = {"ok": False, "error": str(exc)}
+            with self._gripper_lock:
+                self._gripper_stop_last = result
+
+        self._gripper_stop_thread = threading.Thread(target=run, name="frankatwin_gripper_stop", daemon=True)
+        self._gripper_stop_thread.start()
+        return {"stopping": True}
+
+    def _gripper_status(self) -> Dict[str, Any]:
+        # Read liveness first: if idle, workers have already published results.
+        # A worker finishing during this snapshot is picked up on the next poll.
+        busy, stopping = self._gripper_busy(), self._gripper_stopping()
+        with self._gripper_lock:
+            return {
+                "busy": busy,
+                "stopping": stopping,
+                "last": dict(self._gripper_last),
+                "stop_result": dict(self._gripper_stop_last),
+                "supports_async_stop": True,
+            }
 
     def _op_gripper_state(self, req: Dict[str, Any]) -> Dict[str, Any]:
         """`busy`, `last` (output of the last finished command, incl. its final
         `state`) and -- when `fresh` is true and nothing is running -- a live
         readOnce() as `state`. Live reads cost a TCP round trip to the hand
         (~0.1-0.3 s) during which the REP loop is held, so poll with fresh=false."""
-        with self._gripper_lock:
-            last = dict(self._gripper_last)
-        out: Dict[str, Any] = {"busy": self._gripper_busy(), "last": last}
+        out = self._gripper_status()
         if req.get("fresh") and not out["busy"]:
             out["state"] = self.controller.gripper_state()
         return out
 
     def _op_gripper_latest_sample(self, _req: Dict[str, Any]) -> Dict[str, Any]:
         """Return the last streamed sample without waiting for the hand."""
-        return {"busy": self._gripper_busy(), "sample": self.controller.gripper_latest_sample()}
+        return {**self._gripper_status(), "sample": self.controller.gripper_latest_sample()}
 
     def _op_shutdown(self, _req: Dict[str, Any]) -> Dict[str, Any]:
         # Signal the main loop to stop after we ack the request.

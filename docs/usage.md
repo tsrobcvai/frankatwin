@@ -273,3 +273,39 @@ state stream**. A `None` sample means no sample is available. Reject stale
 samples according to the application. `gripper_state()` remains the separate,
 blocking fresh read when idle. Width is the total jaw opening, not two
 independently measured finger positions; velocity is not included.
+
+### Cancel without blocking arm commands
+
+For a policy that changes gripper direction while the arm is moving, use
+`gripper_stop_async()` instead of the legacy blocking `gripper_stop()`. Update
+the Python daemon on the NUC and the Python client on the PC, then restart the
+daemon. No additional C++ rebuild is needed if width streaming already works.
+
+```python
+status = robot.gripper_latest_sample()
+if not status.get("supports_async_stop"):
+    raise RuntimeError("Update the NUC daemon before using asynchronous cancellation")
+robot.gripper_stop_async()  # acknowledgement only; the hand has not necessarily stopped
+# Keep running the arm loop. Poll this status from a separate gripper client:
+status = robot.gripper_latest_sample()
+if not status["busy"] and status["stop_result"]:
+    if not status["stop_result"]["ok"]:
+        raise RuntimeError(status["stop_result"]["error"])
+    # It is now possible to issue the latest desired move/grasp command.
+```
+
+The daemon runs cancellation on a worker and keeps accepting arm targets.
+`busy` includes both the motion and cancellation workers; new hand motions are
+refused until both have finished. `last` reports the interrupted motion and its
+original sequence number, while `stop_result` reports cancellation separately.
+A failed stop prevents further hand motion until an explicit stop succeeds.
+Repeated stop requests during cancellation share the existing worker.
+
+This removes the server-side wait from the arm path; it does not guarantee an
+instant physical reversal. The Hand exposes blocking, non-realtime
+[`move`, `grasp`, and `stop` commands](https://frankarobotics.github.io/docs/doc/libfranka/docs/overview.html),
+not a streamed two-finger joint servo. Hardware, process-startup and network
+latency remain. A short open pulse can still release the grasp. These changes
+have only been tested with simulated hardware responses.
+
+The blind insertion rollout and simulation changes are summarized in [BLIND_SIM2REAL_STATUS.md](https://github.com/tsrobcvai/Lab_Generalist_v6/blob/tao/blind-hand-control/BLIND_SIM2REAL_STATUS.md), including the hardware measurements still needed.

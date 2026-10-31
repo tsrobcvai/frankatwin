@@ -373,6 +373,7 @@ def _daemon_on_loopback(controller):
     d._stop_evt = threading.Event()
     d._op_lock = threading.Lock()
     d._pub_thread = d._watchdog_thread = d._gripper_thread = None
+    d._gripper_stop_thread = None
     ctx = zmq.Context.instance()
     d._rep, d._pub = ctx.socket(zmq.REP), ctx.socket(zmq.PUB)
     for sock in (d._rep, d._pub):

@@ -125,9 +125,11 @@ def _daemon_with_stub(delay=0.2):
     d.controller = _StubController(delay)
     d._op_lock = threading.Lock()
     d._gripper_thread = None
+    d._gripper_stop_thread = None
     d._gripper_lock = threading.Lock()
     d._gripper_seq = 0
     d._gripper_last = {}
+    d._gripper_stop_last = {}
     return d
 
 
@@ -218,6 +220,7 @@ print(json.dumps({"ok": True, "state": {"width": 0.05}}), flush=True)
 def test_daemon_exposes_latest_sample_during_motion():
     d = _daemon_with_stub()
     d.controller.gripper_latest_sample = lambda: {"width": 0.033, "age_s": 0.01}
-    assert d._op_gripper_latest_sample({}) == {
-        "busy": False, "sample": {"width": 0.033, "age_s": 0.01}
-    }
+    status = d._op_gripper_latest_sample({})
+    assert not status["busy"] and not status["stopping"]
+    assert status["sample"] == {"width": 0.033, "age_s": 0.01}
+    assert status["supports_async_stop"]
