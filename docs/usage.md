@@ -308,4 +308,4 @@ not a streamed two-finger joint servo. Hardware, process-startup and network
 latency remain. A short open pulse can still release the grasp. These changes
 have only been tested with simulated hardware responses.
 
-The blind insertion rollout and simulation changes are summarized in [BLIND_SIM2REAL_STATUS.md](https://github.com/tsrobcvai/Lab_Generalist_v6/blob/tao/blind-hand-control/BLIND_SIM2REAL_STATUS.md), including the hardware measurements still needed.
+The blind insertion rollout and simulation changes are summarized in [BLIND_SIM2REAL_STATUS.md](https://github.com/tsrobcvai/Lab_Generalist_v6/blob/blind-assembly/BLIND_SIM2REAL_STATUS.md), including the hardware measurements still needed.
